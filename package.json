@@ -1,0 +1,54 @@
+{
+  "name": "humanctl",
+  "version": "0.1.0",
+  "description": "A control plane for the human bottleneck.",
+  "bin": {
+    "humanctl": "bin/humanctl.js"
+  },
+  "files": [
+    "bin/",
+    "docs/",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "dev": "next dev --turbopack",
+    "build": "next build",
+    "start": "next start",
+    "lint": "eslint .",
+    "cli:init": "node ./bin/humanctl.js init .",
+    "cli:status": "node ./bin/humanctl.js status ."
+  },
+  "homepage": "https://humanctl.com",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/danielgwilson/humanctl.git"
+  },
+  "bugs": {
+    "url": "https://github.com/danielgwilson/humanctl/issues"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "keywords": [
+    "agents",
+    "human-in-the-loop",
+    "orchestration",
+    "ui",
+    "cli"
+  ],
+  "license": "Apache-2.0",
+  "dependencies": {
+    "next": "16.1.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4"
+  },
+  "devDependencies": {
+    "@types/node": "25.5.0",
+    "@types/react": "19.2.14",
+    "@types/react-dom": "19.2.3",
+    "eslint": "9.39.4",
+    "eslint-config-next": "16.1.6",
+    "typescript": "5.9.3"
+  }
+}

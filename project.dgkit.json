@@ -1,0 +1,16 @@
+{
+  "version": 1,
+  "name": "humanctl",
+  "template": "next-app",
+  "modules": [],
+  "createdAt": "2026-03-14T20:00:00.000Z",
+  "scaffold": {
+    "tests": false
+  },
+  "links": {
+    "github": "",
+    "vercel": "humanctl",
+    "domain": "humanctl.com",
+    "appUrl": "https://humanctl.vercel.app"
+  }
+}
