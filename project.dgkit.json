@@ -8,7 +8,7 @@
     "tests": false
   },
   "links": {
-    "github": "",
+    "github": "https://github.com/danielgwilson/humanctl",
     "vercel": "humanctl",
     "domain": "humanctl.com",
     "appUrl": "https://humanctl.vercel.app"
