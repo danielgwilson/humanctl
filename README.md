@@ -76,15 +76,16 @@ The CLI is intentionally tiny right now:
 
 - `humanctl init [dir]`
 - `humanctl status [dir]`
+- `humanctl ask [dir] --title "..." --prompt "..." --option "id:Label:Description" ...`
 - `humanctl serve [dir] --port 4173`
 
-`init` creates a starter `.humanctl/` workspace. `status` summarizes what is there. `serve` remains available for simple static previews, but the main app now runs on Next.js.
+`init` creates a starter `.humanctl/` workspace. `status` summarizes what is there. `ask` creates a file-backed request Thing that the app can render and collect an answer for. `serve` remains available for simple static previews, but the main app now runs on Next.js.
 
 ## Next milestones
 
 1. Finalize the `.humanctl/` object model and event schema.
 2. Build the first real app surface around tabs, asks, and artifacts.
-3. Add agent-first commands for `ask`, `put`, `watch`, and `focus`.
+3. Add agent-first commands for `put`, `watch`, and `focus`.
 4. Support live steer delivery on top of the persisted queue.
 
 ## Product line

@@ -4,6 +4,7 @@
 const fs = require("fs");
 const http = require("http");
 const path = require("path");
+const { randomUUID } = require("crypto");
 const { URL } = require("url");
 
 function usage() {
@@ -12,6 +13,7 @@ function usage() {
 Usage:
   humanctl init [dir]
   humanctl status [dir]
+  humanctl ask [dir] --title "..." --prompt "..." --option "id:Label:Description" [--option "..."] [--recommended id] [--summary "..."] [--details "..."] [--tab main] [--escalation ask|block|nudge|log]
   humanctl serve [dir] [--port 4173]
 `);
 }
@@ -24,12 +26,121 @@ function ensureDir(dirPath) {
   fs.mkdirSync(dirPath, { recursive: true });
 }
 
+function escapeHtml(value) {
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function slugify(value) {
+  return String(value)
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 48);
+}
+
 function writeJson(filePath, value) {
   fs.writeFileSync(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
 }
 
 function readJson(filePath) {
   return JSON.parse(fs.readFileSync(filePath, "utf8"));
+}
+
+function appendEvent(workspaceDir, event) {
+  const eventsPath = path.join(workspaceDir, "inbox", "events.jsonl");
+  fs.appendFileSync(eventsPath, `${JSON.stringify(event)}\n`, "utf8");
+}
+
+function requireWorkspace(workspaceDir) {
+  if (!fs.existsSync(workspaceDir)) {
+    console.error(`No .humanctl workspace found in ${path.dirname(workspaceDir)}`);
+    process.exitCode = 1;
+    return false;
+  }
+
+  return true;
+}
+
+function parseFlags(args) {
+  const flags = {};
+
+  for (let index = 0; index < args.length; index += 1) {
+    const arg = args[index];
+    if (!arg.startsWith("--")) {
+      continue;
+    }
+
+    const key = arg.slice(2);
+    const next = args[index + 1];
+
+    if (!next || next.startsWith("--")) {
+      flags[key] = true;
+      continue;
+    }
+
+    if (key === "option") {
+      const current = Array.isArray(flags.option) ? flags.option : [];
+      current.push(next);
+      flags.option = current;
+    } else {
+      flags[key] = next;
+    }
+
+    index += 1;
+  }
+
+  return flags;
+}
+
+function parseOption(rawOption) {
+  const parts = String(rawOption)
+    .split(":")
+    .map((part) => part.trim());
+
+  if (parts.length < 3 || !parts[0] || !parts[1] || !parts[2]) {
+    throw new Error(`Invalid --option value "${rawOption}". Use id:Label:Description.`);
+  }
+
+  const [id, label, ...descriptionParts] = parts;
+
+  return {
+    id,
+    label,
+    description: descriptionParts.join(":")
+  };
+}
+
+function buildAskHtml({ title, prompt, options, details, recommendedOption }) {
+  const optionMarkup = options
+    .map((option) => {
+      const recommendation = recommendedOption && recommendedOption.id === option.id ? "<strong>Recommended</strong>" : "";
+
+      return `<article class="thing-choice">
+      <h3>${escapeHtml(option.label)}</h3>
+      <p>${escapeHtml(option.description)}</p>
+      ${recommendation ? `<p>${recommendation}</p>` : ""}
+    </article>`;
+    })
+    .join("\n");
+
+  const detailsMarkup = details ? `<p>${escapeHtml(details)}</p>` : "";
+
+  return `<section class="thing-stack">
+  <p class="thing-kicker">Decision packet</p>
+  <h1>${escapeHtml(title)}</h1>
+  <p>${escapeHtml(prompt)}</p>
+  <div class="thing-grid">
+    ${optionMarkup}
+  </div>
+  ${detailsMarkup}
+</section>
+`;
 }
 
 function initWorkspace(baseDir) {
@@ -85,8 +196,7 @@ function initWorkspace(baseDir) {
 
 function statusWorkspace(baseDir) {
   const workspaceDir = path.resolve(baseDir, ".humanctl");
-  if (!fs.existsSync(workspaceDir)) {
-    console.error(`No .humanctl workspace found in ${path.resolve(baseDir)}`);
+  if (!requireWorkspace(workspaceDir)) {
     process.exitCode = 1;
     return;
   }
@@ -113,6 +223,148 @@ function statusWorkspace(baseDir) {
   console.log(`Tabs: ${tabs.length} (${tabs.join(", ") || "none"})`);
   console.log(`Artifacts: ${artifactCount}`);
   console.log(`Events: ${eventCount}`);
+}
+
+function askWorkspace(baseDir, rawArgs) {
+  const workspaceDir = path.resolve(baseDir, ".humanctl");
+  if (!requireWorkspace(workspaceDir)) {
+    process.exitCode = 1;
+    return;
+  }
+
+  const flags = parseFlags(rawArgs);
+  const title = typeof flags.title === "string" ? flags.title.trim() : "";
+  const prompt = typeof flags.prompt === "string" ? flags.prompt.trim() : "";
+  const summary = typeof flags.summary === "string" ? flags.summary.trim() : "";
+  const details = typeof flags.details === "string" ? flags.details.trim() : "";
+  const tabId = typeof flags.tab === "string" ? flags.tab.trim() || "main" : "main";
+  const escalation = typeof flags.escalation === "string" ? flags.escalation.trim() || "ask" : "ask";
+  const rawOptions = Array.isArray(flags.option) ? flags.option : [];
+
+  if (!title) {
+    console.error("Missing required flag: --title");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!prompt) {
+    console.error("Missing required flag: --prompt");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (rawOptions.length < 2) {
+    console.error("Provide at least two --option values.");
+    process.exitCode = 1;
+    return;
+  }
+
+  if (!["log", "nudge", "ask", "block"].includes(escalation)) {
+    console.error(`Invalid escalation "${escalation}". Use log, nudge, ask, or block.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  let options;
+  try {
+    options = rawOptions.map(parseOption);
+  } catch (error) {
+    console.error(error.message);
+    process.exitCode = 1;
+    return;
+  }
+
+  const optionIds = new Set();
+  for (const option of options) {
+    if (optionIds.has(option.id)) {
+      console.error(`Duplicate option id "${option.id}".`);
+      process.exitCode = 1;
+      return;
+    }
+    optionIds.add(option.id);
+  }
+
+  const recommendedId = typeof flags.recommended === "string" ? flags.recommended.trim() : "";
+  if (recommendedId && !optionIds.has(recommendedId)) {
+    console.error(`Recommended option "${recommendedId}" does not match any --option id.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const thingIdBase = typeof flags.id === "string" ? flags.id.trim() : slugify(title);
+  const thingId = thingIdBase || `ask-${Date.now()}`;
+  const thingDir = path.join(workspaceDir, "tabs", tabId, "things", thingId);
+
+  if (!fs.existsSync(path.join(workspaceDir, "tabs", tabId, "manifest.json"))) {
+    console.error(`Tab "${tabId}" does not exist.`);
+    process.exitCode = 1;
+    return;
+  }
+
+  if (fs.existsSync(thingDir)) {
+    console.error(`Thing "${thingId}" already exists in tab "${tabId}".`);
+    process.exitCode = 1;
+    return;
+  }
+
+  const createdAt = nowIso();
+  const recommendedOption = recommendedId ? options.find((option) => option.id === recommendedId) : null;
+  const manifest = {
+    id: thingId,
+    kind: "request",
+    title,
+    summary: summary || prompt,
+    status: "open",
+    escalation,
+    render: {
+      type: "html",
+      entry: "content.html"
+    },
+    needsResponse: true,
+    response: {
+      type: "single-select",
+      prompt,
+      options: options.map((option) => ({
+        ...option,
+        recommended: option.id === recommendedId || undefined
+      }))
+    },
+    createdAt,
+    updatedAt: createdAt
+  };
+
+  ensureDir(thingDir);
+  writeJson(path.join(thingDir, "manifest.json"), manifest);
+  fs.writeFileSync(
+    path.join(thingDir, "content.html"),
+    buildAskHtml({ title, prompt, options, details, recommendedOption }),
+    "utf8"
+  );
+
+  const event = {
+    id: `evt_${randomUUID().slice(0, 8)}`,
+    ts: createdAt,
+    kind: "created",
+    target: {
+      tabId,
+      thingId
+    },
+    actor: "agent",
+    payload: {
+      escalation,
+      kind: "request"
+    }
+  };
+
+  appendEvent(workspaceDir, event);
+
+  const tabManifestPath = path.join(workspaceDir, "tabs", tabId, "manifest.json");
+  const tabManifest = readJson(tabManifestPath);
+  tabManifest.updatedAt = createdAt;
+  writeJson(tabManifestPath, tabManifest);
+
+  console.log(`Created ask ${thingId}`);
+  console.log(`Path: ${thingDir}`);
 }
 
 function getMimeType(filePath) {
@@ -189,6 +441,13 @@ if (command === "init") {
 if (command === "status") {
   statusWorkspace(args[1] || ".");
   process.exit(0);
+}
+
+if (command === "ask") {
+  const baseDir = args[1] && !args[1].startsWith("--") ? args[1] : ".";
+  const commandArgs = baseDir === "." && args[1] && args[1].startsWith("--") ? args.slice(1) : args.slice(2);
+  askWorkspace(baseDir, commandArgs);
+  process.exit(process.exitCode || 0);
 }
 
 if (command === "serve") {
