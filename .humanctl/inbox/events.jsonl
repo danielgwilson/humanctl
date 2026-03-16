@@ -1,0 +1,4 @@
+{"id":"evt_release_published","ts":"2026-03-16T00:16:05.969Z","kind":"published","target":{"tabId":"main","thingId":"release-state"},"actor":"agent","payload":{"channel":"npm","version":"0.1.0"}}
+{"id":"evt_release_connected","ts":"2026-03-16T00:24:00.000Z","kind":"connected","target":{"tabId":"main","thingId":"release-state"},"actor":"agent","payload":{"services":["github","vercel","npm-trusted-publishing"]}}
+{"id":"evt_surface_created","ts":"2026-03-16T00:32:00.000Z","kind":"created","target":{"tabId":"main","thingId":"workspace-surface"},"actor":"agent","payload":{"escalation":"nudge","kind":"note"}}
+{"id":"evt_loop_requested","ts":"2026-03-16T00:36:00.000Z","kind":"created","target":{"tabId":"main","thingId":"first-loop"},"actor":"agent","payload":{"escalation":"ask","kind":"request"}}
