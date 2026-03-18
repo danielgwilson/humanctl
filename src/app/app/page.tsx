@@ -1,11 +1,23 @@
 import Link from "next/link";
 import { ThemeToggle } from "@/components/theme-toggle";
-import { readWorkspace, type Thing, type ThingResponseOption, type WorkspaceEvent } from "@/lib/humanctl";
-import { submitThingResponse } from "./actions";
+import {
+  CUSTOM_NOTE_CHOICE_ID,
+  readWorkspace,
+  type Ask,
+  type Artifact,
+  type AskResponseOption,
+  type WorkspaceEvent,
+  type WatchManifest
+} from "@/lib/humanctl";
+import { submitAskResponse } from "./actions";
 
 export const dynamic = "force-dynamic";
 
-function formatTimestamp(ts: string) {
+function formatTimestamp(ts?: string) {
+  if (!ts) {
+    return "not yet";
+  }
+
   return new Intl.DateTimeFormat("en-US", {
     month: "short",
     day: "numeric",
@@ -14,17 +26,42 @@ function formatTimestamp(ts: string) {
   }).format(new Date(ts));
 }
 
-function eventCopy(event: WorkspaceEvent, thingsById: Map<string, Thing>) {
-  const targetThing = thingsById.get(event.target.thingId);
-  const title = targetThing?.title ?? event.target.thingId;
+function isDefined<T>(value: T | undefined): value is T {
+  return value !== undefined;
+}
+
+function eventCopy(
+  event: WorkspaceEvent,
+  asksById: Map<string, Ask>,
+  artifactsById: Map<string, Artifact>,
+  watchesById: Map<string, WatchManifest>
+) {
+  if (event.target.type === "ask") {
+    return asksById.get(event.target.id)?.title ?? event.target.id;
+  }
+
+  if (event.target.type === "artifact") {
+    return artifactsById.get(event.target.id)?.title ?? event.target.id;
+  }
+
+  return watchesById.get(event.target.id)?.title ?? event.target.id;
+}
+
+function eventLine(
+  event: WorkspaceEvent,
+  asksById: Map<string, Ask>,
+  artifactsById: Map<string, Artifact>,
+  watchesById: Map<string, WatchManifest>
+) {
+  const title = eventCopy(event, asksById, artifactsById, watchesById);
 
   switch (event.kind) {
     case "answered":
       return `Human answered ${title}`;
     case "published":
       return `Published ${title}`;
-    case "connected":
-      return `Connected services for ${title}`;
+    case "watch_created":
+      return `Started watch ${title}`;
     case "created":
       return `Created ${title}`;
     default:
@@ -32,12 +69,30 @@ function eventCopy(event: WorkspaceEvent, thingsById: Map<string, Thing>) {
   }
 }
 
-function optionById(options: ThingResponseOption[] | undefined, choiceId: string | undefined) {
+function optionById(options: AskResponseOption[] | undefined, choiceId: string | undefined) {
   return options?.find((option) => option.id === choiceId);
 }
 
+function interruptLabel(ask?: Ask) {
+  if (!ask) {
+    return "Waiting";
+  }
+
+  switch (ask.escalation) {
+    case "block":
+      return "Blocked on you";
+    case "ask":
+      return "Need your answer";
+    case "nudge":
+      return "Quick steer";
+    default:
+      return "For your awareness";
+  }
+}
+
 type SearchParams = Promise<{
-  thing?: string | string[];
+  ask?: string | string[];
+  artifact?: string | string[];
 }>;
 
 export default async function WorkspacePage({
@@ -46,219 +101,275 @@ export default async function WorkspacePage({
   searchParams: SearchParams;
 }) {
   const params = await searchParams;
-  const requestedThingId = Array.isArray(params.thing) ? params.thing[0] : params.thing;
-  const { workspace, tab, things, events } = await readWorkspace();
-  const selectedThing =
-    things.find((thing) => thing.id === requestedThingId) ??
-    things.find((thing) => thing.needsResponse) ??
-    things[0];
-  const thingMap = new Map(things.map((thing) => [thing.id, thing]));
-  const openCount = things.filter((thing) => thing.needsResponse).length;
-  const blockedCount = things.filter((thing) => thing.status === "blocked").length;
-  const answeredCount = things.filter((thing) => thing.status === "answered").length;
-  const chosenOption = optionById(selectedThing?.response?.options, selectedThing?.response?.answer?.choiceId);
+  const requestedAskId = Array.isArray(params.ask) ? params.ask[0] : params.ask;
+  const requestedArtifactId = Array.isArray(params.artifact) ? params.artifact[0] : params.artifact;
+  const { workspace, asks, artifacts, watches, events } = await readWorkspace();
+
+  const selectedAsk =
+    asks.find((ask) => ask.id === requestedAskId) ??
+    asks.find((ask) => ask.status === "blocked") ??
+    asks.find((ask) => ask.status === "open") ??
+    asks[0];
+
+  const asksById = new Map(asks.map((ask) => [ask.id, ask]));
+  const artifactsById = new Map(artifacts.map((artifact) => [artifact.id, artifact]));
+  const watchesById = new Map(watches.map((watch) => [watch.id, watch]));
+
+  const linkedArtifacts = (selectedAsk?.artifactIds ?? []).map((artifactId) => artifactsById.get(artifactId)).filter(isDefined);
+  const workingCanvas = artifacts;
+  const selectedArtifact =
+    (requestedArtifactId ? artifactsById.get(requestedArtifactId) : undefined) ??
+    linkedArtifacts[0] ??
+    workingCanvas[0];
+
+  const openCount = asks.filter((ask) => ask.status === "open" || ask.status === "blocked").length;
+  const chosenOption = optionById(selectedAsk?.response.options, selectedAsk?.response.answer?.choiceId);
+  const secondaryAsks = asks.filter((ask) => ask.id !== selectedAsk?.id);
+  const recentEvents = events.slice(0, 5);
+  const focusLabel = interruptLabel(selectedAsk);
 
   return (
-    <main className="workspace-page">
+    <main className="interrupt-page">
       <div className="grain" aria-hidden="true" />
 
-      <header className="workspace-topbar">
-        <div className="workspace-brand">
+      <header className="interrupt-topbar">
+        <div className="interrupt-brand">
           <div className="brand">
             <span className="brand-mark">hctl</span>
             <div>
               <span className="brand-name">humanctl</span>
-              <p className="workspace-subtitle">Local workspace · {workspace.name}</p>
+              <p className="interrupt-subtitle">An attention router for a scarce human · {workspace.name}</p>
             </div>
           </div>
-          <div className="workspace-health">
-            <span>{openCount} open asks</span>
-            <span>{blockedCount} blocked</span>
-            <span>{events.length} inbox events</span>
-          </div>
+          <p className="interrupt-statusline">
+            {openCount} active asks · {secondaryAsks.length} waiting · {linkedArtifacts.length} attached
+          </p>
         </div>
 
-        <div className="workspace-actions">
-          <Link className="workspace-link" href="/">
+        <div className="interrupt-actions">
+          <Link className="interrupt-link" href="/">
             Site
           </Link>
-          <a className="workspace-link" href="https://github.com/danielgwilson/humanctl" rel="noreferrer" target="_blank">
+          <a className="interrupt-link" href="https://github.com/danielgwilson/humanctl" rel="noreferrer" target="_blank">
             GitHub
           </a>
           <ThemeToggle />
         </div>
       </header>
 
-      <section className="workspace-frame">
-        <aside className="workspace-sidebar">
-          <div className="workspace-panel">
-            <p className="workspace-label">Tab</p>
-            <div className="workspace-tab-card is-active">
-              <strong>{tab.title}</strong>
-              <span>{tab.description}</span>
-            </div>
-          </div>
-
-          <div className="workspace-panel">
-            <div className="workspace-panel-header">
-              <p className="workspace-label">Queue</p>
-              <span className="workspace-pill">{things.length} Things</span>
-            </div>
-            <div className="thing-listing">
-              {things.map((thing) => (
-                <Link
-                  className={`thing-listing-item${selectedThing?.id === thing.id ? " is-selected" : ""}`}
-                  href={`/app?thing=${thing.id}`}
-                  key={thing.id}
-                >
-                  <div className="thing-listing-head">
-                    <span className={`status-pill status-${thing.status}`}>{thing.status}</span>
-                    <span className={`escalation-pill escalation-${thing.escalation}`}>{thing.escalation}</span>
-                  </div>
-                  <strong>{thing.title}</strong>
-                  <p>{thing.summary}</p>
-                </Link>
-              ))}
-            </div>
-          </div>
-        </aside>
-
-        <section className="workspace-detail">
-          {selectedThing ? (
-            <>
-              <div className="workspace-detail-header">
-                <div>
-                  <div className="workspace-badges">
-                    <span className={`escalation-pill escalation-${selectedThing.escalation}`}>{selectedThing.escalation}</span>
-                    <span className={`status-pill status-${selectedThing.status}`}>{selectedThing.status}</span>
-                    <span className="kind-pill">{selectedThing.kind}</span>
-                  </div>
-                  <h1>{selectedThing.title}</h1>
-                  <p className="workspace-summary">{selectedThing.summary}</p>
+      {selectedAsk ? (
+        <>
+          <section className="interrupt-hero">
+            <div className="stage-window interrupt-stage-window">
+              <div className="window-chrome">
+                <span />
+                <span />
+                <span />
+                <div className="interrupt-window-meta">
+                  <b>{focusLabel}</b>
+                  <b>{secondaryAsks.length} waiting</b>
+                  <b>{linkedArtifacts.length} attached</b>
                 </div>
-
-                <dl className="workspace-meta">
-                  <div>
-                    <dt>Updated</dt>
-                    <dd>{formatTimestamp(selectedThing.updatedAt)}</dd>
-                  </div>
-                  <div>
-                    <dt>Backed by</dt>
-                    <dd>{`.humanctl/tabs/${selectedThing.tabId}/things/${selectedThing.id}`}</dd>
-                  </div>
-                  <div>
-                    <dt>Attachments</dt>
-                    <dd>{selectedThing.attachments?.length ?? 0}</dd>
-                  </div>
-                </dl>
               </div>
 
-              {selectedThing.response?.type === "single-select" && selectedThing.needsResponse ? (
-                <section className="workspace-response">
-                  <div className="workspace-panel-header">
-                    <p className="workspace-label">Needs response</p>
-                    <span className="workspace-pill">human input</span>
-                  </div>
-                  <h2>{selectedThing.response.prompt}</h2>
-                  <form action={submitThingResponse} className="response-form">
-                    <input name="tabId" type="hidden" value={selectedThing.tabId} />
-                    <input name="thingId" type="hidden" value={selectedThing.id} />
+              <div className="interrupt-stage-body">
+                <section className="interrupt-brief">
+                  <p className="interrupt-overline">{selectedAsk.title}</p>
+                  <h1>{selectedAsk.prompt}</h1>
+                  <p className="interrupt-summary">{selectedAsk.summary}</p>
 
-                    <label className="response-note">
-                      Add context if needed
-                      <textarea name="note" placeholder="Optional note to future sessions." rows={3} />
-                    </label>
+                  {(selectedAsk.whyNow || selectedAsk.ifIgnored) && (
+                    <dl className="interrupt-brief-facts">
+                      {selectedAsk.whyNow ? (
+                        <div>
+                          <dt>Why now</dt>
+                          <dd>{selectedAsk.whyNow}</dd>
+                        </div>
+                      ) : null}
+                      {selectedAsk.ifIgnored ? (
+                        <div>
+                          <dt>If ignored</dt>
+                          <dd>{selectedAsk.ifIgnored}</dd>
+                        </div>
+                      ) : null}
+                    </dl>
+                  )}
+                </section>
 
-                    <div className="response-options">
-                      {selectedThing.response.options.map((option) => (
-                        <button className="response-option" key={option.id} name="choiceId" type="submit" value={option.id}>
-                          <div className="response-option-head">
-                            <strong>{option.label}</strong>
-                            {option.recommended ? <span className="workspace-pill">recommended</span> : null}
-                          </div>
-                          <span>{option.description}</span>
+                <section className="interrupt-responder">
+                  {selectedAsk.response.type === "single-select" && !selectedAsk.response.answer ? (
+                    <form action={submitAskResponse} className="interrupt-response-form">
+                      <input name="askId" type="hidden" value={selectedAsk.id} />
+
+                      <div className="interrupt-responder-head">
+                        <div>
+                          <p className="interrupt-section-label">Reply here</p>
+                          <h2>Choose a steer or write back.</h2>
+                        </div>
+                        <span className="interrupt-helper">Writes back into `.humanctl`.</span>
+                      </div>
+
+                      <div className="interrupt-option-list">
+                        {selectedAsk.response.options.map((option) => (
+                          <button className="interrupt-option-row" key={option.id} name="choiceId" type="submit" value={option.id}>
+                            <div className="interrupt-option-copy">
+                              <strong>{option.label}</strong>
+                              <span>{option.description}</span>
+                            </div>
+                            {option.recommended ? <span className="interrupt-recommendation">Recommended</span> : null}
+                          </button>
+                        ))}
+                      </div>
+
+                      <div className="interrupt-writeback">
+                        <label className="interrupt-writeback-field">
+                          <span>None of these / add context</span>
+                          <textarea
+                            name="note"
+                            placeholder="Still meh. Condense and concentrate attention harder. Let me expand detail only when I want it."
+                            rows={3}
+                          />
+                        </label>
+                        <button className="interrupt-note-submit" type="submit">
+                          Send note
                         </button>
-                      ))}
+                      </div>
+
+                      {linkedArtifacts.length > 0 ? (
+                        <div className="interrupt-context-strip">
+                          <span className="interrupt-context-label">Context</span>
+                          {linkedArtifacts.map((artifact) => (
+                            <Link
+                              className={`interrupt-context-link${selectedArtifact?.id === artifact.id ? " is-selected" : ""}`}
+                              href={`/app?ask=${selectedAsk.id}&artifact=${artifact.id}`}
+                              key={artifact.id}
+                            >
+                              {artifact.title}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
+                    </form>
+                  ) : null}
+
+                  {selectedAsk.response.answer ? (
+                    <div className="interrupt-answer-state">
+                      <div className="interrupt-responder-head">
+                        <div>
+                          <p className="interrupt-section-label">Latest answer</p>
+                          <h2>
+                            {chosenOption?.label ??
+                              (selectedAsk.response.answer.choiceId === CUSTOM_NOTE_CHOICE_ID
+                                ? "Detailed note"
+                                : selectedAsk.response.answer.choiceId)}
+                          </h2>
+                        </div>
+                        <span className="interrupt-helper">Answered {formatTimestamp(selectedAsk.response.answer.answeredAt)}</span>
+                      </div>
+                      {chosenOption?.description ? <p className="interrupt-answer-copy">{chosenOption.description}</p> : null}
+                      {selectedAsk.response.answer.note ? <p className="interrupt-answer-note">{selectedAsk.response.answer.note}</p> : null}
+
+                      {linkedArtifacts.length > 0 ? (
+                        <div className="interrupt-context-strip">
+                          <span className="interrupt-context-label">Context</span>
+                          {linkedArtifacts.map((artifact) => (
+                            <Link
+                              className={`interrupt-context-link${selectedArtifact?.id === artifact.id ? " is-selected" : ""}`}
+                              href={`/app?ask=${selectedAsk.id}&artifact=${artifact.id}`}
+                              key={artifact.id}
+                            >
+                              {artifact.title}
+                            </Link>
+                          ))}
+                        </div>
+                      ) : null}
                     </div>
-                  </form>
+                  ) : null}
                 </section>
-              ) : null}
+              </div>
+            </div>
+          </section>
 
-              {selectedThing.response?.answer ? (
-                <section className="workspace-response workspace-response-static">
-                  <div className="workspace-panel-header">
-                    <p className="workspace-label">Last answer</p>
-                    <span className="workspace-pill">{selectedThing.response.answer.actor}</span>
-                  </div>
-                  <h2>{chosenOption?.label ?? selectedThing.response.answer.choiceId}</h2>
-                  <p>{chosenOption?.description}</p>
-                  {selectedThing.response.answer.note ? <p className="response-note-copy">{selectedThing.response.answer.note}</p> : null}
-                  <p className="workspace-response-time">Answered {formatTimestamp(selectedThing.response.answer.answeredAt)}</p>
-                </section>
-              ) : null}
-
-              <section className="workspace-render">
-                <div className="workspace-panel-header">
-                  <p className="workspace-label">Rendered content</p>
-                  <span className="workspace-pill">{selectedThing.render.type}</span>
+          {selectedArtifact ? (
+            <section className="interrupt-artifact-shell">
+              <div className="interrupt-artifact-head">
+                <div>
+                  <p className="interrupt-section-label">What I’m showing you</p>
+                  <h2>{selectedArtifact.title}</h2>
+                  <p className="interrupt-artifact-summary">{selectedArtifact.summary}</p>
                 </div>
-                <div className="workspace-html" dangerouslySetInnerHTML={{ __html: selectedThing.content }} />
-              </section>
-            </>
-          ) : (
-            <section className="workspace-empty">
-              <p className="workspace-label">Empty</p>
-              <h1>No Things yet</h1>
-              <p>Create a Thing under `.humanctl/tabs/main/things` and reload.</p>
+                <div className="interrupt-artifact-tags">
+                  <span>{selectedArtifact.kind}</span>
+                  {(selectedArtifact.labels ?? []).map((label) => (
+                    <span key={label}>
+                      {label}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
+              <div className="stage-window interrupt-artifact-window">
+                <div className="window-chrome">
+                  <span />
+                  <span />
+                  <span />
+                </div>
+                <div className="interrupt-artifact-frame">
+                  <div className="workspace-html" dangerouslySetInnerHTML={{ __html: selectedArtifact.content }} />
+                </div>
+              </div>
             </section>
-          )}
+          ) : null}
+
+          <section className="interrupt-footnotes">
+            {secondaryAsks.length > 0 ? (
+              <details className="interrupt-detail-group">
+                <summary>Other asks can wait</summary>
+                <div className="interrupt-detail-links">
+                  {secondaryAsks.map((ask) => (
+                    <Link className="interrupt-detail-link" href={`/app?ask=${ask.id}`} key={ask.id}>
+                      {ask.title}
+                    </Link>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+            {watches.length > 0 ? (
+              <details className="interrupt-detail-group">
+                <summary>{watches.length} background watches</summary>
+                <div className="interrupt-detail-links">
+                  {watches.map((watch) => (
+                    <div className="interrupt-detail-link is-static" key={watch.id}>
+                      {watch.title}
+                    </div>
+                  ))}
+                </div>
+              </details>
+            ) : null}
+
+            {recentEvents.length > 0 ? (
+              <details className="interrupt-detail-group">
+                <summary>Recent activity</summary>
+                <ol className="interrupt-activity-list">
+                  {recentEvents.map((event) => (
+                    <li className="interrupt-activity-item" key={event.id}>
+                      <p>{eventLine(event, asksById, artifactsById, watchesById)}</p>
+                      <time>{formatTimestamp(event.ts)}</time>
+                    </li>
+                  ))}
+                </ol>
+              </details>
+            ) : null}
+          </section>
+        </>
+      ) : (
+        <section className="workspace-empty">
+          <p className="workspace-label">Empty</p>
+          <h1>No asks yet</h1>
+          <p>Create an ask under `.humanctl/asks/` and reload.</p>
         </section>
-
-        <aside className="workspace-sidepanel">
-          <section className="workspace-panel">
-            <div className="workspace-panel-header">
-              <p className="workspace-label">Inbox</p>
-              <span className="workspace-pill">{events.length}</span>
-            </div>
-            <ol className="activity-list">
-              {events.map((event) => (
-                <li className="activity-item" key={event.id}>
-                  <div className="activity-head">
-                    <span>{event.kind}</span>
-                    <time>{formatTimestamp(event.ts)}</time>
-                  </div>
-                  <p>{eventCopy(event, thingMap)}</p>
-                </li>
-              ))}
-            </ol>
-          </section>
-
-          <section className="workspace-panel">
-            <div className="workspace-panel-header">
-              <p className="workspace-label">State</p>
-              <span className="workspace-pill">file-backed</span>
-            </div>
-            <dl className="workspace-facts">
-              <div>
-                <dt>Workspace root</dt>
-                <dd>.humanctl/</dd>
-              </div>
-              <div>
-                <dt>Selected tab</dt>
-                <dd>{tab.id}</dd>
-              </div>
-              <div>
-                <dt>Answered items</dt>
-                <dd>{answeredCount}</dd>
-              </div>
-              <div>
-                <dt>Default route</dt>
-                <dd>/app</dd>
-              </div>
-            </dl>
-          </section>
-        </aside>
-      </section>
+      )}
     </main>
   );
 }

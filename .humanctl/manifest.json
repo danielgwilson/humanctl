@@ -1,7 +1,6 @@
 {
   "id": "workspace-humanctl",
   "name": "humanctl",
-  "version": 1,
-  "createdAt": "2026-03-14T20:44:17.412Z",
-  "defaultTabId": "main"
+  "version": 2,
+  "createdAt": "2026-03-14T20:44:17.412Z"
 }

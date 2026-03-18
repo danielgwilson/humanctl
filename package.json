@@ -17,7 +17,11 @@
     "start": "next start",
     "lint": "eslint .",
     "cli:init": "node ./bin/humanctl.js init .",
-    "cli:status": "node ./bin/humanctl.js status ."
+    "cli:status": "node ./bin/humanctl.js status .",
+    "native:generate": "cd native/macos && xcodegen generate",
+    "native:build": "cd native/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
+    "native:open": "pkill -x HumanctlNotch || true && open -a /Users/danielgwilson/local_git/humanctl/native/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
+    "native:run": "npm run native:build && npm run native:open"
   },
   "homepage": "https://humanctl.com",
   "repository": {

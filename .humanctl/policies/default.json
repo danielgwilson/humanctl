@@ -1,0 +1,10 @@
+{
+  "id": "default",
+  "allowedChannels": ["inbox", "desktop", "focus-app"],
+  "quietHours": {
+    "start": "22:00",
+    "end": "08:00"
+  },
+  "voiceAllowed": false,
+  "coalesceWindowSeconds": 300
+}

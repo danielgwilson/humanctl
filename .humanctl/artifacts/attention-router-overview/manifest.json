@@ -1,0 +1,15 @@
+{
+  "id": "attention-router-overview",
+  "kind": "dashboard",
+  "title": "Attention router overview",
+  "summary": "The agent should surface one bounded decision, collect one answer, and resume from durable local state.",
+  "status": "active",
+  "labels": ["mvp", "chief-of-staff", "queue"],
+  "pinned": true,
+  "render": {
+    "type": "html",
+    "entry": "content.html"
+  },
+  "createdAt": "2026-03-16T00:42:00.000Z",
+  "updatedAt": "2026-03-16T00:42:00.000Z"
+}

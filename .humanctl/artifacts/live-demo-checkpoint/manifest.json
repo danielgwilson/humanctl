@@ -1,0 +1,18 @@
+{
+  "id": "live-demo-checkpoint",
+  "kind": "dashboard",
+  "title": "Attention router checkpoint",
+  "summary": "CLI-published demo artifact for the first real humanctl loop.",
+  "status": "active",
+  "labels": [
+    "demo",
+    "chief-of-staff"
+  ],
+  "pinned": true,
+  "render": {
+    "type": "html",
+    "entry": "content.html"
+  },
+  "createdAt": "2026-03-16T04:41:43.919Z",
+  "updatedAt": "2026-03-16T04:41:43.919Z"
+}

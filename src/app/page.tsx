@@ -1,7 +1,9 @@
 "use client";
 
-import { useState } from "react";
+import Image from "next/image";
+import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/components/theme-toggle";
+import { xPosts, type XPost } from "@/data/x-posts";
 
 const escalationPanels = {
   nudge: {
@@ -61,7 +63,7 @@ const capabilities = [
     label: "Resume",
     title: "Resume without replaying the whole movie",
     body:
-      "The shared store is the truth. New sessions read durable files and events instead of replaying the last hour from chat crumbs."
+      "Keep the ask, the context, and the answer in one place so any later session can pick up instantly."
   }
 ];
 
@@ -82,13 +84,80 @@ const manifesto = [
     id: "03",
     title: "If the session dies, the state should not.",
     body:
-      "Files back the workspace. Events carry the steer. Live delivery is a convenience; durable state is the actual system."
+      "The context should survive restarts, delays, and handoffs so the work can keep moving."
   }
 ];
 
 export default function Home() {
   const [activePanel, setActivePanel] = useState<PanelName>("nudge");
   const panel = escalationPanels[activePanel];
+  const initialSupportingPosts = xPosts;
+  const visibleSupportCount = 4;
+  const [rotationState, setRotationState] = useState(() => ({
+    cycle: 0,
+    enteringSlot: null as number | null,
+    exitingSlot: null as number | null,
+    hidden: initialSupportingPosts.slice(visibleSupportCount),
+    visible: initialSupportingPosts.slice(0, visibleSupportCount)
+  }));
+  const [rotationPaused, setRotationPaused] = useState(false);
+  const [reduceMotion, setReduceMotion] = useState(false);
+
+  const supportingPosts = rotationState.visible;
+
+  useEffect(() => {
+    const mediaQuery = window.matchMedia("(prefers-reduced-motion: reduce)");
+    const sync = () => setReduceMotion(mediaQuery.matches);
+    sync();
+    mediaQuery.addEventListener("change", sync);
+    return () => mediaQuery.removeEventListener("change", sync);
+  }, []);
+
+  useEffect(() => {
+    if (reduceMotion || rotationPaused || rotationState.hidden.length === 0 || rotationState.visible.length === 0) {
+      return;
+    }
+
+    const slot = rotationState.cycle % rotationState.visible.length;
+    const exitTimer = window.setTimeout(() => {
+      setRotationState((current) => ({ ...current, exitingSlot: slot }));
+    }, 9000);
+
+    const swapTimer = window.setTimeout(() => {
+      setRotationState((current) => {
+        if (current.visible.length === 0 || current.hidden.length === 0) {
+          return { ...current, exitingSlot: null };
+        }
+
+        const currentSlot = current.cycle % current.visible.length;
+        const outgoing = current.visible[currentSlot];
+        const incoming = current.hidden[0];
+        if (!incoming || !outgoing) {
+          return { ...current, exitingSlot: null };
+        }
+
+        const nextVisible = [...current.visible];
+        nextVisible[currentSlot] = incoming;
+
+        return {
+          cycle: current.cycle + 1,
+          enteringSlot: currentSlot,
+          exitingSlot: null,
+          hidden: [...current.hidden.slice(1), outgoing],
+          visible: nextVisible
+        };
+      });
+
+      window.setTimeout(() => {
+        setRotationState((current) => ({ ...current, enteringSlot: null }));
+      }, 260);
+    }, 9200);
+
+    return () => {
+      window.clearTimeout(exitTimer);
+      window.clearTimeout(swapTimer);
+    };
+  }, [reduceMotion, rotationPaused, rotationState.cycle, rotationState.hidden.length, rotationState.visible.length]);
 
   return (
     <main className="page-shell">
@@ -131,7 +200,7 @@ export default function Home() {
           </div>
           <div className="hero-actions">
             <a className="button button-primary" href="/app">
-              Open prototype
+              Open app
             </a>
             <a className="button button-secondary" href="#model">
               Read the spec
@@ -208,6 +277,43 @@ export default function Home() {
         </div>
       </section>
 
+      <section className="tweet-proof" aria-labelledby="tweet-proof-title">
+        <div className="tweet-proof-copy">
+          <p className="section-label">The Timeline Agrees</p>
+          <h2 id="tweet-proof-title">X keeps independently rediscovering the same bottleneck.</h2>
+          <p>
+            Founders, operators, and agent people keep arriving at the same complaint: the hard part is not model
+            capability. It is getting humans to decide, approve, and keep up.
+          </p>
+        </div>
+
+        <div
+          className="tweet-proof-stack"
+          onBlurCapture={(event) => {
+            if (!event.currentTarget.contains(event.relatedTarget as Node | null)) {
+              setRotationPaused(false);
+            }
+          }}
+          onFocusCapture={() => setRotationPaused(true)}
+          onMouseEnter={() => setRotationPaused(true)}
+          onMouseLeave={() => setRotationPaused(false)}
+        >
+          {supportingPosts.map((post, index) => (
+            <TweetProofCard
+              key={`${post.href}-${index}`}
+              phase={
+                rotationState.exitingSlot === index
+                  ? "is-exiting"
+                  : rotationState.enteringSlot === index
+                    ? "is-entering"
+                    : undefined
+              }
+              post={post}
+            />
+          ))}
+        </div>
+      </section>
+
       <section className="proof-strip">
         {proofPoints.map(([label, value]) => (
           <div className="proof-item" key={label}>
@@ -240,8 +346,8 @@ export default function Home() {
             layer for getting one useful response out of a busy person and getting back to work.
           </p>
           <p>
-            Agents decide what to show, how hard to interrupt, and what answer shape they need. The backing files keep
-            the truth on disk. The event queue makes it resumable across sessions, automations, and delays.
+            Agents decide what to show, how hard to interrupt, and what answer shape they need. Humans get one clear
+            decision, the right context, and a faster path to unblocking the run.
           </p>
         </div>
       </section>
@@ -304,5 +410,45 @@ export default function Home() {
         </div>
       </section>
     </main>
+  );
+}
+
+function TweetProofCard({
+  phase,
+  post
+}: {
+  phase?: "is-entering" | "is-exiting";
+  post: XPost;
+}) {
+  return (
+    <a className={`tweet-shell${phase ? ` ${phase}` : ""}`} href={post.href} target="_blank" rel="noreferrer">
+      <div className="tweet-shell-head">
+        <div className="tweet-author">
+          <Image alt="" className="tweet-avatar" height={42} src={post.avatarSrc} unoptimized width={42} />
+          <div className="tweet-author-meta">
+            <strong>{post.author}</strong>
+            <span>{post.handle}</span>
+          </div>
+        </div>
+        <span className="tweet-brand">X</span>
+      </div>
+
+      <p className="tweet-copy">{post.excerpt}</p>
+
+      <div className="tweet-shell-foot">
+        <span>{post.date}</span>
+        <div className="tweet-metrics" aria-label="Engagement">
+          <span>
+            <b>{post.replies}</b> replies
+          </span>
+          <span>
+            <b>{post.reposts}</b> reposts
+          </span>
+          <span>
+            <b>{post.likes}</b> likes
+          </span>
+        </div>
+      </div>
+    </a>
   );
 }

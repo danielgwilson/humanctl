@@ -2,25 +2,24 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { answerThing } from "@/lib/humanctl";
+import { answerAsk } from "@/lib/humanctl";
 
-export async function submitThingResponse(formData: FormData) {
-  const tabId = String(formData.get("tabId") ?? "main");
-  const thingId = String(formData.get("thingId") ?? "");
-  const choiceId = String(formData.get("choiceId") ?? "");
+export async function submitAskResponse(formData: FormData) {
+  const askId = String(formData.get("askId") ?? "");
+  const choiceValue = formData.get("choiceId");
+  const choiceId = typeof choiceValue === "string" ? choiceValue : "";
   const note = String(formData.get("note") ?? "");
 
-  if (!thingId || !choiceId) {
+  if (!askId || (!choiceId && !note.trim())) {
     return;
   }
 
-  await answerThing({
-    tabId,
-    thingId,
+  await answerAsk({
+    askId,
     choiceId,
     note
   });
 
   revalidatePath("/app");
-  redirect(`/app?thing=${thingId}`);
+  redirect(`/app?ask=${askId}`);
 }

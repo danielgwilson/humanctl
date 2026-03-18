@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Attention Router Eval</title>
+    <style>
+      :root {
+        color-scheme: dark;
+        font-family: "IBM Plex Sans", "Inter", system-ui, sans-serif;
+        --bg: #0a0a0c;
+        --panel: rgba(255, 255, 255, 0.06);
+        --line: rgba(255, 255, 255, 0.1);
+        --ink: rgba(255, 255, 255, 0.96);
+        --muted: rgba(255, 255, 255, 0.66);
+        --accent: rgba(255, 255, 255, 0.92);
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        min-height: 100vh;
+        padding: 28px;
+        background:
+          radial-gradient(circle at top right, rgba(255, 255, 255, 0.08), transparent 28rem),
+          linear-gradient(180deg, #080808 0%, #0d0d10 45%, #121216 100%);
+        color: var(--ink);
+      }
+
+      .frame {
+        display: grid;
+        gap: 20px;
+      }
+
+      .header {
+        display: flex;
+        justify-content: space-between;
+        gap: 24px;
+        align-items: end;
+      }
+
+      .eyebrow {
+        display: inline-flex;
+        padding: 8px 14px;
+        border: 1px solid var(--line);
+        border-radius: 999px;
+        color: var(--muted);
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        font-size: 12px;
+      }
+
+      h1 {
+        margin: 14px 0 10px;
+        font-size: clamp(42px, 7vw, 74px);
+        line-height: 0.96;
+        letter-spacing: -0.07em;
+      }
+
+      p {
+        margin: 0;
+        max-width: 54ch;
+        color: var(--muted);
+        line-height: 1.6;
+        font-size: 18px;
+      }
+
+      .stats {
+        display: grid;
+        grid-template-columns: repeat(3, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .stat,
+      .panel {
+        border: 1px solid var(--line);
+        background: var(--panel);
+        border-radius: 22px;
+        padding: 18px;
+        backdrop-filter: blur(12px);
+      }
+
+      .stat strong {
+        display: block;
+        font-size: 34px;
+        letter-spacing: -0.05em;
+      }
+
+      .stat span,
+      .panel small {
+        color: var(--muted);
+      }
+
+      .panels {
+        display: grid;
+        grid-template-columns: 1.2fr 0.8fr;
+        gap: 16px;
+      }
+
+      .panel h2 {
+        margin: 0 0 14px;
+        font-size: 14px;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      ul {
+        margin: 0;
+        padding-left: 20px;
+        display: grid;
+        gap: 10px;
+        color: var(--muted);
+      }
+
+      li strong {
+        color: var(--ink);
+      }
+
+      .strip {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+      }
+
+      .chip {
+        padding: 10px 14px;
+        border-radius: 999px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.03);
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      @media (max-width: 820px) {
+        body {
+          padding: 20px;
+        }
+
+        .header,
+        .panels,
+        .stats {
+          grid-template-columns: 1fr;
+          display: grid;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="frame">
+      <section class="header">
+        <div>
+          <span class="eyebrow">chief-of-staff demo artifact</span>
+          <h1>Attention router checkpoint.</h1>
+          <p>
+            This is the kind of artifact an agent should be able to publish into
+            <strong>humanctl</strong> before asking for a decision. The ask should then point at this
+            exact surface instead of restating the whole thread.
+          </p>
+        </div>
+        <div class="strip">
+          <span class="chip">local-first</span>
+          <span class="chip">artifact-backed asks</span>
+          <span class="chip">interrupt policy next</span>
+        </div>
+      </section>
+
+      <section class="stats">
+        <article class="stat">
+          <span>Open asks</span>
+          <strong>3</strong>
+        </article>
+        <article class="stat">
+          <span>Linked artifacts</span>
+          <strong>4</strong>
+        </article>
+        <article class="stat">
+          <span>Blocked decisions</span>
+          <strong>1</strong>
+        </article>
+      </section>
+
+      <section class="panels">
+        <article class="panel">
+          <h2>What this proves</h2>
+          <ul>
+            <li><strong>Agents can publish rich context</strong> without touching the app manually.</li>
+            <li><strong>The ask can stay tiny</strong> because the supporting artifact is already attached.</li>
+            <li><strong>The human sees one focused decision</strong> instead of a wall of reconstruction.</li>
+          </ul>
+        </article>
+        <article class="panel">
+          <h2>Decision wanted</h2>
+          <ul>
+            <li>Is this artifact-forward loop the right wedge for the MVP?</li>
+            <li>Should the next build step be notifications or richer artifact actions?</li>
+          </ul>
+        </article>
+      </section>
+    </main>
+  </body>
+</html>

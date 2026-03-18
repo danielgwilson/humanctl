@@ -1,0 +1,15 @@
+{
+  "id": "working-canvas",
+  "kind": "comparison",
+  "title": "Working canvas",
+  "summary": "Keep HTML dashboards, previews, and comparisons organized, pinnable, and easy to reopen.",
+  "status": "active",
+  "labels": ["canvas", "artifacts", "html"],
+  "pinned": true,
+  "render": {
+    "type": "html",
+    "entry": "content.html"
+  },
+  "createdAt": "2026-03-16T00:32:00.000Z",
+  "updatedAt": "2026-03-16T00:32:00.000Z"
+}

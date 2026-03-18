@@ -1,0 +1,43 @@
+{
+  "id": "daniel-loop-feedback",
+  "title": "What do you think of this humanctl loop?",
+  "summary": "Published via CLI and linked to a fresh artifact so the app can ask for feedback inside humanctl itself.",
+  "status": "answered",
+  "escalation": "ask",
+  "prompt": "What do you think of this first real artifact-plus-ask loop?",
+  "whyNow": "This is the first point where humanctl can show an artifact and capture your answer without hand-editing the workspace.",
+  "ifIgnored": "We keep building from assumptions instead of validating the actual interrupt-and-response loop.",
+  "artifactIds": [
+    "live-demo-checkpoint"
+  ],
+  "response": {
+    "type": "single-select",
+    "options": [
+      {
+        "id": "ship",
+        "label": "Yes, this wedge is right",
+        "description": "Keep pushing asks, artifacts, and notification policy on top of this loop.",
+        "recommended": true
+      },
+      {
+        "id": "revise",
+        "label": "Tighten the surface first",
+        "description": "Polish the ask and artifact experience before adding more channels.",
+        "recommended": false
+      },
+      {
+        "id": "pivot",
+        "label": "Change the shape",
+        "description": "The loop is close, but the interaction model needs a sharper rethink.",
+        "recommended": false
+      }
+    ],
+    "answer": {
+      "choiceId": "revise",
+      "answeredAt": "2026-03-16T06:52:25.188Z",
+      "actor": "human"
+    }
+  },
+  "createdAt": "2026-03-16T04:41:43.920Z",
+  "updatedAt": "2026-03-16T06:52:25.188Z"
+}

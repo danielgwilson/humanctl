@@ -1,0 +1,40 @@
+{
+  "artifactIds" : [
+    "attention-router-overview",
+    "working-canvas"
+  ],
+  "createdAt" : "2026-03-16T00:44:00.000Z",
+  "escalation" : "ask",
+  "id" : "chief-of-staff-loop",
+  "ifIgnored" : "The app will keep mixing queue, canvas, and interrupt behavior without a clear priority.",
+  "prompt" : "What should the first implementation optimize for?",
+  "response" : {
+    "options" : [
+      {
+        "description" : "Ship the review queue, focus view, structured answer flow, and resume semantics first.",
+        "id" : "queue-focus",
+        "label" : "Queue + focus",
+        "recommended" : true
+      },
+      {
+        "description" : "Start by checking activity and busy state before interrupting, even if the queue is still basic.",
+        "id" : "presence-routing",
+        "label" : "Presence routing"
+      },
+      {
+        "description" : "Start by making HTML dashboards, comparisons, and reports durable and findable before optimizing interruption.",
+        "id" : "artifact-memory",
+        "label" : "Artifact memory"
+      }
+    ],
+    "type" : "single-select"
+  },
+  "status" : "open",
+  "summary" : "Decide what the first implementation should optimize for before adding stronger channels or presence inputs.",
+  "title" : "Lock the chief-of-staff MVP loop",
+  "updatedAt" : "2026-03-18T03:36:00Z",
+  "watchIds" : [
+    "presence-aware-routing"
+  ],
+  "whyNow" : "The next refactor will either harden the unblock loop or drift into nicer artifact browsing without better interrupt-and-resume behavior."
+}
