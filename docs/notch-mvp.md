@@ -1,5 +1,15 @@
 # `humanctl` Notch MVP
 
+This doc captures the early notch direction.
+
+The more current naming and interaction model now lives in [docs/notch-next-spec.md](./notch-next-spec.md):
+
+- `Ambient`
+- `Peek`
+- `Workspace`
+
+When these docs conflict, prefer `notch-next-spec.md`.
+
 ## Purpose
 
 If `humanctl` explores a Mac notch surface, it should do one job well:
@@ -24,11 +34,11 @@ The split should be:
   - awareness
   - queue state
   - urgency
-- expanded interrupt sheet
+- peek interrupt sheet
   - one bounded decision
   - one recommendation
   - quick response controls
-- full app
+- workspace
   - drill-down
   - artifacts
   - canvas
@@ -230,7 +240,7 @@ Possible later behavior:
 3. ambient collapsed state
 4. one interrupt sheet
 5. quick actions plus freeform reply
-6. `Open context` handoff into the full app
+6. `Open context` handoff into workspace
 
 ## What not to build first
 

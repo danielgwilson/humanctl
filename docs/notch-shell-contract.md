@@ -4,6 +4,13 @@ This is the current working contract for the native macOS notch spike.
 
 It exists so we can preserve the shell behavior that finally worked before layering content back in.
 
+The shell baseline here maps to the newer product vocabulary like this:
+
+- current `compact` shell = future `Ambient` shell baseline
+- current `expanded` shell = future `Peek` shell baseline
+
+The deeper `Workspace` surface is outside this shell contract.
+
 ## Scope
 
 This spike is only proving the notch shell UX.
