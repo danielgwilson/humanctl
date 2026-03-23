@@ -9,19 +9,21 @@ struct HumanctlNotchApp: App {
         MenuBarExtra {
             Button("Toggle Notch") {
                 performMenuAction {
-                    runtime.toggleNotch()
+                    runtime.togglePeek()
                 }
             }
 
             Divider()
 
-            Button("Quit HumanctlNotch", role: .destructive) {
+            Button("Quit humanctl", role: .destructive) {
                 NSApplication.shared.terminate(nil)
             }
             .keyboardShortcut("q", modifiers: .command)
         } label: {
-            Text(runtime.menuBarTitle)
-                .font(.system(size: 12, weight: .semibold, design: .monospaced))
+            Image(systemName: "circle.grid.2x2.fill")
+                .symbolRenderingMode(.monochrome)
+                .font(.system(size: 12, weight: .semibold))
+                .accessibilityLabel(Text(runtime.menuBarTitle))
         }
 
         Settings {

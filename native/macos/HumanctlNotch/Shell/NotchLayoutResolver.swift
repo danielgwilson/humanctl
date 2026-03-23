@@ -1,12 +1,6 @@
 import AppKit
 
 struct NotchLayoutResolver {
-    private enum Metrics {
-        static let expandedMinimumWidth: CGFloat = 360
-        static let expandedMaximumWidth: CGFloat = 440
-        static let expandedHeight: CGFloat = 152
-    }
-
     func frame(for phase: NotchShellPhase, on screen: NSScreen?) -> NSRect? {
         guard let screen else {
             return nil
@@ -19,18 +13,37 @@ struct NotchLayoutResolver {
             return nil
 
         case .ambient:
-            return notchFrame
+            let width = min(
+                NotchShellMetrics.ambientMaximumWidth,
+                max(NotchShellMetrics.ambientMinimumWidth, notchFrame.width + NotchShellMetrics.ambientTotalShoulderWidth)
+            )
+            let originX = screen.notchCenterX - (width / 2)
+            let height = notchFrame.height + NotchShellMetrics.ambientInteractionChinHeight
+            let originY = screen.frame.maxY - height
+            return NSRect(x: originX, y: originY, width: width, height: height)
 
         case .expanded:
-            let width = min(
-                Metrics.expandedMaximumWidth,
-                max(Metrics.expandedMinimumWidth, notchFrame.width + 132)
-            )
-            let height = Metrics.expandedHeight
+            let width = NotchShellMetrics.expandedVisibleWidth
+            let height = NotchShellMetrics.expandedHostHeight
             let originX = screen.notchCenterX - (width / 2)
             let originY = screen.frame.maxY - height
 
             return NSRect(x: originX, y: originY, width: width, height: height)
+        }
+    }
+
+    func interactionRect(for phase: NotchShellPhase, on screen: NSScreen?) -> NSRect? {
+        guard let frame = frame(for: phase, on: screen) else {
+            return nil
+        }
+
+        switch phase {
+        case .hidden:
+            return nil
+        case .ambient:
+            return frame
+        case .expanded:
+            return frame.insetBy(dx: -10, dy: -6)
         }
     }
 }

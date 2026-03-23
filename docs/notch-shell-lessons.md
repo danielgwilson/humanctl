@@ -20,6 +20,8 @@ The correct model is:
 - one expanded rendering path
 - payload inserted into that shell
 
+For the stricter recovery protocol after the shape/layout regressions, see [docs/notch-recovery-protocol.md](./notch-recovery-protocol.md).
+
 ## Rules We Should Not Violate Again
 
 ### 1. Do not guess notch geometry
@@ -154,6 +156,29 @@ until the shell itself feels correct.
 
 The shell UX comes first.
 
+### 11. Do not use geometry to solve layout problems
+
+If the real issue is:
+
+- shoulders too narrow
+- content too low
+- badge tucked under the notch
+- open state too cramped
+
+then the first levers are:
+
+- width
+- insets
+- spacing
+- lane sizing
+- optical offset
+
+not:
+
+- new bezier experiments
+- custom shoulder flare
+- silhouette deformation in native
+
 ## Practical Debugging Notes
 
 ### Stale process gotcha
@@ -195,6 +220,7 @@ What we are building now:
 - one expanded state
 - one fixed sample payload only
 - menu bar extra as the only control surface outside the shell
+- the boring closed-notch silhouette as the baseline shape language
 
 What we are not building yet:
 
@@ -230,6 +256,6 @@ Right now the contract is:
 - no shadows
 - no text or controls rendered inside the shell yet
 - one fixed sample payload exists only to keep the shell visible
-- the menu bar extra is always the escape hatch for `Toggle Notch` and `Quit HumanctlNotch`
+- the menu bar extra is always the escape hatch for `Toggle Notch` and `Quit humanctl`
 
 If we break any of those while adding polish later, we should treat that as regression, not progress.

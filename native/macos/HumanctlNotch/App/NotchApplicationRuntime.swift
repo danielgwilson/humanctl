@@ -1,4 +1,5 @@
 import Combine
+import AppKit
 import Foundation
 
 @MainActor
@@ -7,8 +8,13 @@ final class NotchApplicationRuntime: ObservableObject {
 
     let shellStore: NotchShellStore
     let panelController: NotchHostPanelController
-    @Published private(set) var menuBarTitle = "HCTL"
+    @Published private(set) var menuBarTitle = "humanctl"
 
+    private lazy var hotKeyManager = HumanctlHotKeyManager { [weak self] in
+        Task { @MainActor [weak self] in
+            self?.togglePeekFromHotKey()
+        }
+    }
     private var cancellables = Set<AnyCancellable>()
     private var isStarted = false
 
@@ -30,6 +36,7 @@ final class NotchApplicationRuntime: ObservableObject {
         isStarted = true
         shellStore.start()
         panelController.start()
+        hotKeyManager.registerDefaultHotKey()
     }
 
     func stop() {
@@ -38,11 +45,20 @@ final class NotchApplicationRuntime: ObservableObject {
         }
 
         isStarted = false
+        hotKeyManager.unregister()
         panelController.stop()
     }
 
     func toggleNotch() {
-        shellStore.togglePinnedOpenFromStatusItem()
+        togglePeek()
+    }
+
+    func togglePeek() {
+        shellStore.togglePinnedOpen(reason: .statusItem)
+    }
+
+    func togglePeekFromHotKey() {
+        shellStore.togglePinnedOpen(reason: .hotKey)
     }
 
     private func bind() {
@@ -54,10 +70,9 @@ final class NotchApplicationRuntime: ObservableObject {
                 }
 
                 if let ambient = snapshot.ambientModel {
-                    let marker = snapshot.state.phase == .expanded ? " •" : ""
-                    self.menuBarTitle = "HCTL \(ambient.queueLabel)\(marker)"
+                    self.menuBarTitle = "humanctl, \(ambient.queueCountLabel) waiting from \(ambient.sourceLabel)"
                 } else {
-                    self.menuBarTitle = "HCTL"
+                    self.menuBarTitle = "humanctl"
                 }
             }
             .store(in: &cancellables)

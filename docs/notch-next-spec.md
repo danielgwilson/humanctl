@@ -5,6 +5,8 @@ This doc captures the next intentional layer above the current shell-only baseli
 The baseline shell contract still lives in [docs/notch-shell-contract.md](./notch-shell-contract.md).
 This doc describes what should come next once we start adding meaning back into the shell.
 
+For recovery/iteration discipline on the native notch work, also see [docs/notch-recovery-protocol.md](./notch-recovery-protocol.md).
+
 ## State Model
 
 Use state names based on **job**, not size.
@@ -87,6 +89,12 @@ Rules:
 - no metadata strings
 - no scrolling
 - no rotating feed behavior just because multiple harnesses exist
+- visually dead center is fine, but the whole visible Ambient object should still open `Peek`
+- keep the visible Ambient shell at real notch height
+- if extra click tolerance is needed, use an invisible interaction chin below the shell rather than drawing extra black into the app UI
+- the center gutter must be measured from real notch geometry, not approximated with a fixed spacer
+- left and right shoulder lanes should be explicit layout regions, not one `HStack` with a vibes-based middle gap
+- `Ambient` should stay on the boring closed-notch silhouette with small top rounding; do not freestyle new shoulder curves in native
 
 If the top-of-queue owner changes, the Ambient source may change.
 It should not cycle continuously for decoration.
@@ -110,6 +118,9 @@ For the first meaningful `Peek`, keep it narrow:
 - one `Open workspace` / `Open context` action
 
 Do not make `Peek` a dashboard.
+
+`Peek` can use the reference notch shape.
+Do not force `Ambient` and `Peek` through the same silhouette primitive just because both are black.
 
 ## Menu Bar Role
 
@@ -209,6 +220,42 @@ Ambient is for:
 - urgency
 
 Nothing more unless the added signal clearly pays for itself.
+
+## Prototyping Split
+
+Use a two-track loop:
+
+- web/HTML simulator for fast information-design and layout iteration
+- native macOS shell for platform-truth behavior
+
+Prototype in web when deciding:
+
+- Ambient shoulder content
+- Peek composition
+- icon and badge hierarchy
+- copy density
+- multiple variants side by side
+
+Prototype in native when deciding:
+
+- notch attachment
+- click-away behavior
+- menu bar integration
+- hotkey behavior
+- fullscreen, Spaces, and focus interactions
+
+This keeps iteration fast without forcing every content experiment through AppKit.
+
+## Reference Learnings Worth Keeping
+
+The `boring.notch` repo is useful mainly for four things:
+
+- animatable notch radii between closed and open states
+- one shared interactive spring instead of scattered animation values
+- a deliberate roomy open size instead of an overly tight open sheet
+- a rectangular interaction slab plus transparent chin rather than silhouette-only hit testing
+
+Those are architecture-level lessons, not just visual inspiration.
 
 ## Implementation Direction
 

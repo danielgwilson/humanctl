@@ -21,15 +21,15 @@ final class NotchHostPanel: NSPanel {
         isMovable = false
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
-        becomesKeyOnlyIfNeeded = true
         level = .mainMenu + 2
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
+        sharingType = .none
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
     }
 
     override var canBecomeKey: Bool {
-        true
+        false
     }
 
     override var canBecomeMain: Bool {

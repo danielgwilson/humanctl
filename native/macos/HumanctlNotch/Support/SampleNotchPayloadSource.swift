@@ -12,7 +12,18 @@ final class SampleNotchPayloadSource: ObservableObject {
 
         activePayload = NotchInterruptPayload(
             id: "shell-baseline",
-            queueCount: 2
+            source: SourceIdentity(
+                harness: .codex,
+                host: .terminal,
+                activeThreadCount: 3
+            ),
+            queueCount: 2,
+            urgency: .blocked,
+            title: "Ship the launch copy revision?",
+            summary: "The homepage draft is ready, but the worker is blocked on your taste call before publishing.",
+            recommendation: "Ship tighter copy",
+            alternate: "Keep the safer line",
+            workspaceTitle: "Open source thread"
         )
     }
 }

@@ -29,20 +29,12 @@ final class NotchShellStore: ObservableObject {
         rebuildSnapshot()
     }
 
-    func handleAmbientHover(_ isHovering: Bool) {
-        stateMachine.send(.hoverChanged(region: .ambient, isHovering: isHovering))
-    }
-
-    func handleExpandedHover(_ isHovering: Bool) {
-        stateMachine.send(.hoverChanged(region: .expanded, isHovering: isHovering))
-    }
-
-    func togglePinnedOpenFromStatusItem() {
-        stateMachine.send(.togglePinnedOpen)
-    }
-
     func openFromAction() {
         stateMachine.send(.requestOpen(.action))
+    }
+
+    func togglePinnedOpen(reason: NotchOpenReason = .statusItem) {
+        stateMachine.send(.togglePinnedOpen(reason))
     }
 
     func dismissExpanded(_ reason: NotchCloseReason = .action) {

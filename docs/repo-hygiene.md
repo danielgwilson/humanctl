@@ -46,6 +46,7 @@ Use:
 
 - `docs/` for durable public documentation
 - `research/` for durable public research packs
+- `research/notch-baselines/` for curated before/after notch captures when we intentionally promote them as a visual baseline
 - `.notes/` for local scratch notes that should stay private and untracked
 - `output/` for generated captures and debugging artifacts that should stay untracked unless deliberately promoted
 

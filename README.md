@@ -49,13 +49,14 @@ The main design docs are now:
 - [docs/how-we-got-here.md](./docs/how-we-got-here.md)
 - [docs/notch-mvp.md](./docs/notch-mvp.md)
 - [docs/notch-next-spec.md](./docs/notch-next-spec.md)
+- [docs/notch-recovery-protocol.md](./docs/notch-recovery-protocol.md)
 - [docs/notch-shell-contract.md](./docs/notch-shell-contract.md)
 - [docs/notch-shell-lessons.md](./docs/notch-shell-lessons.md)
 - [docs/source-identity.md](./docs/source-identity.md)
 - [docs/repo-hygiene.md](./docs/repo-hygiene.md)
 - [docs/mvp-plan.md](./docs/mvp-plan.md)
 
-Together they describe the local product split, runtime components, object model, interrupt policy, the deeper control-layer framing, how the product definition evolved, the narrow notch concept, the next notch interaction spec, the current shell contract, source identity for harnesses vs hosts, durable artifact/canvas model, repo hygiene rules, and the current MVP execution order.
+Together they describe the local product split, runtime components, object model, interrupt policy, the deeper control-layer framing, how the product definition evolved, the narrow notch concept, the next notch interaction spec, the recovery protocol for native notch iteration, the current shell contract, source identity for harnesses vs hosts, durable artifact/canvas model, repo hygiene rules, and the current MVP execution order.
 
 ## Copy guardrail
 
@@ -63,6 +64,13 @@ On user-facing pages, do not leak builder notes into the copy.
 
 - Do not narrate implementation details like "manually curated," "frozen into local data," "backed by files," or similar unless that detail is directly valuable to the user.
 - Homepage and marketing copy should sell the outcome, not annotate how the page was assembled.
+
+## Brand note
+
+Use `humanctl` in lowercase for user-facing brand copy.
+
+- `humanctl`, not `Humanctl`
+- code identifiers, file names, and build target names may still use `Humanctl...` where needed for implementation
 
 ## V1 scope
 
@@ -129,7 +137,7 @@ Important:
 
 - this is currently a shell-UX spike, not full `humanctl`
 - the `HCTL` menu bar extra is the control path
-- clicking the menu bar extra opens the standard menu, including `Toggle Notch` and `Quit HumanctlNotch`
+- clicking the menu bar extra opens the standard menu, including `Toggle Notch` and `Quit humanctl`
 - the next product layer is `Ambient / Peek / Workspace`, documented in [docs/notch-next-spec.md](./docs/notch-next-spec.md)
 - the notch-shell lessons and failure modes are documented in [docs/notch-shell-lessons.md](./docs/notch-shell-lessons.md)
 - the current shell contract is documented in [docs/notch-shell-contract.md](./docs/notch-shell-contract.md)

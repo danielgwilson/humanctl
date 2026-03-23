@@ -14,6 +14,7 @@ final class NotchHostPanelController {
     private var globalClickMonitor: Any?
     private var localEventMonitor: Any?
     private var observers: [NSObjectProtocol] = []
+    private var currentInteractionRect: NSRect?
 
     init(store: NotchShellStore) {
         self.store = store
@@ -92,6 +93,7 @@ final class NotchHostPanelController {
         let screen = targetScreen()
         guard let frame = layoutResolver.frame(for: snapshot.state.phase, on: screen) else {
             removeInteractionMonitors()
+            currentInteractionRect = nil
             panel.orderOut(nil)
             return
         }
@@ -104,21 +106,22 @@ final class NotchHostPanelController {
             removeInteractionMonitors()
         }
 
+        currentInteractionRect = layoutResolver.interactionRect(for: snapshot.state.phase, on: screen)
         present(frame: frame)
     }
 
     private func present(frame: NSRect) {
         if !panel.isVisible {
-            panel.alphaValue = 0
             panel.setFrame(frame, display: true)
-            panel.orderFrontRegardless()
+            panel.orderFront(nil)
+            panel.alphaValue = 1
+            return
         }
 
         NSAnimationContext.runAnimationGroup { context in
-            context.duration = 0.16
+            context.duration = NotchShellMetrics.panelAnimationDuration
             context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             panel.animator().setFrame(frame, display: true)
-            panel.animator().alphaValue = 1
         }
     }
 
@@ -178,7 +181,8 @@ final class NotchHostPanelController {
         }
 
         let pointerLocation = NSEvent.mouseLocation
-        guard !panel.frame.contains(pointerLocation) else {
+        let interactionRect = currentInteractionRect ?? panel.frame
+        guard !interactionRect.contains(pointerLocation) else {
             return
         }
 

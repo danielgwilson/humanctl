@@ -52,7 +52,7 @@ Current rule:
 - the menu bar extra is always visible as the primary control surface
 - clicking it opens a standard menu
 - the menu contains `Toggle Notch`
-- the menu contains `Quit HumanctlNotch`
+- the menu contains `Quit humanctl`
 
 If quitting the app becomes awkward again, treat that as a serious regression.
 
@@ -75,6 +75,13 @@ For the current spike:
 - no banner styling
 - no mini-dashboard content
 
+Shape ownership is explicit:
+
+- `Ambient` should stay on the boring closed-notch silhouette with small top rounding
+- `Peek` can use the reference notch shape
+
+Do not keep "one shared shell shape" alive if it causes `Ambient` and `Peek` to fight each other visually.
+
 If a future iteration needs richer content, it should be layered in only after these shell rules continue to hold.
 
 ## Success Checklist
@@ -85,7 +92,7 @@ The spike is behaving correctly if:
 2. Hover and click behavior feel bounded and predictable.
 3. Expanded state feels like the same object opening.
 4. The menu bar extra is visible and usable.
-5. `Quit HumanctlNotch` is always available.
+5. `Quit humanctl` is always available.
 6. Relaunching does not leave stale duplicate processes behind.
 
 ## Implementation Map
