@@ -189,20 +189,33 @@ open /Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch.xcodepro
 
 ## Current CLI
 
-The CLI is intentionally tiny right now:
+The CLI now covers the basic local object model:
 
 - `humanctl init [dir]`
-- `humanctl status [dir]`
+- `humanctl status [dir] [--json]`
+- `humanctl ask create|get|list|update|answer|delete`
+- `humanctl artifact put|get|list|delete`
+- `humanctl watch create|get|list|update|delete`
+- `humanctl app [dir] [--port 3000] [--open]`
 - `humanctl serve [dir] --port 4173`
 
-`init` creates a starter `.humanctl/` workspace. `status` summarizes what is there. `serve` remains available for simple static previews, but the main app now runs on Next.js.
+`init` creates a starter `.humanctl/` workspace. `status` summarizes what is there. The object commands write durable asks, artifacts, watches, and events into the local workspace. `serve` remains available for simple static previews, but the main app now runs on Next.js.
+
+Prefer `--json` when another agent or script is consuming the result.
+
+## Agent Skill
+
+This repo also ships a repo-local skill at `.agents/skills/humanctl/`.
+
+- Use `$humanctl` when a session needs to create, read, update, answer, or delete asks, artifacts, or watches in the shared local workspace.
+- The skill wraps the CLI instead of encouraging direct edits to `.humanctl/`.
 
 ## Next milestones
 
-1. Migrate the local schema from generic `Thing`s to `ask` / `artifact` / `watch`.
-2. Refactor the current `/app` prototype into review queue + focus + working canvas.
-3. Add `humanctl ask create` and `humanctl artifact put`.
-4. Add local notification routing under policy via `humanctld`.
+1. Add `doctor`, `policy`, and event-tailing surfaces.
+2. Wire the native notch client to real local asks and artifact handoff instead of sample payloads.
+3. Add local notification routing under policy via `humanctld`.
+4. Harden the app/runtime loop around one real end-to-end agent unblock flow.
 
 ## Product line
 

@@ -1,0 +1,7 @@
+interface:
+  display_name: "humanctl"
+  short_description: "CRUD the local humanctl workspace via the CLI."
+  default_prompt: "Use $humanctl to inspect or update the local humanctl workspace with semantic CLI commands."
+
+policy:
+  allow_implicit_invocation: true

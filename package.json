@@ -6,6 +6,7 @@
     "humanctl": "bin/humanctl.js"
   },
   "files": [
+    ".agents/",
     "bin/",
     "docs/",
     "README.md",
