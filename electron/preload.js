@@ -12,6 +12,8 @@ contextBridge.exposeInMainWorld('humanctl', {
   readSession: (arg) => ipcRenderer.invoke('sessions:read', arg),
   aggregateSkills: (opts) => ipcRenderer.invoke('skills:aggregate', opts),
   summarize: (arg) => ipcRenderer.invoke('session:summarize', arg),
+  getNotes: (opts) => ipcRenderer.invoke('notes:get', opts),
+  resumeSession: (arg) => ipcRenderer.invoke('session:resume', arg),
   revealSession: (filePath) => ipcRenderer.invoke('sessions:reveal', filePath),
   openExternal: (url) => ipcRenderer.invoke('open:external', url),
   openPath: (p) => ipcRenderer.invoke('open:path', p),

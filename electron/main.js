@@ -8,8 +8,9 @@ const { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } = require
 const path = require('path');
 const ICON_PATH = path.join(__dirname, 'assets', 'icon.png');
 const fs = require('fs');
+const os = require('os');
 const { execFile } = require('child_process');
-const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, HARNESSES } = require('./sessions');
+const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, HARNESSES } = require('./sessions');
 
 let win = null;
 
@@ -59,12 +60,14 @@ function createWindow() {
 let watchTimer = null;
 const watchers = [];
 function watchSessions() {
-  for (const h of HARNESSES) {
+  const ping = () => { clearTimeout(watchTimer); watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 1000); };
+  // ensure the inbox dir exists so its watcher attaches even before the first note
+  try { fs.mkdirSync(path.join(os.homedir(), '.humanctl'), { recursive: true }); } catch {}
+  const dirs = [...HARNESSES.map((h) => h.dir), path.join(os.homedir(), '.humanctl')];
+  for (const dir of dirs) {
     try {
-      const w = fs.watch(h.dir, { recursive: true }, () => {
-        clearTimeout(watchTimer);
-        watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 1200);
-      });
+      const w = fs.watch(dir, { recursive: true }, ping);
+      w.on('error', () => {}); // a watched dir vanishing must not crash the process
       watchers.push(w);
     } catch { /* dir may not exist; ignore */ }
   }
@@ -111,6 +114,33 @@ ipcMain.handle('session:summarize', async (_e, arg) => {
     return { ok: true, summary };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// Agent inbox: notes posted by `humanctl note`.
+ipcMain.handle('notes:get', (_e, opts) => {
+  try { return { ok: true, notes: readNotes(opts || {}) }; }
+  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Open/resume the actual session in a Terminal window (hands it back to the human).
+ipcMain.handle('session:resume', (_e, arg) => {
+  try {
+    if (!arg || !arg.id) return { ok: false, error: 'no id' };
+    const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+    const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
+    let id = arg.id, cmd;
+    if (arg.harness === 'codex') {
+      const m = String(arg.id).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+      id = m ? m[1] : arg.id;
+      cmd = `codex resume ${shq(id)}`;
+    } else {
+      cmd = `claude --resume ${shq(id)}`;
+    }
+    const file = path.join(os.tmpdir(), `humanctl-resume-${Date.now()}.command`);
+    fs.writeFileSync(file, `#!/bin/bash\ncd ${shq(cwd)} && exec ${cmd}\n`, { mode: 0o755 });
+    execFile('open', [file], () => { setTimeout(() => fs.unlink(file, () => {}), 8000); });
+    return { ok: true, cmd };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
 ipcMain.handle('skills:aggregate', (_e, opts) => {
   try { return { ok: true, agg: aggregateSkills(opts || {}) }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }

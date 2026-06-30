@@ -54,6 +54,23 @@ No build step, no bundler. The renderer is plain HTML and JS.
   screenshot) it falls back to synthetic fixtures, so demos never contain real
   session content.
 
+## Agent inbox (the point of humanctl)
+
+Agents post short aside / BTW messages to you with the CLI; the desktop surfaces
+them as an inbox at the top of the control room:
+
+```bash
+humanctl note --level review "PRs are up, need a review + merge in ~5m"
+humanctl note --level blocked "Blocked on a product call: Redis or Postgres?"
+humanctl note "FYI refactor is going well, no action needed"
+```
+
+`--level` is one of `fyi | review | blocked | done`. Notes append to
+`~/.humanctl/notes.jsonl` (one global inbox across every repo; the cwd and repo
+are captured automatically). Pass `--session <id>` to link a note to a session
+so the inbox can open it. This is the core loop: agents avoid silently blocking
+on you by leaving a small, durable note instead.
+
 ## Privacy posture (born clean)
 
 This repo is public. The rules that keep it safe:
