@@ -5,8 +5,35 @@ const { randomUUID } = require("crypto");
 const childProcess = require("child_process");
 const fs = require("fs");
 const http = require("http");
+const os = require("os");
 const path = require("path");
 const { URL } = require("url");
+
+// Global cross-repo inbox: agents post short aside/BTW messages to the human
+// here; the desktop app surfaces them. One file across all repos on purpose.
+function globalDir() {
+  return path.join(os.homedir(), ".humanctl");
+}
+const NOTE_LEVELS = new Set(["fyi", "review", "blocked", "done"]);
+function appendNote(message, flags) {
+  const dir = globalDir();
+  ensureDir(dir);
+  let level = String(flagValue(flags, "level", "fyi") || "fyi").toLowerCase();
+  if (!NOTE_LEVELS.has(level)) level = "fyi";
+  const note = {
+    id: `note_${randomUUID().slice(0, 8)}`,
+    ts: nowIso(),
+    level,
+    message,
+    cwd: process.cwd(),
+    repo: flagValue(flags, "repo", "") || path.basename(process.cwd()),
+    session: flagValue(flags, "session", "") || flagValue(flags, "id", "") || "",
+    agent: flagValue(flags, "agent", "") || process.env.HUMANCTL_AGENT || "",
+  };
+  fs.appendFileSync(path.join(dir, "notes.jsonl"), `${JSON.stringify(note)}\n`, "utf8");
+  if (hasFlag(flags, "json")) console.log(JSON.stringify(note));
+  else console.log(`noted (${level}): ${message}`);
+}
 
 function usage() {
   console.log(`humanctl
@@ -14,6 +41,9 @@ function usage() {
 Usage:
   humanctl init [dir]
   humanctl status [dir] [--json]
+
+  humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] "message"
+    post a short aside/BTW to the human (shows in the humanctl desktop inbox)
 
   humanctl ask create [--workspace dir] --title text --prompt text [--summary text] [--artifact id]
     [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
@@ -1173,6 +1203,17 @@ if (!command || command === "--help" || command === "-h") {
 
 if (command === "init") {
   initWorkspace(args[1] || ".");
+  process.exit(0);
+}
+
+if (command === "note" || command === "btw") {
+  const { positionals, flags } = parseFlags(args.slice(1));
+  const message = positionals.join(" ").trim();
+  if (!message) {
+    console.error('humanctl note requires a message, e.g. humanctl note --level review "PRs up, need a merge in ~5m"');
+    process.exit(1);
+  }
+  appendNote(message, flags);
   process.exit(0);
 }
 

@@ -511,7 +511,21 @@ function aggregateSkills(opts = {}) {
   return { skills, sessionsWithSkills, totalInvocations };
 }
 
-module.exports = { listRecent, readBlocks, readUsage, readRowExtras, readDetail, aggregateSkills, accountStatus, HARNESSES, KINDS };
+// Agent inbox: notes posted by `humanctl note` to ~/.humanctl/notes.jsonl.
+const NOTES_FILE = path.join(HOME, '.humanctl', 'notes.jsonl');
+const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
+function readNotes(opts = {}) {
+  let txt;
+  try { txt = readSlice(NOTES_FILE, 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
+  if (!txt) return [];
+  const notes = txt.split('\n').filter(Boolean).map((l) => {
+    try { const o = JSON.parse(l); return (o && typeof o === 'object' && typeof o.message === 'string' && o.id) ? { ...o, level: NOTE_LEVELS.has(o.level) ? o.level : 'fyi' } : null; } catch { return null; }
+  }).filter(Boolean);
+  notes.reverse(); // newest first
+  return notes.slice(0, opts.limit || 100);
+}
+
+module.exports = { listRecent, readBlocks, readUsage, readRowExtras, readDetail, aggregateSkills, accountStatus, readNotes, NOTES_FILE, HARNESSES, KINDS };
 
 // CLI smoke: `node electron/sessions.js` prints a quick table (read-only).
 if (require.main === module) {
