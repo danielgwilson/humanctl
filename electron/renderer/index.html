@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; script-src 'self';" />
+<title>humanctl</title>
+<style>
+  :root{
+    --bg:#0a0c10; --bg-2:#0f1217; --bg-3:#141821; --bg-4:#1a1f2a;
+    --rule:#222834; --rule-2:#2c3340;
+    --ink:#e7eaf0; --ink-2:#a4adbb; --ink-3:#828b98; --ink-4:#5b6472;
+    --accent:#7d7bf4; --accent-2:#a3a0ff;
+    --codex:#43d188; --claude:#f5b03e;
+    --ok:#43d188; --warn:#f5b03e; --fail:#ff6b6b;
+    --mono:'JetBrains Mono',ui-monospace,SFMono-Regular,Menlo,monospace;
+    --disp:'Space Grotesk',-apple-system,system-ui,sans-serif;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;height:100%;background:var(--bg);color:var(--ink);font-family:var(--disp);-webkit-font-smoothing:antialiased}
+  body{display:flex;flex-direction:column}
+  .titlebar{height:38px;-webkit-app-region:drag;flex:0 0 auto}
+  header{display:flex;align-items:baseline;gap:14px;padding:6px 22px 14px;border-bottom:1px solid var(--rule)}
+  header .wm{font-weight:600;font-size:17px;letter-spacing:-.01em}
+  header .wm i{color:var(--accent);font-style:normal}
+  header .sub{font-family:var(--mono);font-size:11px;color:var(--ink-3)}
+  header .spacer{flex:1}
+  header button{-webkit-app-region:no-drag;font-family:var(--mono);font-size:11px;color:var(--ink-2);background:var(--bg-3);border:1px solid var(--rule-2);border-radius:6px;padding:6px 12px;cursor:pointer}
+  header button:hover{border-color:var(--ink-4);color:var(--ink)}
+  .summary{font-family:var(--mono);font-size:11px;color:var(--ink-3);padding:10px 22px;border-bottom:1px solid var(--rule);display:flex;gap:16px}
+  .summary b{color:var(--ink)}
+  .summary .codex b{color:var(--codex)} .summary .claude b{color:var(--claude)}
+  main{flex:1;overflow:auto}
+  .row{display:grid;grid-template-columns:120px 1fr auto;gap:16px;align-items:center;padding:13px 22px;border-bottom:1px solid var(--rule);cursor:default}
+  .row:hover{background:var(--bg-3)}
+  .h{display:inline-flex;align-items:center;gap:7px;font-family:var(--mono);font-size:11px;color:var(--ink-2)}
+  .h .dot{width:8px;height:8px;border-radius:50%}
+  .h.codex .dot{background:var(--codex)} .h.claude .dot{background:var(--claude)}
+  .mid{min-width:0}
+  .title{font-size:13.5px;color:var(--ink);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .meta{font-family:var(--mono);font-size:11px;color:var(--ink-3);margin-top:3px;display:flex;gap:12px}
+  .meta .repo{color:var(--ink-2)}
+  .right{text-align:right;font-family:var(--mono);font-size:11px;color:var(--ink-4)}
+  .right .age{color:var(--ink-2)}
+  .role{font-family:var(--mono);font-size:10px;text-transform:uppercase;letter-spacing:.05em;padding:2px 7px;border-radius:4px;border:1px solid var(--rule-2);color:var(--ink-3)}
+  .role.user{color:var(--accent-2);border-color:rgba(125,123,244,.4)}
+  .reveal{-webkit-app-region:no-drag;cursor:pointer;color:var(--ink-4);text-decoration:underline}
+  .reveal:hover{color:var(--ink-2)}
+  .empty,.err{padding:40px 22px;font-family:var(--mono);font-size:12px;color:var(--ink-3)}
+  .err{color:var(--fail)}
+  .note{padding:14px 22px;font-family:var(--mono);font-size:10.5px;color:var(--ink-4);border-top:1px solid var(--rule)}
+  .hidden{display:none}
+  .row{cursor:pointer}
+  /* context map detail */
+  .detail{padding:20px 22px}
+  .dhead{display:flex;align-items:baseline;gap:12px;margin-bottom:5px}
+  .dhead .dtitle{font-size:18px;letter-spacing:-.012em;color:var(--ink);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dmeta{font-family:var(--mono);font-size:11px;color:var(--ink-3);display:flex;gap:14px;margin-bottom:20px}
+  .dmeta .repo{color:var(--ink-2)} .dmeta b{color:var(--ink)}
+  .meter{display:flex;height:10px;border-radius:5px;overflow:hidden;background:var(--bg-3);border:1px solid var(--rule);margin-bottom:14px}
+  .meter span{height:100%;min-width:0}
+  .legend{display:flex;flex-wrap:wrap;gap:18px;font-family:var(--mono);font-size:11px;color:var(--ink-2);margin-bottom:22px}
+  .legend .li{display:inline-flex;align-items:center;gap:7px}
+  .legend .sw{width:10px;height:10px;border-radius:2px}
+  .legend b{color:var(--ink)} .legend .pct{color:var(--ink-4)}
+  .maplabel{font-family:var(--mono);font-size:10.5px;letter-spacing:.04em;text-transform:uppercase;color:var(--ink-4);margin-bottom:10px}
+  .map{display:flex;flex-wrap:wrap;gap:3px;align-content:flex-start}
+  .sq{width:13px;height:13px;border-radius:2px}
+  .trunc{font-family:var(--mono);font-size:10.5px;color:var(--ink-4);margin-top:16px}
+  .k-user{background:#7d7bf4}
+  .k-assistant{background:#5aa9e6}
+  .k-thinking{background:#8a7fb8}
+  .k-tool-call{background:#e0883e}
+  .k-tool-result{background:#3fb59b}
+  .k-meta{background:#3a4150}
+</style>
+</head>
+<body>
+  <div class="titlebar"></div>
+  <header>
+    <span class="wm">human<i>ctl</i></span>
+    <span class="sub" id="subtitle">recent sessions across Codex and Claude Code</span>
+    <span class="spacer"></span>
+    <button id="back" class="hidden">back</button>
+    <button id="refresh">refresh</button>
+  </header>
+  <div class="summary" id="summary"></div>
+  <main>
+    <div id="list"><div class="empty">loading...</div></div>
+    <div id="detail" class="detail hidden"></div>
+  </main>
+  <div class="note">read-only and local. nothing leaves this machine. click a session to see its context map.</div>
+  <script src="./renderer.js"></script>
+</body>
+</html>

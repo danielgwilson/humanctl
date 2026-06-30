@@ -8,10 +8,10 @@ dist
 *.tgz
 .firecrawl
 .notes
-native/macos/build
-native/macos/.deriveddata
-native/macos/*.xcodeproj
-native/archive
+attic/notch/macos/build
+attic/notch/macos/.deriveddata
+attic/notch/macos/*.xcodeproj
+attic/notch/archive
 DerivedData
 *.xcworkspace/xcuserdata
 *.xcodeproj/xcuserdata
