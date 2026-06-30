@@ -7,6 +7,8 @@
 const { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
 const ICON_PATH = path.join(__dirname, 'assets', 'icon.png');
+let APP_VERSION = '0.0.0';
+try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
 const { execFile } = require('child_process');
@@ -79,7 +81,7 @@ ipcMain.handle('sessions:list', (_e, opts) => {
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 ipcMain.handle('status:get', (_e, opts) => {
-  try { return { ok: true, status: accountStatus(opts || {}) }; }
+  try { return { ok: true, status: Object.assign(accountStatus(opts || {}), { version: APP_VERSION }) }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 ipcMain.handle('sessions:read', (_e, arg) => {
