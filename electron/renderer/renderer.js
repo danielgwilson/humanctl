@@ -49,7 +49,7 @@ const FIXTURE = [
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
-  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.5.2' };
+  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.5.3' };
 }
 const FIXTURE_NOTES = [
   { id: 'n1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PRs are up for the control room, need a review + merge in ~5m', repo: 'acme-web', session: 'fixture-b0b0b0b0' },
