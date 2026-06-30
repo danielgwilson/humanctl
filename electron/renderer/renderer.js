@@ -47,7 +47,7 @@ const FIXTURE = [
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
-  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.4.0' };
+  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.4.1' };
 }
 const FIXTURE_NOTES = [
   { id: 'n1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PRs are up for the control room, need a review + merge in ~5m', repo: 'acme-web', session: 'fixture-b0b0b0b0' },
@@ -155,7 +155,10 @@ function renderStatusbar() {
 }
 
 // ---- list ----
-function oneLiner(r) { if (aiOn && summaries.has(r.id)) return { ai: true, text: summaries.get(r.id) }; if (r.lastUser) return { ai: false, text: r.lastUser }; return { ai: false, text: r.title || '(no prompt found)' }; }
+function oneLiner(r) {
+  if (aiOn && summaries.has(r.id)) return { ai: true, text: summaries.get(r.id) };
+  return { ai: false, text: r.lastUser || r.title || r.prevAgent || '(untitled session)' };
+}
 function rowHtml(r) {
   const pinned = pins.has(r.id); const ol = oneLiner(r);
   const sub = `<span class="hn">${esc(HARNESS_LABEL[r.harness] || r.harness)}</span> &middot; <span class="repo">${esc(r.repo || '?')}</span>${ol.text !== r.title && r.title ? ' &middot; ' + esc(r.title) : ''}`;
@@ -246,7 +249,7 @@ function renderDetail(row, data, usage, det) {
   const lr = (det && det.linearRefs) || []; const hf = (det && det.htmlFiles) || [];
   el('detail').innerHTML = `
     <div class="dsec"><div class="dhead">
-      <div class="dtitlewrap"><div class="dtitle">${esc(row.title || '(no prompt found)')}</div>
+      <div class="dtitlewrap"><div class="dtitle">${esc(row.title || row.lastUser || '(untitled session)')}</div>
       <div class="dmeta"><span class="sdot ${dotClass(row)}"></span><span>${esc(HARNESS_LABEL[row.harness] || row.harness)}</span><span class="repo">${esc(row.repo || '?')}</span><span>${esc(row.age || '')}</span>${metaLine(row, usage, det) ? '<span>' + metaLine(row, usage, det) + '</span>' : ''}</div></div>
       <button class="actbtn" id="resume">${ICON.term} resume in terminal</button>
     </div></div>
