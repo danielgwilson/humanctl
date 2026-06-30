@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.5.0",
+  "version": "0.5.1",
   "description": "A control plane for the human bottleneck.",
   "main": "electron/main.js",
   "bin": {
@@ -22,9 +22,10 @@
     "cli:status": "node ./bin/humanctl.js status .",
     "desktop": "electron electron/main.js",
     "desktop:sessions": "node electron/sessions.js",
-    "app:build": "electron-builder --mac --dir",
-    "app:dmg": "electron-builder --mac dmg",
+    "app:build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
+    "app:dmg": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
     "app:install": "npm run app:build && rm -rf ~/Applications/humanctl.app && cp -R dist/mac-arm64/humanctl.app ~/Applications/ && echo installed to ~/Applications/humanctl.app",
+    "app:release": "electron-builder --mac dmg --config.mac.notarize=true",
     "notch:generate": "cd attic/notch/macos && xcodegen generate",
     "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
     "notch:open": "pkill -x HumanctlNotch || true && open -a ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
@@ -45,7 +46,10 @@
     "mac": {
       "category": "public.app-category.developer-tools",
       "icon": "electron/assets/icon.png",
-      "identity": null,
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "build/entitlements.mac.plist",
+      "entitlementsInherit": "build/entitlements.mac.plist",
       "target": [
         "dir"
       ]
