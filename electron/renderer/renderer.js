@@ -47,7 +47,7 @@ const FIXTURE = [
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
-  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06' };
+  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.4.0' };
 }
 const FIXTURE_NOTES = [
   { id: 'n1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PRs are up for the control room, need a review + merge in ~5m', repo: 'acme-web', session: 'fixture-b0b0b0b0' },
@@ -134,6 +134,7 @@ function dismissNote(id) { dismissed.add(id); if (window.humanctl) window.humanc
 function gauge(label, pct, resetTs) { if (pct == null) return ''; return `<span class="gauge" title="${esc(label)}: ${pct}% used${resetTs ? ' resets ' + esc(fmtReset(resetTs)) : ''}"><span class="lbl">${esc(label)}</span><span class="track"><span class="fill ${qcls(pct)}" style="width:${Math.min(100, pct)}%"></span></span><b class="${pct >= 90 ? 'hot' : ''}">${pct}%</b></span>`; }
 function renderStatusbar() {
   if (!status) { el('statusbar').innerHTML = ''; return; }
+  if (status.version) el('ver').textContent = 'v' + status.version;
   const c = status.per.codex || {}, cl = status.per['claude-code'] || {}, q = status.codexQuota;
   const unread = allNotes.filter((n) => !dismissed.has(n.id)).length;
   const p = [];
@@ -234,11 +235,11 @@ function metaLine(row, usage, det) {
 }
 function renderDetail(row, data, usage, det) {
   const blocks = data.blocks || [];
-  const faceFor = (t) => (t > 15000 ? 6 : t > 5000 ? 5 : t > 1500 ? 4 : t > 500 ? 3 : t > 100 ? 2 : 1);
+  const levelFor = (t) => (t > 5000 ? 5 : t > 1500 ? 4 : t > 500 ? 3 : t > 100 ? 2 : 1); // shade by token weight (GitHub-style)
   const totals = {}; for (const b of blocks) totals[b.kind] = (totals[b.kind] || 0) + b.tokens;
   let pacc = 0; const protSet = new Set();
   for (let i = blocks.length - 1; i >= 0 && pacc < 20000; i--) { pacc += blocks[i].tokens; protSet.add(i); }
-  const squares = blocks.map((b, i) => `<div class="sq k-${b.kind} f${faceFor(b.tokens)}${protSet.has(i) ? ' prot' : ''}" data-k="${esc(KIND_LABEL[b.kind])}" data-t="${b.tokens}" data-p="${esc(b.preview || '')}"></div>`).join('');
+  const squares = blocks.map((b, i) => `<div class="sq k-${b.kind} l${levelFor(b.tokens)}${protSet.has(i) ? ' prot' : ''}" data-k="${esc(KIND_LABEL[b.kind])}" data-t="${b.tokens}" data-p="${esc(b.preview || '')}"></div>`).join('');
   const legend = KIND_ORDER.filter((k) => totals[k]).map((k) => `<span class="li"><span class="sw k-${k}"></span>${esc(KIND_LABEL[k])} <b>${fmtTok(totals[k])}t</b></span>`).join('');
   const ex = (det && det.lastExchange) || {}; const cached = summaries.get(row.id);
   const skills = (det && det.skillsUsed) || {}; const sk = Object.keys(skills).sort((a, b) => skills[b] - skills[a]);
@@ -253,7 +254,7 @@ function renderDetail(row, data, usage, det) {
       <div class="sumout" id="sumout">${cached ? sumHtml(cached) : ''}</div>
       ${(ex.prevAgent || ex.lastUser) ? `<div class="exchange">${ex.prevAgent ? `<div><div class="who">agent, before</div><div class="body">${esc(ex.prevAgent)}</div></div>` : ''}${ex.lastUser ? `<div><div class="who you">you, latest</div><div class="body">${esc(ex.lastUser)}</div></div>` : ''}</div>` : ''}
     </div>
-    ${blocks.length ? `<div class="dsec"><div class="dlabel">context map &middot; one square per block &middot; pips = token weight &middot; outlined = live tail</div><div class="cmap">${squares}</div><div class="legend">${legend}</div>${data.truncated ? '<div class="trunc">large session: first portion shown.</div>' : ''}</div>` : ''}
+    ${blocks.length ? `<div class="dsec"><div class="dlabel">context map &middot; one square per block &middot; shade = token weight &middot; outlined = live tail</div><div class="cmap">${squares}</div><div class="legend">${legend}</div>${data.truncated ? '<div class="trunc">large session: first portion shown.</div>' : ''}</div>` : ''}
     ${sk.length ? `<div class="dsec"><div class="dlabel">skills used</div><div class="skillgrid">${sk.map((s) => `<span class="skill">${esc(s)} <b>${skills[s]}</b></span>`).join('')}</div></div>` : ''}
     ${lr.length ? `<div class="dsec"><div class="dlabel">linear touched</div><div class="chips">${lr.map((l) => `<span class="lchip" data-url="${esc(l.url)}"><span class="ic">${ICON.link}</span>${esc(l.label)}</span>`).join('')}</div></div>` : ''}
     ${hf.length ? `<div class="dsec"><div class="dlabel">html generated</div><div class="filelist">${hf.map((f) => `<span class="filerow" data-path="${esc(f)}"><span class="ic">${ICON.file}</span>${esc(f.replace(/^.*\/(?=[^/]+$)/, ''))}</span>`).join('')}</div></div>` : ''}
