@@ -33,10 +33,38 @@ open ~/Applications/humanctl.app
 ```
 
 `npm run app:build` alone produces `dist/mac-arm64/humanctl.app`; `npm run
-app:dmg` produces a shareable `.dmg`. The build is unsigned (no Apple
-Developer cert needed); a locally built app opens without a Gatekeeper prompt.
-If you ever move a downloaded copy and macOS blocks it, right-click the app and
-choose Open once, or run `xattr -dr com.apple.quarantine ~/Applications/humanctl.app`.
+app:dmg` produces a shareable `.dmg`. These are unsigned (no Apple Developer
+cert needed); a locally built app opens without a Gatekeeper prompt. If you ever
+move a downloaded copy and macOS blocks it, right-click the app and choose Open
+once, or run `xattr -dr com.apple.quarantine ~/Applications/humanctl.app`.
+
+## Signed + notarized release (to share with other Macs)
+
+The build is signing-ready (hardened runtime + entitlements); it just needs your
+own Apple credentials, which the build never sees:
+
+1. One-time: create a **Developer ID Application** certificate under your Apple
+   Developer account and install it in your login keychain (Xcode > Settings >
+   Accounts > your team > Manage Certificates > + Developer ID Application).
+   Verify: `security find-identity -v -p codesigning` lists it.
+2. Provide notarization credentials via env (an app-specific password from
+   appleid.apple.com), exported in your shell, not committed:
+
+   ```bash
+   export APPLE_ID="you@example.com"
+   export APPLE_APP_SPECIFIC_PASSWORD="xxxx-xxxx-xxxx-xxxx"
+   export APPLE_TEAM_ID="YOURTEAMID"
+   ```
+3. Build the signed, notarized, stapled `.dmg`:
+
+   ```bash
+   npm run app:release
+   ```
+
+electron-builder auto-discovers the Developer ID cert, signs with the hardened
+runtime, and notarizes via Apple's notary service. Without a cert installed,
+`app:release` will stop with a clear error; the unsigned `app:build` /
+`app:install` path keeps working regardless.
 
 Quick checks without the GUI:
 

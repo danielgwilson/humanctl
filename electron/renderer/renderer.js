@@ -32,6 +32,8 @@ const qcls = (p) => (p >= 90 ? 'hot' : p >= 70 ? 'warn' : '');
 let allRows = [], status = null, skillsAgg = null, allNotes = [], demo = false;
 let activeFilter = 'all', search = '', pins = new Set(), dismissed = new Set(), seenNotes = new Set(), theme = 'system', aiOn = false;
 const summaries = new Map();
+const SUM_CAP = 400; // bound the summary cache (Map keeps insertion order: evict oldest)
+function rememberSummary(id, text) { summaries.delete(id); summaries.set(id, text); if (summaries.size > SUM_CAP) summaries.delete(summaries.keys().next().value); }
 let tabs = [{ id: 'home', type: 'home' }];
 let activeId = 'home';
 let navHist = ['home'], navIdx = 0;
@@ -47,7 +49,7 @@ const FIXTURE = [
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
-  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.5.0' };
+  return { per: { codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 0.85 }, 'claude-code': { sessions: 2, generated: 180000, totalTokens: 3.2e6, costUSD: 4.62 } }, codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } }, needsYou: 4, working: 1, nearCompaction: 1, sessions: 5, pricingAsOf: '2026-06', version: '0.5.1' };
 }
 const FIXTURE_NOTES = [
   { id: 'n1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PRs are up for the control room, need a review + merge in ~5m', repo: 'acme-web', session: 'fixture-b0b0b0b0' },
@@ -81,7 +83,12 @@ function cycleTheme() { theme = theme === 'system' ? 'light' : theme === 'light'
 function activate(id, fromNav) {
   if (!tabs.find((t) => t.id === id)) id = 'home';
   activeId = id;
-  if (!fromNav) { navHist = navHist.slice(0, navIdx + 1); if (navHist[navIdx] !== id) { navHist.push(id); navIdx = navHist.length - 1; } }
+  if (!fromNav) {
+    navHist = navHist.slice(0, navIdx + 1);
+    if (navHist[navIdx] !== id) navHist.push(id);
+    if (navHist.length > 60) navHist = navHist.slice(-60); // bound nav history
+    navIdx = navHist.length - 1;
+  }
   renderTabs(); renderMain(); updateNav();
 }
 function openSession(row) { if (!row) return; if (!tabs.find((t) => t.id === row.id)) tabs.push({ id: row.id, type: 'session', row }); activate(row.id); }
@@ -128,7 +135,15 @@ function renderInbox() {
   el('inbox').querySelectorAll('[data-open]').forEach((b) => b.addEventListener('click', () => openSession(allRows.find((r) => r.id === b.getAttribute('data-open')))));
   notes.forEach((n) => seenNotes.add(n.id));
 }
-function dismissNote(id) { dismissed.add(id); if (window.humanctl) window.humanctl.setState({ dismissedNotes: [...dismissed] }); renderInbox(); renderTabs(); renderStatusbar(); }
+function dismissNote(id) {
+  dismissed.add(id);
+  if (window.humanctl) {
+    const live = new Set(allNotes.map((n) => n.id));
+    dismissed = new Set([...dismissed].filter((x) => live.has(x))); // keep only ids still in the inbox window
+    window.humanctl.setState({ dismissedNotes: [...dismissed] });
+  }
+  renderInbox(); renderTabs(); renderStatusbar();
+}
 
 // ---- bottom status bar ----
 function gauge(label, pct, resetTs) { if (pct == null) return ''; return `<span class="gauge" title="${esc(label)}: ${pct}% used${resetTs ? ' resets ' + esc(fmtReset(resetTs)) : ''}"><span class="lbl">${esc(label)}</span><span class="track"><span class="fill ${qcls(pct)}" style="width:${Math.min(100, pct)}%"></span></span><b class="${pct >= 90 ? 'hot' : ''}">${pct}%</b></span>`; }
@@ -213,8 +228,8 @@ async function queueSummaries(rows) {
   if (!aiOn) return;
   const run = ++sumRun;
   const todo = rows.filter((r) => (bucketOf(r) === 'Needs you' || bucketOf(r) === 'Working') && !summaries.has(r.id)).slice(0, 14);
-  if (!window.humanctl) { for (const r of todo) { const s = fixSum(r.id); if (s) { summaries.set(r.id, s); patchRowLine(r.id); } } return; }
-  for (const r of todo) { if (run !== sumRun || !aiOn) return; const res = await window.humanctl.summarize({ path: r.path, harness: r.harness }); if (run !== sumRun) return; if (res && res.ok && res.summary) { summaries.set(r.id, res.summary); patchRowLine(r.id); } }
+  if (!window.humanctl) { for (const r of todo) { const s = fixSum(r.id); if (s) { rememberSummary(r.id, s); patchRowLine(r.id); } } return; }
+  for (const r of todo) { if (run !== sumRun || !aiOn) return; const res = await window.humanctl.summarize({ path: r.path, harness: r.harness }); if (run !== sumRun) return; if (res && res.ok && res.summary) { rememberSummary(r.id, res.summary); patchRowLine(r.id); } }
 }
 function patchRowLine(id) { const node = el('list') && el('list').querySelector(`.row[data-id="${CSS.escape(id)}"] .line1`); if (node && summaries.has(id)) node.innerHTML = `<span class="ai">ai</span>${esc(summaries.get(id))}`; }
 
@@ -271,20 +286,28 @@ function renderDetail(row, data, usage, det) {
 }
 function bindMap() {
   const tip = el('ctip');
-  el('detail').querySelectorAll('.sq').forEach((s) => {
-    s.addEventListener('mousemove', (e) => { tip.innerHTML = `<div class="ck">${esc(s.dataset.k)} &middot; ${(+s.dataset.t).toLocaleString()} tok</div><div class="cp">${esc(s.dataset.p)}</div>`; tip.classList.add('on'); const x = Math.min(e.clientX + 14, window.innerWidth - 350); tip.style.left = x + 'px'; tip.style.top = (e.clientY + 16) + 'px'; });
-    s.addEventListener('mouseleave', () => tip.classList.remove('on'));
+  const map = el('detail').querySelector('.cmap');
+  if (!map) return;
+  // one delegated listener instead of up to thousands of per-square listeners
+  map.addEventListener('mousemove', (e) => {
+    const s = e.target.closest('.sq');
+    if (!s) { tip.classList.remove('on'); return; }
+    tip.innerHTML = `<div class="ck">${esc(s.dataset.k)} &middot; ${(+s.dataset.t).toLocaleString()} tok</div><div class="cp">${esc(s.dataset.p)}</div>`;
+    tip.classList.add('on');
+    tip.style.left = Math.min(e.clientX + 14, window.innerWidth - 350) + 'px';
+    tip.style.top = (e.clientY + 16) + 'px';
   });
+  map.addEventListener('mouseleave', () => tip.classList.remove('on'));
 }
 function sumHtml(text) { return `<div class="sumtext">${esc(text)}</div><div class="sumnote">summary by claude-haiku via your local CLI &middot; sends recent messages to the model</div>`; }
 async function runSummary(row) {
   const out = el('sumout'); if (!out) return;
   if (summaries.has(row.id)) { out.innerHTML = sumHtml(summaries.get(row.id)); return; }
   out.innerHTML = '<div class="sumnote">summarizing via local CLI...</div>';
-  if (!window.humanctl) { const s = fixSum(row.id) || 'Working through the latest instruction; see the exchange below.'; summaries.set(row.id, s); out.innerHTML = sumHtml(s); return; }
+  if (!window.humanctl) { const s = fixSum(row.id) || 'Working through the latest instruction; see the exchange below.'; rememberSummary(row.id, s); out.innerHTML = sumHtml(s); return; }
   const r = await window.humanctl.summarize({ path: row.path, harness: row.harness });
   if (el('sumout') !== out) return;
-  if (r && r.ok) { summaries.set(row.id, r.summary); out.innerHTML = sumHtml(r.summary); }
+  if (r && r.ok) { rememberSummary(row.id, r.summary); out.innerHTML = sumHtml(r.summary); }
   else out.innerHTML = `<div class="sumnote warn">could not summarize: ${esc((r && r.error) || 'unknown')} (needs your local claude CLI auth)</div>`;
 }
 async function resume(row) {
@@ -314,9 +337,15 @@ async function load() {
   renderStatusbar(); renderTabs(); renderMain(); updateNav();
   window.humanctl.aggregateSkills({ maxAgeH: 72, limit: 40 }).then((r) => { if (r && r.ok) { skillsAgg = r.agg; renderStatusbar(); } });
 }
+let lastSig = '';
 async function refresh() {
   if (!window.humanctl) return;
   await fetchData();
+  const sig = allRows.map((r) => r.id + r.ageMs + r.lastRole + r.contextPct).join('|')
+    + '#' + allNotes.map((n) => n.id).join('|')
+    + '#' + (status ? status.needsYou + ':' + status.sessions : '');
+  if (sig === lastSig) return; // nothing changed: skip re-render to avoid churn
+  lastSig = sig;
   renderStatusbar();
   if (activeId === 'home') { renderInbox(); renderList(); }
   renderTabs();
