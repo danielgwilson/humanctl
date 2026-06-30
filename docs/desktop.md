@@ -15,10 +15,28 @@ the ball is with you) lead; everything healthy recedes. Sessions open as tabs.
 
 ## Run it
 
+From source (live, for development):
+
 ```bash
 npm install
 npm run desktop
 ```
+
+## Install it (~/Applications)
+
+Build a real `.app` and drop it in your Applications folder:
+
+```bash
+npm install
+npm run app:install     # builds with electron-builder, copies to ~/Applications/humanctl.app
+open ~/Applications/humanctl.app
+```
+
+`npm run app:build` alone produces `dist/mac-arm64/humanctl.app`; `npm run
+app:dmg` produces a shareable `.dmg`. The build is unsigned (no Apple
+Developer cert needed); a locally built app opens without a Gatekeeper prompt.
+If you ever move a downloaded copy and macOS blocks it, right-click the app and
+choose Open once, or run `xattr -dr com.apple.quarantine ~/Applications/humanctl.app`.
 
 Quick checks without the GUI:
 
