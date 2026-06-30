@@ -46,7 +46,7 @@ const parse = (line) => { try { return JSON.parse(line); } catch { return null; 
 
 function isBoilerplate(t) {
   if (!t) return true;
-  return /^# AGENTS\.md|^<INSTRUCTIONS|^<skill|^<environment_context|^<subagent|^<turn_aborted|^<channel|^<local-command|^<task-notification|^<command-message|^<command-name|^<system-reminder|^This session is being continued|^Caveat: The messages below/.test(t);
+  return /^# AGENTS\.md|^<INSTRUCTIONS|^<skill|^<environment_context|^<subagent|^<turn_aborted|^<channel|^<local-command|^<task-notification|^<command-message|^<command-name|^<system-reminder|^This session is being continued|^Caveat: The messages below|^\[Request interrupted|^\[Request\]/.test(t);
 }
 
 function textOf(content, claude) {
@@ -145,7 +145,7 @@ function listRecent(opts = {}) {
         id: path.basename(file).replace(/\.jsonl$/, ''),
         cwd,
         repo: cwd ? cwd.replace(HOME, '~') : '',
-        title: title || '(no prompt found)',
+        title: title || '',
         lastRole: lastRole(file, h.name),
         ageMs: st.mtimeMs,
         age: relAge(st.mtimeMs),
