@@ -19,10 +19,12 @@
     "lint": "eslint .",
     "cli:init": "node ./bin/humanctl.js init .",
     "cli:status": "node ./bin/humanctl.js status .",
-    "native:generate": "cd native/macos && xcodegen generate",
-    "native:build": "cd native/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
-    "native:open": "pkill -x HumanctlNotch || true && open -a /Users/danielgwilson/local_git/humanctl/native/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
-    "native:run": "npm run native:build && npm run native:open"
+    "desktop": "electron electron/main.js",
+    "desktop:sessions": "node electron/sessions.js",
+    "notch:generate": "cd attic/notch/macos && xcodegen generate",
+    "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
+    "notch:open": "pkill -x HumanctlNotch || true && open -a ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
+    "notch:run": "npm run notch:build && npm run notch:open"
   },
   "homepage": "https://humanctl.com",
   "repository": {
@@ -52,6 +54,7 @@
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
+    "electron": "^42.5.1",
     "eslint": "9.39.4",
     "eslint-config-next": "16.1.6",
     "typescript": "5.9.3"
