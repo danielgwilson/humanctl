@@ -58,15 +58,33 @@ function textOf(content, claude) {
   return typeof content === 'string' ? content : '';
 }
 
+// Codex auto-spawns subagent sub-threads (and headless `codex exec` runs) as
+// top-level rollout files. They are not human-driven sessions, so treat them as
+// automation and hide them by default.
+function isCodexAutomation(meta) {
+  if (!meta) return false;
+  if (meta.parent_thread_id) return true;
+  if (meta.agent_role || meta.agent_nickname) return true;
+  if (meta.source && typeof meta.source === 'object' && meta.source.subagent) return true;
+  if (meta.originator === 'codex_exec' || meta.source === 'exec') return true;
+  return false;
+}
+
 function metaFor(file, harness) {
   const head = readSlice(file, HEAD_BYTES, false).split('\n');
   let cwd = '';
   let title = '';
+  let automation = false;
+  let sawMeta = false;
   for (const ln of head) {
     const o = parse(ln);
     if (!o) continue;
     const p = o.payload || o;
     if (!cwd) cwd = p.cwd || o.cwd || (o.message && o.message.cwd) || '';
+    if (harness === 'codex' && !sawMeta && (p.originator || p.source || p.parent_thread_id || p.cli_version)) {
+      sawMeta = true;
+      automation = isCodexAutomation(p);
+    }
     if (!title) {
       const isClaude = harness === 'claude-code';
       const role = (p.role) || (o.message && o.message.role);
@@ -78,7 +96,14 @@ function metaFor(file, harness) {
     }
     if (cwd && title) break;
   }
-  return { cwd, title };
+  // machine-generated sessions, by prompt shape: codex scheduled runs
+  // ("Automation: <name> Automation ID: <id>") and the headless `claude -p`
+  // one-shots our own AI-summary feature spawns.
+  if (!automation && title && (
+    (/^Automation:/i.test(title) && /Automation ID:/i.test(title)) ||
+    /^Summarize the recent tail of an autonomous coding-agent session/i.test(title)
+  )) automation = true;
+  return { cwd, title, automation };
 }
 
 function lastRole(file, harness) {
@@ -113,7 +138,8 @@ function listRecent(opts = {}) {
       let st;
       try { st = fs.statSync(file); } catch { continue; }
       if (st.mtimeMs < cutoff) continue;
-      const { cwd, title } = metaFor(file, h.name);
+      const { cwd, title, automation } = metaFor(file, h.name);
+      if (automation && !opts.includeAutomation) continue; // hide codex subagent / exec noise
       rows.push({
         harness: h.name,
         id: path.basename(file).replace(/\.jsonl$/, ''),
