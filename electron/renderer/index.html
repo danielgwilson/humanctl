@@ -126,6 +126,23 @@ body.light .seg button.on{ color:#fff; }
   border-radius:5px; padding:5px 7px; cursor:pointer; transition:.12s;
 }
 .ctl button:hover{ color:var(--ink); border-color:var(--ink4); }
+#btnSettings{ font-size:12px; line-height:1; padding:4px 7px; text-transform:none; }
+
+/* settings popover: a transient float, so elevation is intentional here */
+.setpop{ position:fixed; top:56px; right:var(--s5); z-index:80; width:250px;
+  background:var(--panel); border:1px solid var(--rule2); border-radius:var(--r3);
+  box-shadow:0 24px 60px -12px rgba(0,0,0,.6); padding:var(--s4); }
+.setpop[hidden]{ display:none; }
+.setpop h4{ margin:0 0 var(--s2); font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink3); }
+.setpop .sub{ margin:0 0 var(--s3); font-size:11px; color:var(--ink2); line-height:1.45; }
+.setpop .seg2{ display:flex; border:1px solid var(--rule2); border-radius:var(--r1); overflow:hidden; }
+.setpop .seg2 button{ flex:1; font-family:var(--mono); font-size:10.5px; letter-spacing:.02em;
+  background:transparent; color:var(--ink3); border:0; border-left:1px solid var(--rule2); padding:9px 6px; cursor:pointer; transition:.12s; }
+.setpop .seg2 button:first-child{ border-left:0; }
+.setpop .seg2 button:hover{ color:var(--ink2); }
+.setpop .seg2 button.on{ background:var(--iris); color:#0a0c10; }
+body.light .setpop .seg2 button.on{ color:#fff; }
+.setpop .note{ margin:var(--s3) 0 0; font-size:10px; color:var(--ink4); line-height:1.45; }
 .ctl button.on{ color:var(--iris); border-color:var(--iris-dim); }
 
 /* mode host */
@@ -156,8 +173,12 @@ body.light .seg button.on{ color:#fff; }
 .grp-hd:first-child{ margin-top:0; }
 .grp-hd .gdot{ width:6px; height:6px; border-radius:50%; }
 .grp-hd .gct{ margin-left:auto; color:var(--ink4); }
-.arow{ display:grid; grid-template-columns:22px 1fr auto 7px; align-items:center; gap:var(--s2); height:36px;
+.arow{ display:grid; grid-template-columns:22px 1fr auto auto 7px; align-items:center; gap:var(--s2); height:36px;
   padding:0 var(--s4); cursor:pointer; border-left:2px solid transparent; }
+.pinbtn{ opacity:0; background:transparent; border:0; cursor:pointer; font-size:11px; line-height:1; padding:0;
+  filter:grayscale(1) opacity(.75); transition:opacity .12s; }
+.arow:hover .pinbtn{ opacity:.5; }
+.pinbtn.on, .arow:hover .pinbtn.on{ opacity:1; filter:none; }
 .arow:hover{ background:var(--panel); }
 .arow.sel{ background:var(--panel2); border-left-color:var(--c-sel); }
 .arow .face{ font-size:15px; line-height:1; text-align:center; }
@@ -272,7 +293,7 @@ body.light .btn.primary{ color:#fff; }
 .qrow.sel{ border-color:var(--c-sel); background:var(--panel2); }
 .qrow .face{ font-size:14px; text-align:center; }
 .qrow .who{ min-width:0; display:flex; flex-direction:column; }
-.qrow .who .nm{ font-size:12px; font-weight:600; line-height:1.2; }
+.qrow .who .nm{ font-size:12px; font-weight:600; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .qrow .who .rz{ font-family:var(--mono); font-size:9px; color:var(--ink4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .queue-empty{ font-family:var(--mono); font-size:10.5px; color:var(--ink4); padding:var(--s2) 0; }
 .gstats{ display:flex; flex-direction:column; gap:0; border:1px solid var(--rule); border-radius:var(--r2); background:var(--panel); overflow:hidden; }
@@ -486,6 +507,7 @@ body.light .pk-act button.primary{ color:#fff; }
     <div class="ctl">
       <button id="tTheme">dark</button>
       <button id="tTemp">considered</button>
+      <button id="btnSettings" title="settings" aria-label="settings">&#9881;</button>
     </div>
   </header>
 
@@ -531,6 +553,17 @@ body.light .pk-act button.primary{ color:#fff; }
 
 <!-- floating peek (Wall) -->
 <div id="scrim"></div>
+
+<!-- settings popover (transient float, opened from the header gear) -->
+<div id="settingsPop" class="setpop" hidden>
+  <h4>AI summary engine</h4>
+  <p class="sub">Which local CLI generates the on-demand summary. It runs on your machine, through your own CLI auth.</p>
+  <div class="seg2" id="engSeg">
+    <button data-eng="claude">Claude Code</button>
+    <button data-eng="codex">Codex</button>
+  </div>
+  <p class="note">Only the "AI summary" action sends data off-device (recent messages to the selected model). Nothing else leaves your machine.</p>
+</div>
 <aside id="peek" role="dialog" aria-modal="true"><div class="peek-in" id="peekIn"></div></aside>
 
 <!-- context-map tooltip + action toast -->
