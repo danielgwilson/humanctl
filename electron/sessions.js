@@ -19,13 +19,21 @@ const HARNESSES = [
 const HEAD_BYTES = 256 * 1024; // enough for session meta + first real prompt
 const TAIL_BYTES = 128 * 1024; // enough for current state
 
-function walkJsonl(dir, out) {
+// Codex stores rollouts under sessions/YYYY/MM/DD. When a minYear is given we
+// skip whole year directories older than it: a file modified within the recency
+// window cannot live in a year before the cutoff's year (true even across a
+// new-year boundary, since minYear is the cutoff's own year). This avoids
+// statting thousands of archived transcripts on every scan. Safe for Claude too,
+// whose project dirs are never named as bare 4-digit years.
+function walkJsonl(dir, out, minYear) {
   let ents;
   try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of ents) {
     const p = path.join(dir, e.name);
-    if (e.isDirectory()) walkJsonl(p, out);
-    else if (e.name.endsWith('.jsonl')) out.push(p);
+    if (e.isDirectory()) {
+      if (minYear && /^\d{4}$/.test(e.name) && +e.name < minYear) continue; // skip archived years
+      walkJsonl(p, out, minYear);
+    } else if (e.name.endsWith('.jsonl')) out.push(p);
   }
 }
 
@@ -70,7 +78,16 @@ function isCodexAutomation(meta) {
   return false;
 }
 
-function metaFor(file, harness) {
+// metaFor + lastRole each read a slice of every recent file on every scan.
+// They only change when the file changes, so memoize by (path, mtime, size).
+// This is what keeps the main thread from re-parsing ~1300 transcripts per tick.
+const metaCache = new Map();
+const roleCache = new Map();
+
+function metaFor(file, harness, st) {
+  if (st === undefined) { try { st = fs.statSync(file); } catch { st = null; } }
+  const ckey = st ? `${file}:${st.mtimeMs}:${st.size}` : file;
+  if (metaCache.has(ckey)) return metaCache.get(ckey);
   const head = readSlice(file, HEAD_BYTES, false).split('\n');
   let cwd = '';
   let title = '';
@@ -103,18 +120,27 @@ function metaFor(file, harness) {
     (/^Automation:/i.test(title) && /Automation ID:/i.test(title)) ||
     /^Summarize the recent tail of an autonomous coding-agent session/i.test(title)
   )) automation = true;
-  return { cwd, title, automation };
+  const res = { cwd, title, automation };
+  metaCache.set(ckey, res);
+  if (metaCache.size > 1500) metaCache.clear();
+  return res;
 }
 
-function lastRole(file, harness) {
+function lastRole(file, harness, st) {
+  if (st === undefined) { try { st = fs.statSync(file); } catch { st = null; } }
+  const ckey = st ? `${file}:${st.mtimeMs}:${st.size}` : file;
+  if (roleCache.has(ckey)) return roleCache.get(ckey);
   const tail = readSlice(file, TAIL_BYTES, true).split('\n').map(parse).filter(Boolean);
+  let role = 'unknown';
   for (let i = tail.length - 1; i >= 0; i--) {
     const o = tail[i];
     const p = o.payload || o;
-    const role = p.role || (o.message && o.message.role);
-    if (role) return role;
+    const r = p.role || (o.message && o.message.role);
+    if (r) { role = r; break; }
   }
-  return 'unknown';
+  roleCache.set(ckey, role);
+  if (roleCache.size > 1500) roleCache.clear();
+  return role;
 }
 
 function relAge(ms) {
@@ -124,29 +150,36 @@ function relAge(ms) {
   return Math.round(h / 24) + 'd';
 }
 
-// Public: recent top-level sessions across harnesses (excludes subagent/workflow children).
-function listRecent(opts = {}) {
-  const maxAgeH = opts.maxAgeH || 72;
-  const limit = opts.limit || 40;
+// The tree walk + per-file meta/role reads are the expensive part, and are
+// identical whether or not usage is requested. Cache the base row list for a
+// short window so listSessions + getStatus in the same refresh pay it once, not
+// twice. Per-file work underneath is already mtime-memoized (metaCache/roleCache).
+const scanCache = new Map(); // key -> { at, rows }
+const SCAN_TTL_MS = 1500;
+function baseScan(maxAgeH, limit, includeAutomation) {
+  const key = `${maxAgeH}:${limit}:${!!includeAutomation}`;
+  const hit = scanCache.get(key);
+  if (hit && Date.now() - hit.at < SCAN_TTL_MS) return hit.rows;
   const cutoff = Date.now() - maxAgeH * 3.6e6;
+  const minYear = new Date(cutoff).getFullYear();
   const rows = [];
   for (const h of HARNESSES) {
     const files = [];
-    walkJsonl(h.dir, files);
+    walkJsonl(h.dir, files, minYear);
     for (const file of files) {
       if (file.includes('/subagents/') || file.includes('/workflows/')) continue; // child agents
       let st;
       try { st = fs.statSync(file); } catch { continue; }
       if (st.mtimeMs < cutoff) continue;
-      const { cwd, title, automation } = metaFor(file, h.name);
-      if (automation && !opts.includeAutomation) continue; // hide codex subagent / exec noise
+      const { cwd, title, automation } = metaFor(file, h.name, st);
+      if (automation && !includeAutomation) continue; // hide codex subagent / exec noise
       rows.push({
         harness: h.name,
         id: path.basename(file).replace(/\.jsonl$/, ''),
         cwd,
         repo: cwd ? cwd.replace(HOME, '~') : '',
         title: title || '',
-        lastRole: lastRole(file, h.name),
+        lastRole: lastRole(file, h.name, st),
         ageMs: st.mtimeMs,
         age: relAge(st.mtimeMs),
         sizeBytes: st.size,
@@ -156,6 +189,13 @@ function listRecent(opts = {}) {
   }
   rows.sort((a, b) => b.ageMs - a.ageMs);
   const out = rows.slice(0, limit);
+  scanCache.set(key, { at: Date.now(), rows: out });
+  return out;
+}
+
+// Public: recent top-level sessions across harnesses (excludes subagent/workflow children).
+function listRecent(opts = {}) {
+  const out = baseScan(opts.maxAgeH || 72, opts.limit || 40, opts.includeAutomation);
   if (opts.withUsage) {
     for (const r of out) {
       const u = readUsage(r.path, r.harness);

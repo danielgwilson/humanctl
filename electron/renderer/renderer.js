@@ -13,7 +13,16 @@ const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
 const RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
-function hue(varRef) { const name = String(varRef).replace(/var\(|\)/g, '').trim(); return cssv(name) || '#888'; }
+// hue() runs per row/tile/sparkline; getComputedStyle forces a style recalc each
+// call, so memoize resolved values. Cleared whenever theme/temperature changes.
+let hueCache = Object.create(null);
+function clearHueCache() { hueCache = Object.create(null); }
+function hue(varRef) {
+  const name = String(varRef).replace(/var\(|\)/g, '').trim();
+  let v = hueCache[name];
+  if (v === undefined) { v = cssv(name) || '#888'; hueCache[name] = v; }
+  return v;
+}
 
 const fmtTok = (n) => { n = n || 0; return n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); };
 const fmtUSD = (n) => { if (n == null) return null; return n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : n >= 10 ? '$' + n.toFixed(0) : '$' + n.toFixed(2); };
@@ -267,7 +276,7 @@ function fixtureStatus() {
       'claude-code': { sessions: 4, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
     },
     codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } },
-    needsYou: 3, working: 2, nearCompaction: 1, sessions: 7, pricingAsOf: '2026-06', version: '0.5.4',
+    needsYou: 3, working: 2, nearCompaction: 1, sessions: 7, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
   };
 }
@@ -352,8 +361,9 @@ function renderHeader() {
   el('heroNum').textContent = needYou;
   const denom = agents.length || 1;
   el('heroShape').innerHTML = svgRing(100 * needYou / denom, hue('var(--s-need)'), 30);
-  const ver = status && status.version ? 'v' + status.version : 'home';
-  el('verTag').textContent = ver;
+  // Real app injects the package version via IPC; demo/fixture has none, so show
+  // "demo" rather than asserting a version number that could drift out of sync.
+  el('verTag').textContent = status && status.version ? 'v' + status.version : 'demo';
   el('demoBadge').style.display = demo ? '' : 'none';
 }
 
@@ -1064,11 +1074,13 @@ function applyTheme() {
   document.body.classList.toggle('light', theme === 'light');
   el('tTheme').textContent = theme;
   el('tTheme').classList.toggle('on', theme === 'light');
+  clearHueCache();
 }
 function applyTemp() {
   document.body.classList.toggle('loud', temp === 'loud');
   el('tTemp').textContent = temp;
   el('tTemp').classList.toggle('on', temp === 'loud');
+  clearHueCache();
 }
 el('tTheme').addEventListener('click', () => { theme = theme === 'light' ? 'dark' : 'light'; applyTheme(); if (window.humanctl) window.humanctl.setState({ theme }); redrawActive(); });
 el('tTemp').addEventListener('click', () => { temp = temp === 'loud' ? 'considered' : 'loud'; applyTemp(); if (window.humanctl) window.humanctl.setState({ temp }); redrawActive(); });
@@ -1128,7 +1140,7 @@ async function load() {
 }
 let lastSig = '';
 const rowSubSig = new Map(); // id -> ageMs+':'+contextPct sub-signature from last render
-async function refresh() {
+async function _refresh() {
   if (!window.humanctl) return;
   await fetchData();
   const sig = allRows.map((r) => r.id + r.ageMs + r.lastRole + r.contextPct).join('|')
@@ -1149,6 +1161,23 @@ async function refresh() {
   remapAgents();
   redrawActive();
 }
-if (window.humanctl && window.humanctl.onSessionsChanged) window.humanctl.onSessionsChanged(refresh);
-setInterval(() => { if (window.humanctl) refresh(); }, 20000);
+// Throttle refresh: coalesce bursts and never overlap two scans. A fs.watch
+// storm or the 20s poll both funnel through scheduleRefresh, so the main thread
+// pays the (now cached) scan at most once every REFRESH_MIN_MS.
+const REFRESH_MIN_MS = 2500;
+let refreshing = false, refreshQueued = false, refreshTimer = null, lastRefreshAt = 0;
+async function runRefresh() {
+  refreshTimer = null;
+  if (refreshing) { refreshQueued = true; return; }
+  refreshing = true; lastRefreshAt = Date.now();
+  try { await _refresh(); }
+  finally { refreshing = false; if (refreshQueued) { refreshQueued = false; scheduleRefresh(); } }
+}
+function scheduleRefresh() {
+  if (refreshTimer) return; // one already pending
+  const wait = Math.max(0, REFRESH_MIN_MS - (Date.now() - lastRefreshAt));
+  refreshTimer = setTimeout(runRefresh, wait);
+}
+if (window.humanctl && window.humanctl.onSessionsChanged) window.humanctl.onSessionsChanged(scheduleRefresh);
+setInterval(() => { if (window.humanctl) scheduleRefresh(); }, 20000);
 load();

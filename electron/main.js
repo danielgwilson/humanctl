@@ -62,7 +62,10 @@ function createWindow() {
 let watchTimer = null;
 const watchers = [];
 function watchSessions() {
-  const ping = () => { clearTimeout(watchTimer); watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 1000); };
+  // Trailing debounce: active agents write constantly, so coalesce a burst of
+  // fs events into one refresh. 2.5s keeps the UI live without pinning the main
+  // thread on the (now mtime-cached) session scan.
+  const ping = () => { clearTimeout(watchTimer); watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 2500); };
   // ensure the inbox dir exists so its watcher attaches even before the first note
   try { fs.mkdirSync(path.join(os.homedir(), '.humanctl'), { recursive: true }); } catch {}
   const dirs = [...HARNESSES.map((h) => h.dir), path.join(os.homedir(), '.humanctl')];
