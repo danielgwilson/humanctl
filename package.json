@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.6.0",
+  "version": "0.6.1",
   "description": "A control plane for the human bottleneck.",
   "main": "electron/main.js",
   "bin": {
@@ -21,6 +21,7 @@
     "cli:init": "node ./bin/humanctl.js init .",
     "cli:status": "node ./bin/humanctl.js status .",
     "desktop": "electron electron/main.js",
+    "renderer": "python3 -m http.server 4173 --directory electron/renderer",
     "desktop:sessions": "node electron/sessions.js",
     "app:build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
     "app:dmg": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",

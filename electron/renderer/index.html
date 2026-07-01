@@ -70,10 +70,14 @@ body{ height:100vh; overflow:hidden; }
 /* ---------- PERSISTENT THIN CONDUCTOR HEADER (all modes) ---------- */
 .hdr{
   display:flex; align-items:center; gap:var(--s4);
-  height:52px; padding:0 var(--s5);
+  height:52px; padding:0 var(--s5) 0 80px;   /* left inset clears the macOS traffic lights */
   background:var(--bg2); border-bottom:1px solid var(--rule);
   min-width:0; overflow:hidden;
+  -webkit-app-region:drag;      /* whole header drags the frameless window */
+  user-select:none;             /* header text must not highlight; selection blocks the drag */
 }
+/* interactive controls opt out of the drag region so clicks still register */
+.hdr .seg, .hdr .ctl, .hdr button, .hdr [data-mode]{ -webkit-app-region:no-drag; }
 .hdr .brand{ display:flex; align-items:baseline; gap:var(--s2); flex:0 0 auto; }
 .hdr .brand .mk{ font-weight:700; font-size:15px; letter-spacing:-.02em; }
 .hdr .brand .mk b{ color:var(--iris); }
