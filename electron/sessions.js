@@ -8,6 +8,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { execFileSync } = require('child_process');
 const { priceFor, contextWindowFor, AS_OF } = require('./pricing');
 
 const HOME = os.homedir();
@@ -91,11 +92,15 @@ function metaFor(file, harness, st) {
   const head = readSlice(file, HEAD_BYTES, false).split('\n');
   let cwd = '';
   let title = '';
+  let customTitle = '';   // Claude Code user rename, logged as {type:'custom-title'} and re-emitted near the top
   let automation = false;
   let sawMeta = false;
+  let scanned = 0;
   for (const ln of head) {
+    scanned++;
     const o = parse(ln);
     if (!o) continue;
+    if (o.type === 'custom-title' && o.customTitle) customTitle = String(o.customTitle);
     const p = o.payload || o;
     if (!cwd) cwd = p.cwd || o.cwd || (o.message && o.message.cwd) || '';
     if (harness === 'codex' && !sawMeta && (p.originator || p.source || p.parent_thread_id || p.cli_version)) {
@@ -111,7 +116,8 @@ function metaFor(file, harness, st) {
         if (txt && !isBoilerplate(txt)) title = txt.replace(/\s+/g, ' ').slice(0, 140);
       }
     }
-    if (cwd && title) break;
+    // keep scanning a little past cwd+title to catch the (early, repeated) rename line
+    if (cwd && title && (customTitle || scanned > 120)) break;
   }
   // machine-generated sessions, by prompt shape: codex scheduled runs
   // ("Automation: <name> Automation ID: <id>") and the headless `claude -p`
@@ -120,7 +126,7 @@ function metaFor(file, harness, st) {
     (/^Automation:/i.test(title) && /Automation ID:/i.test(title)) ||
     /^Summarize the recent tail of an autonomous coding-agent session/i.test(title)
   )) automation = true;
-  const res = { cwd, title, automation };
+  const res = { cwd, title, customTitle, automation };
   metaCache.set(ckey, res);
   if (metaCache.size > 1500) metaCache.clear();
   return res;
@@ -171,7 +177,7 @@ function baseScan(maxAgeH, limit, includeAutomation) {
       let st;
       try { st = fs.statSync(file); } catch { continue; }
       if (st.mtimeMs < cutoff) continue;
-      const { cwd, title, automation } = metaFor(file, h.name, st);
+      const { cwd, title, customTitle, automation } = metaFor(file, h.name, st);
       if (automation && !includeAutomation) continue; // hide codex subagent / exec noise
       rows.push({
         harness: h.name,
@@ -179,6 +185,7 @@ function baseScan(maxAgeH, limit, includeAutomation) {
         cwd,
         repo: cwd ? cwd.replace(HOME, '~') : '',
         title: title || '',
+        customTitle: customTitle || '',
         lastRole: lastRole(file, h.name, st),
         ageMs: st.mtimeMs,
         age: relAge(st.mtimeMs),
@@ -191,6 +198,41 @@ function baseScan(maxAgeH, limit, includeAutomation) {
   const out = rows.slice(0, limit);
   scanCache.set(key, { at: Date.now(), rows: out });
   return out;
+}
+
+// Codex keeps the (renamed or auto-generated) thread title in its local SQLite
+// state DB, not the rollout file. Read it read-only via the system sqlite3
+// (always present on macOS), keyed by thread id (the PK, so lookups are indexed),
+// batched for the displayed rows, cached by the DB mtime. Purely additive: any
+// failure (no sqlite3, locked DB, schema drift) just leaves customTitle unset.
+const CODEX_STATE_DB = path.join(HOME, '.codex', 'state_5.sqlite');
+const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+const codexTitleCache = new Map(); // `${uuid}:${dbMtime}` -> title ('' if none)
+function applyCodexTitles(rows) {
+  let dbm; try { dbm = fs.statSync(CODEX_STATE_DB).mtimeMs; } catch { return; }
+  const need = [];
+  for (const r of rows) {
+    const m = String(r.id).match(UUID_RE);
+    if (!m) continue;
+    r._uuid = m[1];
+    const k = `${r._uuid}:${dbm}`;
+    if (codexTitleCache.has(k)) { const v = codexTitleCache.get(k); if (v) r.customTitle = v; }
+    else need.push(r._uuid);
+  }
+  if (!need.length) return;
+  let qrows = [];
+  try {
+    const inList = need.map((u) => `'${u}'`).join(','); // uuids are hex, safe to inline
+    const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', CODEX_STATE_DB,
+      `SELECT id, title FROM threads WHERE id IN (${inList}) AND title != ''`],
+      { timeout: 4000, encoding: 'utf8', maxBuffer: 8 << 20 });
+    qrows = raw.trim() ? JSON.parse(raw) : [];
+  } catch { qrows = []; }
+  const found = {};
+  for (const q of qrows) { const t = String(q.title || '').replace(/\s+/g, ' ').trim().slice(0, 120); if (t) found[q.id] = t; }
+  for (const u of need) codexTitleCache.set(`${u}:${dbm}`, found[u] || '');
+  for (const r of rows) if (r._uuid && found[r._uuid]) r.customTitle = found[r._uuid];
+  if (codexTitleCache.size > 3000) codexTitleCache.clear();
 }
 
 // Public: recent top-level sessions across harnesses (excludes subagent/workflow children).
@@ -212,10 +254,13 @@ function listRecent(opts = {}) {
         r.reasoningEffort = x.reasoningEffort;
         r.ultracode = x.ultracode;
         r.model = x.model || (u && u.model) || '';
+        if (x.customTitle) r.customTitle = x.customTitle; // tail value is the most recent rename
       } else if (u) {
         r.model = u.model;
       }
     }
+    // Codex titles live in the state DB, not the transcript: fill them for the displayed rows.
+    applyCodexTitles(out.filter((r) => r.harness === 'codex'));
   }
   return out;
 }
@@ -466,12 +511,13 @@ function readRowExtras(file, harness) {
   const tailBytes = claude ? 768 * 1024 : 3 * 1024 * 1024;
   const lines = readSlice(file, tailBytes, true).split('\n');
   if (lines.length) lines.shift(); // drop possibly-partial first line of the tail
-  let lastUser = '', prevAgent = '', rollingAgent = '', model = '', effort = '', ultra = false;
+  let lastUser = '', prevAgent = '', rollingAgent = '', model = '', effort = '', ultra = false, customTitle = '';
   for (const ln of lines) {
     if (!ln) continue;
     const o = parse(ln);
     if (!o) continue;
     if (claude) {
+      if (o.type === 'custom-title' && o.customTitle) { customTitle = String(o.customTitle); continue; }
       if (o.type === 'attachment' && o.attachment) {
         if (o.attachment.type === 'ultra_effort_enter') ultra = true;
         else if (o.attachment.type === 'ultra_effort_exit') ultra = false;
@@ -491,7 +537,7 @@ function readRowExtras(file, harness) {
     }
   }
   if (!claude) ultra = effort === 'xhigh';
-  const res = { lastUser: clip(lastUser, 200), prevAgent: clip(prevAgent, 200), model, reasoningEffort: effort || null, ultracode: ultra };
+  const res = { lastUser: clip(lastUser, 200), prevAgent: clip(prevAgent, 200), model, reasoningEffort: effort || null, ultracode: ultra, customTitle: customTitle || '' };
   rowCache.set(key, res);
   if (rowCache.size > 800) rowCache.clear();
   return res;

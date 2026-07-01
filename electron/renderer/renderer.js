@@ -185,12 +185,13 @@ function mapAgent(row, notes, now) {
   const rawNarr = cachedSummary || row.lastUser || row.title || row.prevAgent || '(no recent prompt)';
   const narrative = cleanNarrative(rawNarr);
   const cost = row.costUSD != null ? row.costUSD : (row.apiEquivUSD != null ? row.apiEquivUSD : null);
+  const renamed = (row.customTitle || '').trim();  // the name set in the Claude Code sidebar, if any
   return {
     id: row.id,
     harness: row.harness,                       // 'codex' | 'claude-code'
     harnessLabel: row.harness === 'codex' ? 'codex' : 'claude',
     harnessCls: row.harness === 'codex' ? 'c-codex' : 'c-claude',
-    name: idn.name, face: idn.face, tag: idn.tag,
+    name: renamed || idn.name, face: idn.face, tag: idn.tag, titled: !!renamed,
     state,
     narrative,
     aiNarr: !!cachedSummary,
@@ -247,6 +248,7 @@ let theme = 'dark';         // 'dark' | 'light'
 let temp = 'considered';    // 'considered' | 'loud'
 let aiOn = false;
 let pins = new Set();
+let summarizer = 'claude';  // 'claude' | 'codex': which local CLI powers AI summary
 let facet = 'timeline';      // watched-agent detail facet: 'timeline' | 'map'
 
 // per-agent readSession detail cache (real signals only)
@@ -260,9 +262,9 @@ function rememberSummary(id, text) { summaries.delete(id); summaries.set(id, tex
 // Clean, non-real ids + generic repos. Never real data.
 // ============================================================
 const FIXTURE_ROWS = [
-  { harness: 'claude-code', id: 'fixture-a1a1a1a1', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Wire the multi-source update spine', lastRole: 'assistant', age: '2m', ageMs: Date.now() - 2 * 6e4, contextPct: 63, costUSD: 2.14, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: true, lastUser: 'wire the update spine into the renderer', prevAgent: 'Mapped the render path and the watcher.' },
+  { harness: 'claude-code', id: 'fixture-a1a1a1a1', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Wire the multi-source update spine', customTitle: 'Multi-source spine, renderer wiring pass', lastRole: 'assistant', age: '2m', ageMs: Date.now() - 2 * 6e4, contextPct: 63, costUSD: 2.14, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: true, lastUser: 'wire the update spine into the renderer', prevAgent: 'Mapped the render path and the watcher.' },
   { harness: 'codex', id: 'rollout-fixture-b2b2', repo: '~/demo/core', cwd: '~/demo/core', title: 'Choose the rename-persistence path', lastRole: 'assistant', age: '6m', ageMs: Date.now() - 6 * 6e4, contextPct: 22, apiEquivUSD: 0.88, model: 'gpt-5.5', reasoningEffort: 'xhigh', ultracode: false, lastUser: 'which rename-persistence path should we trust?', prevAgent: 'Ran the migration dry-run; two paths viable.' },
-  { harness: 'claude-code', id: 'fixture-c3c3c3c3', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Pull the activity feed', lastRole: 'user', age: '11m', ageMs: Date.now() - 11 * 6e4, contextPct: 38, costUSD: 1.02, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: 'retry the activity pull', prevAgent: 'The activity adapter is built.' },
+  { harness: 'claude-code', id: 'fixture-c3c3c3c3', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Pull the activity feed', customTitle: 'Activity feed adapter', lastRole: 'user', age: '11m', ageMs: Date.now() - 11 * 6e4, contextPct: 38, costUSD: 1.02, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: 'retry the activity pull', prevAgent: 'The activity adapter is built.' },
   { harness: 'codex', id: 'rollout-fixture-d4d4', repo: '~/demo/ledger', cwd: '~/demo/ledger', title: 'Backfill the ledger', lastRole: 'user', age: '1m', ageMs: Date.now() - 1 * 6e4, contextPct: 55, apiEquivUSD: 0.63, model: 'gpt-5.5', reasoningEffort: 'high', ultracode: false, lastUser: 'keep backfilling the ledger', prevAgent: 'At 147 of 188 rows.' },
   { harness: 'claude-code', id: 'fixture-e5e5e5e5', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Extract the sparkline component', lastRole: 'user', age: '3m', ageMs: Date.now() - 3 * 6e4, contextPct: 48, costUSD: 0.74, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'extract Spark into a shared component', prevAgent: 'Created the component shell.' },
   { harness: 'claude-code', id: 'fixture-f6f6f6f6', repo: '~/demo/hygiene', cwd: '~/demo/hygiene', title: 'OSS hygiene sweep', lastRole: 'assistant', age: '24m', ageMs: Date.now() - 24 * 6e4, contextPct: 12, costUSD: 3.40, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: '', prevAgent: 'Swept history; checks are green.' },
@@ -388,29 +390,44 @@ function select(id, opts) {
 // ============================================================
 // FOCUS MODE
 // ============================================================
+function rosterRow(a) {
+  const h2 = hue(STATE[a.state].hue);
+  // per-row metric = REAL contextPct (tiny bar). null -> a faint "n/a" placeholder bar.
+  const meter = a.ctxPct != null ? svgBar(a.ctxPct, h2, 46, 5) : `<span style="font-family:var(--mono);font-size:8px;color:var(--ink4)">n/a</span>`;
+  const isPin = pins.has(a.id);
+  return `<div class="arow ${a.id === selId ? 'sel' : ''}" style="--c-sel:${h2}" data-id="${esc(a.id)}">
+    <span class="face">${a.face}</span>
+    <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rp">${esc(a.repo)}</span></span>
+    <span class="spk">${meter}</span>
+    <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'}">&#128204;</button>
+    <span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h2}"></span>
+  </div>`;
+}
 function renderRoster() {
   const box = el('roster');
   el('fleet-ct').textContent = agents.length + ' agents';
   let html = '';
+  // Pinned group first (humanctl-native pins; neither harness exposes pins locally).
+  const pinned = agents.filter((a) => pins.has(a.id));
+  if (pinned.length) {
+    html += `<div class="grp-hd"><span class="gdot" style="background:var(--iris)"></span>Pinned<span class="gct">${pinned.length}</span></div>`;
+    for (const a of pinned) html += rosterRow(a);
+  }
   for (const g of GROUPS) {
-    const items = agents.filter((a) => a.state === g.k);
+    const items = agents.filter((a) => a.state === g.k && !pins.has(a.id));
     if (!items.length) continue;
     const h = hue(STATE[g.k].hue);
     html += `<div class="grp-hd"><span class="gdot" style="background:${h}"></span>${g.label}<span class="gct">${items.length}</span></div>`;
-    for (const a of items) {
-      const h2 = hue(STATE[a.state].hue);
-      // per-row metric = REAL contextPct (tiny bar). null -> a faint "n/a" placeholder bar.
-      const meter = a.ctxPct != null ? svgBar(a.ctxPct, h2, 46, 5) : `<span style="font-family:var(--mono);font-size:8px;color:var(--ink4)">n/a</span>`;
-      html += `<div class="arow ${a.id === selId ? 'sel' : ''}" style="--c-sel:${h2}" data-id="${esc(a.id)}">
-        <span class="face">${a.face}</span>
-        <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rp">${esc(a.repo)}</span></span>
-        <span class="spk">${meter}</span>
-        <span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h2}"></span>
-      </div>`;
-    }
+    for (const a of items) html += rosterRow(a);
   }
   box.innerHTML = html || `<div class="watch-empty">no sessions in the last 72h.</div>`;
   box.querySelectorAll('.arow').forEach((r) => r.addEventListener('click', () => select(r.dataset.id)));
+  box.querySelectorAll('.pinbtn').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); togglePin(b.dataset.pin); }));
+}
+function togglePin(id) {
+  if (pins.has(id)) pins.delete(id); else pins.add(id);
+  if (window.humanctl) window.humanctl.setState({ pins: [...pins] });
+  renderRoster();
 }
 
 function propCell(k, valHtml, na) { return `<div class="cell"><div class="k">${k}</div><div class="v ${na ? 'na' : ''}">${valHtml}</div></div>`; }
@@ -992,18 +1009,19 @@ async function openLinear(a) {
   await window.humanctl.openExternal(refs[0].url);
 }
 let sumRun = 0;
+const engineLabel = (e) => (e === 'codex' ? 'Codex' : 'Claude Code');
 async function summarizeAgent(a) {
-  toast('AI summary: sending recent messages to your local claude CLI...');
-  const run = ++sumRun;
   if (summaries.has(a.id)) { applySummary(a.id); toast('summary ready (cached).'); return; }
+  toast('AI summary: sending recent messages to your local ' + engineLabel(summarizer) + ' CLI...');
+  const run = ++sumRun;
   if (!window.humanctl) {
     const s = 'Working through the latest instruction; see the timeline for the real signals.';
     rememberSummary(a.id, s); applySummary(a.id); toast('demo summary set.'); return;
   }
-  const r = await window.humanctl.summarize({ path: a.path, harness: a.harness });
+  const r = await window.humanctl.summarize({ path: a.path, harness: a.harness, engine: summarizer });
   if (run !== sumRun) return;
-  if (r && r.ok && r.summary) { rememberSummary(a.id, r.summary); applySummary(a.id); toast('summary ready (via local claude CLI).'); }
-  else toast('could not summarize (needs your local claude CLI auth).');
+  if (r && r.ok && r.summary) { rememberSummary(a.id, r.summary); applySummary(a.id); toast('summary ready (via ' + engineLabel(r.engine || summarizer) + ').'); }
+  else toast(r && r.error ? 'summary failed: ' + r.error : 'could not summarize.');
 }
 function applySummary(id) {
   // recompute the agent's narrative and repaint the active mode's view of it.
@@ -1087,6 +1105,21 @@ el('tTemp').addEventListener('click', () => { temp = temp === 'loud' ? 'consider
 document.querySelectorAll('#seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 el('scrim').addEventListener('click', closePeek);
 
+// settings popover: pick the AI-summary engine (Claude Code or Codex), persisted
+function applySummarizerUI() { document.querySelectorAll('#engSeg button').forEach((b) => b.classList.toggle('on', b.dataset.eng === summarizer)); }
+function toggleSettings(force) { const pop = el('settingsPop'); const show = force !== undefined ? force : pop.hidden; pop.hidden = !show; if (show) applySummarizerUI(); }
+el('btnSettings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
+document.querySelectorAll('#engSeg button').forEach((b) => b.addEventListener('click', () => {
+  summarizer = b.dataset.eng === 'codex' ? 'codex' : 'claude';
+  applySummarizerUI();
+  if (window.humanctl) window.humanctl.setState({ summarizer });
+  toast('AI summary engine: ' + engineLabel(summarizer));
+}));
+document.addEventListener('mousedown', (e) => {
+  const pop = el('settingsPop');
+  if (!pop.hidden && !pop.contains(e.target) && e.target.id !== 'btnSettings') toggleSettings(false);
+});
+
 // keyboard
 document.addEventListener('keydown', (e) => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) {
@@ -1132,6 +1165,7 @@ async function load() {
     mode = ['focus', 'triage', 'wall'].includes(st.state.mode) ? st.state.mode : 'focus';
     aiOn = !!st.state.aiOn;
     pins = new Set(st.state.pins || []);
+    summarizer = st.state.summarizer === 'codex' ? 'codex' : 'claude';
     if (st.state.selectedId) selId = st.state.selectedId;
   }
   applyTheme(); applyTemp();

@@ -11,7 +11,7 @@ let APP_VERSION = '0.0.0';
 try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
 const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, HARNESSES } = require('./sessions');
 
 let win = null;
@@ -94,29 +94,85 @@ ipcMain.handle('sessions:read', (_e, arg) => {
     return { ok: true, data: readBlocks(arg.path, { harness: arg.harness }), usage: readUsage(arg.path, arg.harness), detail };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
-// Opt-in only: summarize a session's recent activity via the local `claude` CLI.
-// This is the one action that sends data off the machine (to the model, through
-// the user's own CLI auth), so the renderer must label it explicitly. Cached by mtime.
+// A Dock/Finder-launched app inherits a minimal PATH (/usr/bin:/bin:...), not the
+// user's shell PATH, so bare `claude` / `codex` are not found. Resolve the real
+// absolute path via the login shell (which sources the user's rc), cached, with a
+// dir scan as a fallback. This is why summaries failed only in the packaged app.
+const cliCache = new Map();
+function resolveCli(name) {
+  if (cliCache.has(name)) return cliCache.get(name);
+  let bin = null;
+  try {
+    const shell = process.env.SHELL || '/bin/zsh';
+    const out = execFileSync(shell, ['-ilc', `command -v ${name} 2>/dev/null`], { timeout: 6000, encoding: 'utf8' });
+    const line = out.split('\n').map((s) => s.trim()).filter(Boolean).pop();
+    if (line && path.isAbsolute(line) && fs.existsSync(line)) bin = line;
+  } catch { /* fall through to dir scan */ }
+  if (!bin) {
+    const home = os.homedir();
+    const cands = [`${home}/.local/bin/${name}`, `${home}/.bun/bin/${name}`, `/opt/homebrew/bin/${name}`, `/usr/local/bin/${name}`, `${home}/.npm-global/bin/${name}`];
+    bin = cands.find((c) => { try { return fs.existsSync(c); } catch { return false; } }) || null;
+  }
+  cliCache.set(name, bin);
+  return bin;
+}
+
+// Opt-in only: summarize a session's recent activity via the user's chosen local
+// CLI (Claude Code `claude -p`, or Codex `codex exec`). This is the one action
+// that sends data off the machine (to the model, through the user's own CLI auth),
+// so the renderer labels it explicitly. Cached by engine + mtime.
 const summaryCache = new Map();
+const SUMMARIZE_PROMPT = (ex, tail) => `Summarize the recent tail of an autonomous coding-agent session for an operator dashboard. In 1-2 plain sentences say what the agent is currently working on and its immediate next step. Be concrete and terse, no preamble. Respond directly with the summary only; do not use any tools.\n\nLatest user instruction: ${ex.lastUser || '(none)'}\n\nRecent blocks:\n${tail}`;
 ipcMain.handle('session:summarize', async (_e, arg) => {
   try {
     if (!arg || !arg.path) return { ok: false, error: 'no path' };
+    const engine = arg.engine === 'codex' ? 'codex' : 'claude';
     const st = fs.statSync(arg.path);
-    const key = `${arg.path}:${st.mtimeMs}`;
-    if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true };
+    const key = `${engine}:${arg.path}:${st.mtimeMs}`;
+    if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true, engine };
+    const bin = resolveCli(engine);
+    if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
     const d = readDetail(arg.path, arg.harness) || {};
     const ex = d.lastExchange || {};
     const tail = (readBlocks(arg.path, { harness: arg.harness }).blocks || []).slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
-    const prompt = `Summarize the recent tail of an autonomous coding-agent session for an operator dashboard. In 1-2 plain sentences say what the agent is currently working on and its immediate next step. Be concrete and terse, no preamble.\n\nLatest user instruction: ${ex.lastUser || '(none)'}\n\nRecent blocks:\n${tail}`;
-    const out = await new Promise((res, rej) => {
-      const cp = execFile('claude', ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 45000, maxBuffer: 1 << 20 },
-        (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 200))) : res(String(stdout).trim()));
-      try { cp.stdin.end(prompt); } catch (e) { rej(e); }
-    });
+    const prompt = SUMMARIZE_PROMPT(ex, tail);
+    const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+    let out;
+    if (engine === 'codex') {
+      // `codex exec` is an agent; keep it read-only, out-of-repo, and ephemeral so
+      // it does no work and leaves no session file, and read the clean final
+      // message from --output-last-message rather than parsing the event stream.
+      const outFile = path.join(os.tmpdir(), `humanctl-sum-${Date.now()}-${Math.round(st.mtimeMs)}.txt`);
+      out = await new Promise((res, rej) => {
+        const cp = execFile(bin, ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '-C', os.tmpdir(), '-o', outFile, '-'],
+          { timeout: 90000, maxBuffer: 4 << 20, env },
+          (err, stdout, stderr) => {
+            let msg = '';
+            try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
+            try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+            if (msg) return res(msg);
+            if (err) return rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300)));
+            return res(String(stdout).trim());
+          });
+        try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+      });
+    } else {
+      out = await new Promise((res, rej) => {
+        const cp = execFile(bin, ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 60000, maxBuffer: 1 << 20, env },
+          (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300))) : res(String(stdout).trim()));
+        try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+      });
+    }
     const summary = out.slice(0, 600);
+    if (!summary) return { ok: false, error: `the ${engine} CLI returned no output`, engine };
+    // Both CLIs print auth failures to stdout and exit 0, so guard against
+    // surfacing "Not logged in" as if it were a real summary.
+    if (/\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated)\b/i.test(summary)) {
+      return { ok: false, error: `${engine} CLI is not authenticated: ${summary.slice(0, 140)}`, engine };
+    }
     summaryCache.set(key, summary);
     if (summaryCache.size > 200) summaryCache.clear();
-    return { ok: true, summary };
+    return { ok: true, summary, engine };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // Agent inbox: notes posted by `humanctl note`.
