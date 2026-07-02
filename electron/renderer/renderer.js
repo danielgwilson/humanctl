@@ -67,13 +67,18 @@ const GROUPS = [
   { k: 'done', label: 'Done' },
 ];
 const ORDER = { need: 0, block: 1, work: 2, idle: 3, done: 4 };
-const FRESH_MS = 30 * 60 * 1000; // "working" freshness window (spec)
-// Needs-you decay: an assistant-last session is only "waiting on you" while it
-// is plausibly still on your desk. Past this window with no activity it demotes
-// to idle instead of piling up. 18h clears yesterday's abandoned sessions by
-// the next morning without ever decaying the current working day. Keep in sync
-// with NEED_DECAY_MS in electron/sessions.js; documented in docs/desktop.md.
-const NEED_DECAY_MS = 18 * 60 * 60 * 1000;
+// State and tier are computed by the reader (lib/sessions.js) from the tail
+// CONTENT of each transcript: needs-you means the final assistant message is
+// question- or decision-shaped, or the session was interrupted; the attention
+// tier (hot / drifting / archived) ages by the last substantive message, not
+// file mtime. The reader owns all time constants; the renderer consumes
+// row.state / row.stateReason / row.tier and only overlays notes on top.
+// Documented in docs/desktop.md ("State model").
+const TIERS = {
+  hot: { cls: '', label: '' },
+  drifting: { cls: 'drift', label: 'drifting' },
+  archived: { cls: 'archived', label: 'archived' },
+};
 // A done note usually lands moments before the agent's final transcript write,
 // so allow that much clock skew when deciding whether the note postdates the
 // session's last activity.
@@ -179,27 +184,25 @@ function normModel(m) {
   return String(m).trim();
 }
 function deriveState(row, notes, now) {
+  const tier = TIERS[row.tier] ? row.tier : 'hot';
   const n = notes.filter((x) => x.session && x.session === row.id);
   const latestTs = (lvl) => n.reduce((m, x) => (x.level === lvl ? Math.max(m, Date.parse(x.ts) || 0) : m), 0);
-  // A done note is the agent explicitly closing the loop: it clears needs-you
-  // immediately, as long as it is the newest note for the session and the
-  // session has not moved again since (activity after a done note reopens it).
+  // Notes overlay the content-shaped state: a done note is the agent
+  // explicitly closing the loop. It clears needs-you immediately, as long as
+  // it is the newest note for the session and the session has not moved again
+  // since (activity after a done note reopens it).
   const doneTs = latestTs('done');
   if (doneTs && doneTs >= row.ageMs - DONE_NOTE_SLACK_MS
-    && doneTs >= latestTs('blocked') && doneTs >= latestTs('review')) return 'done';
-  if (n.some((x) => x.level === 'blocked')) return 'block';
-  if (n.some((x) => x.level === 'review')) return 'need';
-  // Assistant-last means the ball is with you, but not forever: past the decay
-  // window with no activity it is history, not a queue item. Pure time decay;
-  // no fabricated signal.
-  if (row.lastRole === 'assistant') return (now - row.ageMs) <= NEED_DECAY_MS ? 'need' : 'idle';
-  if (n.some((x) => x.level === 'done')) return 'done';
-  if (row.lastRole === 'user' && (now - row.ageMs) < FRESH_MS) return 'work';
-  return 'idle';
+    && doneTs >= latestTs('blocked') && doneTs >= latestTs('review')) return { state: 'done', reason: 'note: done', tier };
+  if (n.some((x) => x.level === 'blocked')) return { state: 'block', reason: 'note: blocked', tier };
+  if (n.some((x) => x.level === 'review')) return { state: 'need', reason: 'note: review', tier };
+  if (n.some((x) => x.level === 'done')) return { state: 'done', reason: 'note: done', tier };
+  // The reader classified the tail content; trust it and carry its reason.
+  return { state: STATE[row.state] ? row.state : 'idle', reason: row.stateReason || '', tier };
 }
 function mapAgent(row, notes, now) {
   const idn = identity(row.id);
-  const state = deriveState(row, notes, now);
+  const { state, reason, tier } = deriveState(row, notes, now);
   const sum = summaries.get(row.id) || null; // {text, engine, at} once a summary was made
   // display-only: strip Codex wrapper boilerplate from the chosen narrative.
   // Stored row fields (lastUser/title/prevAgent) are never mutated.
@@ -214,6 +217,8 @@ function mapAgent(row, notes, now) {
     harnessCls: row.harness === 'codex' ? 'c-codex' : 'c-claude',
     name: renamed || idn.name, face: idn.face, tag: idn.tag, titled: !!renamed,
     state,
+    stateReason: reason,
+    tier,
     narrative,
     promptNarr,
     summary: sum,
@@ -253,6 +258,14 @@ function computeDisplayNames(list) {
 }
 function displayName(a) {
   return a.name + (a.dupe ? ' ' + a.tag : '');
+}
+// Honest tooltip: the state, WHY (the reader's reason or the note), and the
+// attention tier when the session is drifting or archived.
+function stateTip(a) {
+  const parts = [STATE[a.state].label];
+  if (a.stateReason) parts.push(a.stateReason);
+  if (a.tier !== 'hot') parts.push(TIERS[a.tier].label + (a.tier === 'drifting' ? ' (idle 24h to 7d)' : ' (idle over 7d)'));
+  return parts.join(' · ');
 }
 function nameHtml(a) {
   return esc(a.name) + (a.dupe ? `<span class="idtag">${esc(a.tag)}</span>` : '');
@@ -325,35 +338,59 @@ function agoTxt(at) {
 
 // ============================================================
 // SYNTHETIC FIXTURE (OSS-safe; used only when window.humanctl is absent).
-// Clean, non-real ids + generic repos. Never real data.
+// Clean, non-real ids + generic repos. Never real data. Every content shape
+// the v3 state model can emit is covered: question-tail, awaiting-decision,
+// interrupted, orphaned reply, in-flight, completed, drifting tier, archived
+// tier, plus note overlays (review / blocked / done). Headless one-shot noise
+// (summarizer probes, `claude -p`) has no fixture on purpose: the reader
+// filters those sessions out before the renderer ever sees them.
+// Rows arrive pre-sorted the way the reader sorts: tier, needs-you first,
+// depth, recency.
 // ============================================================
 const FIXTURE_ROWS = [
-  { harness: 'claude-code', id: 'fixture-a1a1a1a1', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Wire the multi-source update spine', customTitle: 'Multi-source spine, renderer wiring pass', lastRole: 'assistant', age: '2m', ageMs: Date.now() - 2 * 6e4, contextPct: 63, costUSD: 2.14, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: true, lastUser: 'wire the update spine into the renderer', prevAgent: 'Mapped the render path and the watcher.' },
-  { harness: 'codex', id: 'rollout-fixture-b2b2', repo: '~/demo/core', cwd: '~/demo/core', title: 'Choose the rename-persistence path', lastRole: 'assistant', age: '6m', ageMs: Date.now() - 6 * 6e4, contextPct: 22, apiEquivUSD: 0.88, model: 'gpt-5.5', reasoningEffort: 'xhigh', ultracode: false, lastUser: 'which rename-persistence path should we trust?', prevAgent: 'Ran the migration dry-run; two paths viable.' },
-  { harness: 'claude-code', id: 'fixture-c3c3c3c3', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Pull the activity feed', customTitle: 'Activity feed adapter', lastRole: 'user', age: '11m', ageMs: Date.now() - 11 * 6e4, contextPct: 38, costUSD: 1.02, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: 'retry the activity pull', prevAgent: 'The activity adapter is built.' },
-  { harness: 'codex', id: 'rollout-fixture-d4d4', repo: '~/demo/ledger', cwd: '~/demo/ledger', title: 'Backfill the ledger', lastRole: 'user', age: '1m', ageMs: Date.now() - 1 * 6e4, contextPct: 55, apiEquivUSD: 0.63, model: 'gpt-5.5', reasoningEffort: 'high', ultracode: false, lastUser: 'keep backfilling the ledger', prevAgent: 'At 147 of 188 rows.' },
-  { harness: 'claude-code', id: 'fixture-e5e5e5e5', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Extract the sparkline component', lastRole: 'user', age: '3m', ageMs: Date.now() - 3 * 6e4, contextPct: 48, costUSD: 0.74, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'extract Spark into a shared component', prevAgent: 'Created the component shell.' },
-  { harness: 'claude-code', id: 'fixture-f6f6f6f6', repo: '~/demo/hygiene', cwd: '~/demo/hygiene', title: 'OSS hygiene sweep', lastRole: 'assistant', age: '24m', ageMs: Date.now() - 24 * 6e4, contextPct: 12, costUSD: 3.40, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: '', prevAgent: 'Swept history; checks are green.' },
-  { harness: 'codex', id: 'rollout-fixture-g7g7', repo: '~/demo/icons', cwd: '~/demo/icons', title: 'Draft the squircle icons', lastRole: 'assistant', age: '41m', ageMs: Date.now() - 41 * 6e4, contextPct: 8, apiEquivUSD: 0.20, model: 'gpt-5.5', reasoningEffort: 'low', ultracode: false, lastUser: '', prevAgent: 'Drafted the squircle variants.' },
-  // assistant-last but stale (26h): decays past NEED_DECAY_MS to idle, not needs-you
-  { harness: 'claude-code', id: 'fixture-i9i9i9i9', repo: '~/demo/archive', cwd: '~/demo/archive', title: 'Spike the profiler wiring', lastRole: 'assistant', age: '26h', ageMs: Date.now() - 26 * 3.6e6, contextPct: 41, costUSD: 1.90, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'spike the profiler wiring', prevAgent: 'Profiler spike is parked; notes are in the doc.' },
+  // question-tail: final assistant message ends on a question for you
+  { harness: 'claude-code', id: 'fixture-a1a1a1a1', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Wire the multi-source update spine', customTitle: 'Multi-source spine, renderer wiring pass', lastRole: 'assistant', state: 'need', stateReason: 'asks you a question', tier: 'hot', age: '2m', ageMs: Date.now() - 2 * 6e4, contextPct: 63, costUSD: 2.14, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: true, lastUser: 'wire the update spine into the renderer', prevAgent: 'Spine is wired. Should the watcher debounce at 2s or 5s?' },
+  // awaiting-decision: say-the-word tail, the go is yours
+  { harness: 'codex', id: 'rollout-fixture-b2b2', repo: '~/demo/core', cwd: '~/demo/core', title: 'Choose the rename-persistence path', lastRole: 'assistant', state: 'need', stateReason: 'awaiting your go-ahead', tier: 'hot', age: '6m', ageMs: Date.now() - 6 * 6e4, contextPct: 22, apiEquivUSD: 0.88, model: 'gpt-5.5', reasoningEffort: 'xhigh', ultracode: false, lastUser: 'which rename-persistence path should we trust?', prevAgent: 'Both paths verified; say the word and I take path B.' },
+  // interrupted: you stopped the turn; only you can resume it
+  { harness: 'claude-code', id: 'fixture-h8h8h8h8', repo: '~/demo/exports', cwd: '~/demo/exports', title: 'Backfill the export manifest', lastRole: 'user', state: 'need', stateReason: 'you interrupted; only you can resume', tier: 'hot', age: '18m', ageMs: Date.now() - 18 * 6e4, contextPct: 31, costUSD: 0.66, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'wait, hold off on the manifest rewrite', prevAgent: 'Starting the manifest rewrite now.' },
+  // orphaned reply: your directive was never picked up by the agent
+  { harness: 'codex', id: 'rollout-fixture-c9c9', repo: '~/demo/ledger', cwd: '~/demo/ledger', title: 'Reconcile the ledger deltas', lastRole: 'user', state: 'need', stateReason: 'your reply was never picked up', tier: 'hot', age: '3h', ageMs: Date.now() - 3 * 3.6e6, contextPct: 44, apiEquivUSD: 1.12, model: 'gpt-5.5', reasoningEffort: 'high', ultracode: false, lastUser: 'yes please, run the reconcile pass', prevAgent: 'Deltas mapped; ready to reconcile on your word.' },
+  // review note overlay: content says working, the agent posted a review note
+  { harness: 'claude-code', id: 'fixture-c3c3c3c3', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Pull the activity feed', customTitle: 'Activity feed adapter', lastRole: 'assistant', state: 'work', stateReason: 'progress report, still fresh', tier: 'hot', age: '11m', ageMs: Date.now() - 11 * 6e4, contextPct: 38, costUSD: 1.02, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: 'retry the activity pull', prevAgent: 'The activity adapter is built; PR is up.' },
+  // blocked note overlay
+  { harness: 'codex', id: 'rollout-fixture-d4d4', repo: '~/demo/tokens', cwd: '~/demo/tokens', title: 'Rotate the activity token', lastRole: 'user', state: 'work', stateReason: 'your turn was picked up', tier: 'hot', age: '9m', ageMs: Date.now() - 9 * 6e4, contextPct: 55, apiEquivUSD: 0.63, model: 'gpt-5.5', reasoningEffort: 'high', ultracode: false, lastUser: 'rotate it and rerun the smoke test', prevAgent: 'Token rotation staged.' },
+  // in-flight: tool activity still streaming
+  { harness: 'codex', id: 'rollout-fixture-e5e5', repo: '~/demo/ledger', cwd: '~/demo/ledger', title: 'Backfill the ledger', lastRole: 'user', state: 'work', stateReason: 'tools in flight', tier: 'hot', age: '1m', ageMs: Date.now() - 1 * 6e4, contextPct: 58, apiEquivUSD: 0.41, model: 'gpt-5.5', reasoningEffort: 'high', ultracode: false, lastUser: 'keep backfilling the ledger', prevAgent: 'At 147 of 188 rows.' },
+  // fresh user turn: you just replied, the agent is on it
+  { harness: 'claude-code', id: 'fixture-e5e5e5e5', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Extract the sparkline component', lastRole: 'user', state: 'work', stateReason: 'your turn was picked up', tier: 'hot', age: '3m', ageMs: Date.now() - 3 * 6e4, contextPct: 48, costUSD: 0.74, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'extract Spark into a shared component', prevAgent: 'Created the component shell.' },
+  // completed: closure-shaped tail, no trailing ask (plus a done note)
+  { harness: 'claude-code', id: 'fixture-f6f6f6f6', repo: '~/demo/hygiene', cwd: '~/demo/hygiene', title: 'OSS hygiene sweep', lastRole: 'assistant', state: 'done', stateReason: 'reports completion, no ask', tier: 'hot', age: '24m', ageMs: Date.now() - 24 * 6e4, contextPct: 12, costUSD: 3.40, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: '', prevAgent: 'Swept history; merged and shipped, checks are green.' },
+  // idle: progress-shaped tail that went stale without asking anything
+  { harness: 'codex', id: 'rollout-fixture-g7g7', repo: '~/demo/icons', cwd: '~/demo/icons', title: 'Draft the squircle icons', lastRole: 'assistant', state: 'idle', stateReason: 'ended without an ask', tier: 'hot', age: '5h', ageMs: Date.now() - 5 * 3.6e6, contextPct: 8, apiEquivUSD: 0.20, model: 'gpt-5.5', reasoningEffort: 'low', ultracode: false, lastUser: '', prevAgent: 'Drafted the squircle variants.' },
+  // drifting tier: a real unanswered ask, 2 days old. Listed, dimmed,
+  // needs-you shape retained but visually secondary.
+  { harness: 'claude-code', id: 'fixture-i9i9i9i9', repo: '~/demo/profiler', cwd: '~/demo/profiler', title: 'Spike the profiler wiring', lastRole: 'assistant', state: 'need', stateReason: 'asks you a question', tier: 'drifting', age: '2d', ageMs: Date.now() - 49 * 3.6e6, contextPct: 41, costUSD: 1.90, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'spike the profiler wiring', prevAgent: 'Spike is parked. Keep the sampling hook or drop it?' },
+  // archived tier: over 7 days idle. Dropped from Focus and Triage; the Wall
+  // still shows it, dimmed.
+  { harness: 'claude-code', id: 'fixture-j0j0j0j0', repo: '~/demo/attic', cwd: '~/demo/attic', title: 'Migrate the icon pipeline', lastRole: 'assistant', state: 'need', stateReason: 'ready for your review', tier: 'archived', age: '9d', ageMs: Date.now() - 9 * 24 * 3.6e6, contextPct: 17, costUSD: 0.95, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'migrate the icon pipeline', prevAgent: 'Pipeline PR is ready for your review.' },
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
   return {
     per: {
-      codex: { sessions: 3, generated: 240000, totalTokens: 5e6, apiEquivUSD: 1.71 },
-      'claude-code': { sessions: 4, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
+      codex: { sessions: 5, generated: 240000, totalTokens: 5e6, apiEquivUSD: 1.71 },
+      'claude-code': { sessions: 7, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
     },
     codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } },
-    needsYou: 4, working: 2, nearCompaction: 1, sessions: 8, pricingAsOf: '2026-06',
+    needsYou: 5, working: 4, nearCompaction: 1, sessions: 12, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
   };
 }
 const FIXTURE_NOTES = [
-  { id: 'fn1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PR is up for the update spine; needs a review + merge.', repo: 'renderer', session: 'fixture-a1a1a1a1' },
-  { id: 'fn2', ts: new Date(Date.now() - 11 * 6e4).toISOString(), level: 'blocked', message: 'Blocked: the activity token is missing from the environment.', repo: 'renderer', session: 'fixture-c3c3c3c3' },
-  { id: 'fn3', ts: new Date(Date.now() - 22 * 6e4).toISOString(), level: 'fyi', message: 'Ledger backfill is on track; no action needed.', repo: 'ledger', session: 'rollout-fixture-d4d4' },
+  { id: 'fn1', ts: new Date(Date.now() - 4 * 6e4).toISOString(), level: 'review', message: 'PR is up for the activity feed; needs a review + merge.', repo: 'renderer', session: 'fixture-c3c3c3c3' },
+  { id: 'fn2', ts: new Date(Date.now() - 7 * 6e4).toISOString(), level: 'blocked', message: 'Blocked: the activity token is missing from the environment.', repo: 'tokens', session: 'rollout-fixture-d4d4' },
+  { id: 'fn3', ts: new Date(Date.now() - 22 * 6e4).toISOString(), level: 'fyi', message: 'Ledger backfill is on track; no action needed.', repo: 'ledger', session: 'rollout-fixture-e5e5' },
   { id: 'fn4', ts: new Date(Date.now() - 26 * 6e4).toISOString(), level: 'done', message: 'Hygiene sweep landed; checks are green.', repo: 'hygiene', session: 'fixture-f6f6f6f6' },
 ];
 function fixtureRead(row) {
@@ -383,13 +420,17 @@ function fixtureRead(row) {
 // ============================================================
 // derived rollups (from real status + agents)
 // ============================================================
+// Archived sessions (no substantive activity for over 7 days) drop out of the
+// default views and counts; the Wall keeps them, dimmed, as the full inventory.
+const onDesk = () => agents.filter((a) => a.tier !== 'archived');
 function rollups() {
   const per = (status && status.per) || {};
   const cl = per['claude-code'] || {};
   const cx = per.codex || {};
-  const needsYou = (status && status.needsYou != null) ? status.needsYou : agents.filter((a) => a.state === 'need' || a.state === 'block').length;
-  const working = (status && status.working != null) ? status.working : agents.filter((a) => a.state === 'work').length;
-  const idle = agents.filter((a) => a.state === 'idle').length;
+  const desk = onDesk();
+  const needsYou = (status && status.needsYou != null) ? status.needsYou : desk.filter((a) => a.state === 'need' || a.state === 'block').length;
+  const working = (status && status.working != null) ? status.working : desk.filter((a) => a.state === 'work').length;
+  const idle = desk.filter((a) => a.state === 'idle').length;
   const totalTokens = (cl.totalTokens || 0) + (cx.totalTokens || 0);
   return {
     needsYou, working, idle,
@@ -405,12 +446,14 @@ function rollups() {
 // ============================================================
 function renderHeader() {
   const r = rollups();
-  // Digest numbers come from ONE bucket set (deriveState) so they partition the
-  // fleet exactly and match the roster/queue group counts. No triple-counting.
+  // Digest numbers come from ONE bucket set (deriveState over the on-desk,
+  // non-archived fleet) so they partition it exactly and match the
+  // roster/queue group counts. No triple-counting.
+  const desk = onDesk();
   const b = { need: 0, block: 0, work: 0, idle: 0, done: 0 };
-  for (const a of agents) b[a.state]++;
+  for (const a of desk) b[a.state]++;
   const needYou = b.need + b.block;
-  const need = agents.filter((a) => a.state === 'need' || a.state === 'block');
+  const need = desk.filter((a) => a.state === 'need' || a.state === 'block');
   let tail = '';
   if (need.length) {
     const top = need.slice(0, 2);
@@ -429,7 +472,7 @@ function renderHeader() {
   if (b.done) digest += `, ${b.done} done`;
   el('digest').innerHTML = `${digest}.${esc(tail)}`;
   el('heroNum').textContent = needYou;
-  const denom = agents.length || 1;
+  const denom = desk.length || 1;
   el('heroShape').innerHTML = svgRing(100 * needYou / denom, hue('var(--s-need)'), 30);
   // Fleet totals live here, once, for every mode. The Focus rail and Triage
   // gutter stay queues and notes; they do not repeat these numbers.
@@ -453,8 +496,9 @@ function renderHeader() {
 // ============================================================
 function pickDefaultSelection() {
   if (selId && byId.has(selId)) return;
-  const need = agents.find((a) => a.state === 'need' || a.state === 'block');
-  selId = need ? need.id : (agents[0] ? agents[0].id : null);
+  const desk = onDesk();
+  const need = desk.find((a) => a.state === 'need' || a.state === 'block');
+  selId = need ? need.id : (desk[0] ? desk[0].id : (agents[0] ? agents[0].id : null));
 }
 function select(id, opts) {
   if (!byId.has(id)) return;
@@ -474,7 +518,7 @@ function rosterRow(a) {
   // per-row metric = REAL contextPct (tiny bar). null -> a faint "n/a" placeholder bar.
   const meter = a.ctxPct != null ? svgBar(a.ctxPct, h2, 46, 5) : `<span style="font-family:var(--mono);font-size:8px;color:var(--ink4)">n/a</span>`;
   const isPin = pins.has(a.id);
-  return `<div class="arow ${a.id === selId ? 'sel' : ''}" style="--c-sel:${h2}" data-id="${esc(a.id)}">
+  return `<div class="arow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h2}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
     <span class="face">${a.face}</span>
     <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rp">${esc(a.repo)}</span></span>
     <span class="spk">${meter}</span>
@@ -484,16 +528,17 @@ function rosterRow(a) {
 }
 function renderRoster() {
   const box = el('roster');
-  el('fleet-ct').textContent = agents.length + ' agents';
+  const desk = onDesk();
+  el('fleet-ct').textContent = desk.length + ' agents';
   let html = '';
   // Pinned group first (humanctl-native pins; neither harness exposes pins locally).
-  const pinned = agents.filter((a) => pins.has(a.id));
+  const pinned = desk.filter((a) => pins.has(a.id));
   if (pinned.length) {
     html += `<div class="grp-hd"><span class="gdot" style="background:var(--iris)"></span>Pinned<span class="gct">${pinned.length}</span></div>`;
     for (const a of pinned) html += rosterRow(a);
   }
   for (const g of GROUPS) {
-    const items = agents.filter((a) => a.state === g.k && !pins.has(a.id));
+    const items = desk.filter((a) => a.state === g.k && !pins.has(a.id));
     if (!items.length) continue;
     const h = hue(STATE[g.k].hue);
     // The queue in the right rail owns needs-you and blocked. The roster keeps
@@ -514,7 +559,8 @@ function renderRoster() {
 // Pull the eye to the right-rail queue (the owner of needs-you) and select the
 // first session of the requested state so the jump lands somewhere concrete.
 function flashQueue(state) {
-  const first = agents.find((a) => a.state === state) || agents.find((a) => a.state === 'need' || a.state === 'block');
+  const desk = onDesk();
+  const first = desk.find((a) => a.state === state) || desk.find((a) => a.state === 'need' || a.state === 'block');
   if (first && first.id !== selId) select(first.id);
   const pane = document.querySelector('#mode-focus .pane.right');
   if (!pane) return;
@@ -554,13 +600,14 @@ function renderWatch() {
       <div class="idmeta">
         <div class="row1">
           <h1>${nameHtml(a)}</h1>
-          <span class="chip ${s.cls}"><span class="dt"></span>${s.label}</span>
+          <span class="chip ${s.cls}" title="${esc(stateTip(a))}"><span class="dt"></span>${s.label}</span>
+          ${a.tier !== 'hot' ? `<span class="chip c-idle" title="${esc(stateTip(a))}"><span class="dt"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
           <span class="chip ${a.harnessCls}">${a.harnessLabel}</span>
           ${a.ultracode ? '<span class="chip c-claude">ultra</span>' : ''}
         </div>
         <div class="subline">
           <span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h}"></span>
-          <span>${esc(a.repo || 'no repo')}</span>${a.when ? '<span class="sep">·</span><span>updated ' + esc(a.when) + '</span>' : ''}
+          <span>${esc(a.repo || 'no repo')}</span>${a.when ? '<span class="sep">·</span><span>updated ' + esc(a.when) + '</span>' : ''}${a.stateReason ? '<span class="sep">·</span><span>' + esc(a.stateReason) + '</span>' : ''}
         </div>
       </div>
     </div>
@@ -771,13 +818,15 @@ function bindMap() {
 // roster only points here. Fleet totals live in the header, not in this rail.
 function renderConductor() {
   const cond = el('cond');
-  const need = agents.filter((a) => a.state === 'need' || a.state === 'block');
+  // Hot first; drifting keeps its needs-you shape but renders dimmed at the
+  // bottom of the queue (the reader already sorts tiers; keep that order).
+  const need = onDesk().filter((a) => a.state === 'need' || a.state === 'block');
   const queue = need.map((a) => {
     const h = hue(STATE[a.state].hue);
-    return `<div class="qrow ${a.id === selId ? 'sel' : ''}" style="--c-sel:${h}" data-id="${esc(a.id)}">
+    return `<div class="qrow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
       <span class="face">${a.face}</span>
-      <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rz">${STATE[a.state].label} · ${esc(a.repo || 'no repo')}</span></span>
-      <span class="chip ${STATE[a.state].cls}"><span class="dt"></span>${esc(a.when || '')}</span>
+      <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rz">${esc(a.stateReason || STATE[a.state].label)} · ${esc(a.repo || 'no repo')}</span></span>
+      <span class="chip ${STATE[a.state].cls}"><span class="dt"></span>${esc((a.tier === 'drifting' ? 'drifting · ' : '') + (a.when || ''))}</span>
     </div>`;
   }).join('') || `<div class="queue-empty">nothing needs you right now.</div>`;
 
@@ -796,7 +845,7 @@ function renderFocus() { renderRoster(); renderWatch(); renderConductor(); ensur
 // ============================================================
 const tGroupOpen = { need: true, block: true, work: true, idle: false, done: false };
 function tGroupsBuild() {
-  const sorted = [...agents].sort((a, b) => ORDER[a.state] - ORDER[b.state]);
+  const sorted = [...onDesk()].sort((a, b) => ORDER[a.state] - ORDER[b.state]);
   return [
     { state: 'need', label: 'needs you', items: sorted.filter((a) => a.state === 'need'), clickable: false },
     { state: 'block', label: 'blocked', items: sorted.filter((a) => a.state === 'block'), clickable: false },
@@ -808,8 +857,8 @@ function tGroupsBuild() {
 function tItemHTML(a) {
   const st = STATE[a.state], h = hue(st.hue);
   const meta = a.ctxPct != null ? `ctx ${a.ctxPct}%` : (a.cost != null ? fmtUSD(a.cost) : (a.model || ''));
-  return `<div class="item" data-id="${esc(a.id)}" style="--c-state:${h}">`
-    + `<div class="row" tabindex="0">`
+  return `<div class="item ${TIERS[a.tier].cls}" data-id="${esc(a.id)}" style="--c-state:${h}">`
+    + `<div class="row" tabindex="0" title="${esc(stateTip(a))}">`
     + `<span class="rface"><span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h}"></span><span class="em">${a.face}</span></span>`
     + `<span class="who2"><span class="nm">${nameHtml(a)}</span><span class="hn">${esc(a.harnessLabel)}</span></span>`
     + `<span class="rnarr">${a.aiNarr ? '<span class="ai">ai</span>' : ''}${esc(a.narrative)}</span>`
@@ -823,6 +872,7 @@ function tItemHTML(a) {
 function tDrawerHTML(a, d) {
   const h = hue(STATE[a.state].hue);
   const propItems = [
+    ['why', esc(a.stateReason || STATE[a.state].label) + (a.tier !== 'hot' ? ' · ' + esc(TIERS[a.tier].label) : '')],
     ['repo', esc(a.repo || 'n/a')],
     ['harness', `<span class="chip ${a.harnessCls}"><span class="dt"></span>${esc(a.harnessLabel)}</span>`],
     ['model', esc((a.model || 'n/a') + (a.effort ? ' · ' + a.effort : ''))],
@@ -966,12 +1016,13 @@ function renderWall() {
       : `<div class="t-meter"><span class="lab">ctx</span><span class="na">n/a</span></div>`;
     const act = a.state === 'done' ? 'reveal' : 'resume';
     return `
-      <article class="tile ${isSel ? 'active' : ''}" data-id="${esc(a.id)}" style="--st:${st.hue}">
+      <article class="tile ${isSel ? 'active' : ''} ${TIERS[a.tier].cls}" data-id="${esc(a.id)}" style="--st:${st.hue}" title="${esc(stateTip(a))}">
         <div class="t-head">
           <span class="t-face">${a.face}</span>
           <span class="t-name">${nameHtml(a)}</span>
           <span class="hb t-hb ${a.state === 'work' ? 'beat' : ''}" style="background:${st.hue}"></span>
           <span class="spacer"></span>
+          ${a.tier !== 'hot' ? `<span class="chip c-idle"><span class="dt"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
           <span class="chip ${a.harnessCls}"><span class="dt"></span>${esc(a.harnessLabel)}</span>
         </div>
         ${viz}
@@ -1037,6 +1088,7 @@ function openPeek(id) {
   const d = detailCache.get(id);
   const hasLinear = d && d !== 'loading' && d !== 'error' && d.detail && d.detail.linearRefs && d.detail.linearRefs.length;
   const props = [
+    ['why', a.stateReason || STATE[a.state].label], ['tier', a.tier],
     ['repo', a.repo || 'n/a'], ['harness', a.harnessLabel], ['model', a.model || 'n/a'],
     ['effort', a.effort || (a.ultracode ? 'ultra' : 'n/a')], ['ctx', a.ctxPct != null ? a.ctxPct + '%' : 'n/a'],
     ['cost', a.cost != null ? fmtUSD(a.cost) : 'n/a'], ['last', a.when || 'n/a'],
@@ -1330,11 +1382,10 @@ const rowSubSig = new Map(); // id -> ageMs+':'+contextPct sub-signature from la
 async function _refresh() {
   if (!window.humanctl) return;
   await fetchData();
-  // The decayed:S term makes the signature change when a needs-you session
-  // crosses NEED_DECAY_MS, so the 20s poll repaints the demotion to idle even
-  // though no file changed.
-  const now = Date.now();
-  const sig = allRows.map((r) => r.id + r.ageMs + r.lastRole + r.contextPct + (r.lastRole === 'assistant' && now - r.ageMs > NEED_DECAY_MS ? ':S' : '')).join('|')
+  // state + tier come from the reader and change when a session crosses a
+  // tier boundary, so the 20s poll repaints demotions (hot -> drifting ->
+  // archived) even though no file changed.
+  const sig = allRows.map((r) => r.id + r.ageMs + r.state + ':' + r.tier + ':' + r.contextPct).join('|')
     + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
     + '#' + (status ? status.needsYou + ':' + status.working + ':' + status.sessions : '');
   if (sig === lastSig) return; // nothing changed

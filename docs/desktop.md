@@ -17,23 +17,67 @@ Triage / Wall, keys 1/2/3) sit under one persistent conductor header.
 
 ## State model (who the ball is with)
 
-A session's state is derived from real signals, never fabricated:
+A session's state is derived from real signals, never fabricated. Since v3 the
+state axis reads the CONTENT of the transcript tail, not just who spoke last:
+a 2026-07 ground-truth audit of 60 real sessions graded the old
+lastRole-plus-decay heuristic at 36% precision, and the failure modes it found
+drive the rules below. The reader (`lib/sessions.js`) classifies every row and
+attaches `state`, `stateReason`, and `tier`; the renderer overlays notes on
+top and owns no classification logic or time constants of its own.
 
 - blocked: the session has a `blocked` note.
-- needs you: the last transcript message is from the assistant (the agent
-  finished its turn and is waiting on you), or the session has a `review` note.
-- done: the session has a `done` note that is its newest signal. A done note
-  clears needs-you immediately; activity after the note reopens the session.
-- working: the last message is yours and the session moved in the last 30
-  minutes.
-- idle: everything else.
+- needs you, when the tail actually asks for you:
+  - the final substantive assistant message is question-shaped (ends on a
+    question aimed at you) or decision-shaped (handoff phrases like "say the
+    word", "your call", "only you can", "ready for your review",
+    "reviewDecision REVIEW_REQUIRED"), with a future-tense guard so "I'll
+    report when it's ready for your merge" does not count;
+  - or you interrupted the turn (`[Request interrupted by user]`, Codex
+    `turn_aborted`) and no assistant turn followed: only you can resume;
+  - or your last reply was a question or directive the agent never picked up;
+  - or the session has a `review` note.
+- done: the session has a `done` note that is its newest signal (a done note
+  clears needs-you immediately; activity after the note reopens it), or the
+  final assistant message is completion-shaped ("merged", "shipped",
+  "killed", "complete") with no trailing ask.
+- working: tool activity is in flight, or the tail is a fresh progress report,
+  or your own turn was just picked up (fresh means within the last 30 minutes).
+- idle: everything else, including progress-shaped tails that went stale
+  without asking anything.
 
-Needs-you decay: an assistant-last session with no activity for 18 hours
-(`NEED_DECAY_MS`, one constant shared by the renderer and the session reader)
-demotes to idle instead of piling up in the queue forever. 18 hours clears
-yesterday's abandoned sessions by the next morning while never decaying
-anything from the current working day. This is pure time decay on a real
-signal; nothing is invented. Explicit notes (`blocked`, `review`) do not decay.
+Every state carries an honest reason ("asks you a question", "awaiting your
+go-ahead", "note: blocked"), surfaced in the queue rows, the dossier subline,
+tooltips, and the Triage drawer.
+
+Substantive events only: trailing local commands (`/model`, `/effort`) and
+metadata appends (pr-link, mode, custom-title, last-prompt lines) neither
+change the state nor refresh the session's age. A dead thread whose file was
+touched by a footer rewrite stays dead; a pending ask behind a stray `/model`
+stays a pending ask. Headless one-shot sessions (humanctl's own summarizer
+probes, other `claude -p` runs) are filtered from the interactive list
+entirely, mirroring the Codex-side automation filter.
+
+## Attention tiers (how long a session stays on your desk)
+
+The old single 18h needs-you cliff is replaced by three tiers, aged by the
+last substantive event's own timestamp (never file mtime) and validated by
+resume-pattern mining over the full local session history:
+
+- hot (under 24h idle): full-strength display.
+- drifting (24h to 7 days): still listed, needs-you shape retained, rendered
+  visually secondary. About 1 in 3 day-old sessions is eventually picked back
+  up, but few within the next day; drifting keeps them reachable without
+  stealing attention.
+- archived (over 7 days): drops from Focus and Triage and from all counts;
+  the Wall keeps it, dimmed. Past 7 idle days only ~6% of sessions ever
+  resume.
+
+Within tiers the reader sorts needs-you first, then session depth (message
+count), then recency, following the mining's odds ratios (depth 2.23, age
+1.82, question-tail 1.46). `TIER_HOT_MS` and `TIER_DRIFT_MS` live in
+`lib/sessions.js` and are the single source; `NEED_DECAY_MS` remains as an
+alias equal to the hot tier for `lib/pulse.js` consumers. Explicit notes
+(`blocked`, `review`) do not decay.
 
 In Focus mode the right-rail queue owns needs-you and blocked: it is the
 priority queue you work down. The left roster is the full inventory; its
