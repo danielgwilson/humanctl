@@ -69,7 +69,7 @@ body{ height:100vh; overflow:hidden; }
 
 /* ---------- PERSISTENT THIN CONDUCTOR HEADER (all modes) ---------- */
 .hdr{
-  display:flex; align-items:center; gap:var(--s4);
+  display:flex; align-items:center; gap:var(--s3);
   height:52px; padding:0 var(--s5) 0 80px;   /* left inset clears the macOS traffic lights */
   background:var(--bg2); border-bottom:1px solid var(--rule);
   min-width:0; overflow:hidden;
@@ -93,17 +93,24 @@ body{ height:100vh; overflow:hidden; }
   background:color-mix(in srgb, var(--iris) 16%, transparent); border:1px solid color-mix(in srgb, var(--iris) 30%, transparent);
 }
 .hdr .atlas .txt{ min-width:0; }
-.hdr .atlas .nm{ font-family:var(--mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--iris); line-height:1.3; }
+.hdr .atlas .nm{ font-family:var(--mono); font-size:9px; letter-spacing:.06em; text-transform:uppercase; color:var(--iris); line-height:1.3; white-space:nowrap; }
 .hdr .atlas .digest{ font-size:12.5px; color:var(--ink2); letter-spacing:-.005em; line-height:1.3;
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hdr .atlas .digest b{ color:var(--ink); font-weight:600; }
 
 /* hero needs-you metric */
 .hdr .hero{ display:flex; align-items:center; gap:var(--s3); flex:0 0 auto;
-  padding:0 var(--s4); border-left:1px solid var(--rule); }
+  padding:0 var(--s3); border-left:1px solid var(--rule); }
 .hdr .hero .shape{ display:flex; }
 .hdr .hero .num{ font-family:var(--mono); font-weight:600; font-size:23px; line-height:1; color:var(--s-need); font-variant-numeric:tabular-nums; }
 .hdr .hero .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink3); line-height:1.3; }
+
+/* fleet totals: one compact strip, owned by the header for every mode */
+.hdr .tot{ display:flex; flex-direction:column; justify-content:center; gap:2px; flex:0 0 auto;
+  padding:0 var(--s3); border-left:1px solid var(--rule); }
+.hdr .tot .l{ font-family:var(--mono); font-size:9px; color:var(--ink3); letter-spacing:.02em;
+  white-space:nowrap; font-variant-numeric:tabular-nums; }
+@media (max-width:1200px){ .hdr .tot{ display:none; } }
 
 /* segmented view switcher */
 .seg{ display:flex; flex:0 0 auto; border:1px solid var(--rule2); border-radius:var(--r1); overflow:hidden; padding:0; }
@@ -177,6 +184,11 @@ body.light .setpop .seg2 button.on{ color:#fff; }
 .grp-hd:first-child{ margin-top:0; }
 .grp-hd .gdot{ width:6px; height:6px; border-radius:50%; }
 .grp-hd .gct{ margin-left:auto; color:var(--ink4); }
+/* needs-you / blocked collapse to a slim count line; the queue owns the rows */
+.grp-hd.jump{ cursor:pointer; }
+.grp-hd.jump .gjump{ font-family:var(--mono); font-size:8.5px; letter-spacing:.04em; text-transform:none; color:var(--ink4); }
+.grp-hd.jump:hover{ color:var(--ink2); }
+.grp-hd.jump:hover .gjump{ color:var(--ink2); }
 .arow{ display:grid; grid-template-columns:22px 1fr auto auto 7px; align-items:center; gap:var(--s2); height:36px;
   padding:0 var(--s4); cursor:pointer; border-left:2px solid transparent; }
 .pinbtn{ opacity:0; background:transparent; border:0; cursor:pointer; font-size:11px; line-height:1; padding:0;
@@ -217,7 +229,24 @@ body.light .setpop .seg2 button.on{ color:#fff; }
 .latest .lh .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink3); font-weight:600; }
 .latest .lh .when{ font-family:var(--mono); font-size:10px; color:var(--ink4); margin-left:auto; }
 .latest .narr{ font-size:13.5px; line-height:1.5; color:var(--ink); margin-top:var(--s2); white-space:pre-wrap; }
-.latest .ai{ font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:var(--iris); margin-right:6px; }
+/* shared "this line is an AI summary" marker (watch, triage rows, wall tiles) */
+.ai{ font-family:var(--mono); font-size:9px; letter-spacing:.04em; text-transform:uppercase; color:var(--iris); margin-right:6px; }
+
+/* AI summary block: the summary's one home in the dossier. The dock button
+   points up at this; it carries engine + age, and loading / error states. */
+.sumblock{ margin-top:var(--s3); padding:var(--s3) var(--s4); border:1px solid var(--rule); border-left:2px solid var(--iris);
+  border-radius:var(--r2); background:var(--panel); }
+.sumblock .lh{ display:flex; align-items:center; gap:var(--s3); }
+.sumblock .lh .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--iris); font-weight:600; }
+.sumblock .lh .meta{ font-family:var(--mono); font-size:10px; color:var(--ink4); margin-left:auto; }
+.sumblock .txt{ font-size:13.5px; line-height:1.5; color:var(--ink); margin-top:var(--s2); white-space:pre-wrap; }
+.sumblock.load .txt{ font-family:var(--mono); font-size:11px; color:var(--ink3); animation:sumpulse 1.6s ease-in-out infinite; }
+.sumblock.err{ border-left-color:var(--s-block); }
+.sumblock.err .lh .lbl{ color:var(--s-block); }
+.sumblock.err .txt{ color:var(--ink2); font-size:12px; }
+.sumblock.flash{ animation:sumland .9s ease-out; }
+@keyframes sumpulse{ 0%,100%{ opacity:1 } 50%{ opacity:.45 } }
+@keyframes sumland{ 0%{ background:color-mix(in srgb, var(--iris) 16%, var(--panel)); } 100%{ background:var(--panel); } }
 
 /* facet tabs (Timeline / Map) */
 .facets{ display:flex; align-items:center; gap:var(--s1); margin:var(--s4) 0 var(--s2); }
@@ -300,6 +329,9 @@ body.light .btn.primary{ color:#fff; }
 .qrow .who .nm{ font-size:12px; font-weight:600; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .qrow .who .rz{ font-family:var(--mono); font-size:9px; color:var(--ink4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .queue-empty{ font-family:var(--mono); font-size:10.5px; color:var(--ink4); padding:var(--s2) 0; }
+/* brief pull-the-eye when a roster count line jumps here */
+.pane.right.flash .queue{ animation:queueflash 1s ease-out; border-radius:var(--r2); }
+@keyframes queueflash{ 0%{ box-shadow:0 0 0 1.5px var(--iris); } 100%{ box-shadow:0 0 0 0 transparent; } }
 .gstats{ display:flex; flex-direction:column; gap:0; border:1px solid var(--rule); border-radius:var(--r2); background:var(--panel); overflow:hidden; }
 .gstat{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--s3); min-height:38px; padding:var(--s1) var(--s4); border-bottom:1px solid var(--rule); }
 .gstat:last-child{ border-bottom:0; }
@@ -502,6 +534,10 @@ body.light .pk-act button.primary{ color:#fff; }
       <div class="shape" id="heroShape"></div>
       <div class="num" id="heroNum">0</div>
       <div class="lbl">needs<br>you now</div>
+    </div>
+    <div class="tot" title="fleet totals (est): claude spend, codex API-equivalent, total tokens, codex 5h quota">
+      <div class="l" id="totA"></div>
+      <div class="l" id="totB"></div>
     </div>
     <div class="seg" id="seg">
       <button data-mode="focus" class="on">Focus <span class="k">1</span></button>

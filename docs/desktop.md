@@ -15,6 +15,33 @@ The surface is exception-first: sessions that need you (the agent's turn is done
 the ball is with you) lead; everything healthy recedes. Three modes (Focus /
 Triage / Wall, keys 1/2/3) sit under one persistent conductor header.
 
+## State model (who the ball is with)
+
+A session's state is derived from real signals, never fabricated:
+
+- blocked: the session has a `blocked` note.
+- needs you: the last transcript message is from the assistant (the agent
+  finished its turn and is waiting on you), or the session has a `review` note.
+- done: the session has a `done` note that is its newest signal. A done note
+  clears needs-you immediately; activity after the note reopens the session.
+- working: the last message is yours and the session moved in the last 30
+  minutes.
+- idle: everything else.
+
+Needs-you decay: an assistant-last session with no activity for 18 hours
+(`NEED_DECAY_MS`, one constant shared by the renderer and the session reader)
+demotes to idle instead of piling up in the queue forever. 18 hours clears
+yesterday's abandoned sessions by the next morning while never decaying
+anything from the current working day. This is pure time decay on a real
+signal; nothing is invented. Explicit notes (`blocked`, `review`) do not decay.
+
+In Focus mode the right-rail queue owns needs-you and blocked: it is the
+priority queue you work down. The left roster is the full inventory; its
+needs-you and blocked groups render as slim count lines that jump to the
+queue rather than repeating the same sessions as full rows. Fleet totals
+(claude spend, codex API-equivalent, tokens, codex quota) live once, in the
+header, for every mode.
+
 ## Run it
 
 From source (live, for development):
@@ -98,9 +125,10 @@ No build step, no bundler. The renderer is plain HTML and JS.
 - `electron/main.js` owns the window, watches the session dirs (fs.watch) to push
   live updates, exposes read-only IPC (`sessions:list/read`, `status:get`,
   `skills:aggregate`, `*:reveal/open`), persists local UI state (mode, theme,
-  temperature, pins, summary engine, selection) under userData, and runs the
-  opt-in `session:summarize` (local `claude` or `codex` CLI, cached by engine
-  and file mtime). It also sets the app icon from `electron/assets/`.
+  temperature, pins, summary engine, selection, cached AI summaries) under
+  userData, and runs the opt-in `session:summarize` (local `claude` or `codex`
+  CLI, cached by engine and file mtime). It also sets the app icon from
+  `electron/assets/`.
 - `electron/preload.js` is the locked bridge: a small, explicit set of calls,
   no direct fs, no network.
 - `electron/renderer/` is the UI: the conductor home with Focus / Triage / Wall
@@ -178,22 +206,25 @@ documented API, so a future app release could change them.
 
 - Shipped (the 0.6.x conductor home): Atlas chief-of-staff header (a digest
   sentence naming who is waiting on you, plus a needs-you hero count); three
-  modes on keys 1/2/3. Focus is the roster (grouped pinned / needs-you /
-  blocked / working / idle / done) plus a watched-agent panel with timeline and
-  context-map facets, a cumulative-token sparkline, and a needs-you queue with
-  fleet totals. Triage is a keyboard-first grouped list (j/k move, enter opens
-  an inline drawer, r resumes). Wall is a tile grid of the whole fleet with a
-  peek overlay. Agents get deterministic nicknames and faces from the session
-  id; a session renamed in Claude Code shows its real title instead. Pins
-  persist. Rows show real signals only: last prompt (or the AI summary when
-  one was made), context %, cost or API-equivalent, model, reasoning effort,
-  ultracode, Linear refs, generated HTML files, skills. Codex 5h + weekly
-  quota and fleet spend totals; resume in the harness desktop app or in a
-  Terminal window (see Actions below), reveal transcript, open in Linear;
-  opt-in AI summaries with a summary engine picker (Claude Code or Codex CLI);
-  light/dark themes and a considered/loud temperature toggle; live fs.watch
-  updates. The pre-0.6 tabs, back/forward nav, filter chips, search, and
-  spot-check were replaced by the three modes.
+  modes on keys 1/2/3. Focus is the roster (the full inventory: pinned /
+  working / idle / done rows, with needs-you and blocked as count lines that
+  jump to the queue) plus a watched-agent panel with timeline and context-map
+  facets, a cumulative-token sparkline, and the needs-you queue in the right
+  rail. Fleet totals sit in the header. Triage is a keyboard-first grouped
+  list (j/k move, enter opens an inline drawer, r resumes). Wall is a tile
+  grid of the whole fleet with a peek overlay. Agents get deterministic
+  nicknames and faces from the session id; a session renamed in Claude Code
+  shows its real title instead. Pins persist. Rows show real signals only:
+  last prompt (or the AI summary when one was made, marked "ai"), context %,
+  cost or API-equivalent, model, reasoning effort, ultracode, Linear refs,
+  generated HTML files, skills. Codex 5h + weekly quota and fleet spend
+  totals; resume in the harness desktop app or in a Terminal window (see
+  Actions below), reveal transcript, open in Linear; opt-in AI summaries with
+  a summary engine picker (Claude Code or Codex CLI) that land in a labeled
+  block in the watched-agent dossier, with engine + age, and persist across
+  restarts; light/dark themes and a considered/loud temperature toggle; live
+  fs.watch updates. The pre-0.6 tabs, back/forward nav, filter chips, search,
+  and spot-check were replaced by the three modes.
 - Next: per-repo grouping, and optional wake/ping actions (these cross from
   read-only into control, so they ship behind an explicit opt-in).
 

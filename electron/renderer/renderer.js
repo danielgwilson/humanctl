@@ -68,6 +68,16 @@ const GROUPS = [
 ];
 const ORDER = { need: 0, block: 1, work: 2, idle: 3, done: 4 };
 const FRESH_MS = 30 * 60 * 1000; // "working" freshness window (spec)
+// Needs-you decay: an assistant-last session is only "waiting on you" while it
+// is plausibly still on your desk. Past this window with no activity it demotes
+// to idle instead of piling up. 18h clears yesterday's abandoned sessions by
+// the next morning without ever decaying the current working day. Keep in sync
+// with NEED_DECAY_MS in electron/sessions.js; documented in docs/desktop.md.
+const NEED_DECAY_MS = 18 * 60 * 60 * 1000;
+// A done note usually lands moments before the agent's final transcript write,
+// so allow that much clock skew when deciding whether the note postdates the
+// session's last activity.
+const DONE_NOTE_SLACK_MS = 10 * 60 * 1000;
 
 // context-map kind constants (ported from old renderer)
 const KIND_ORDER = ['user', 'assistant', 'thinking', 'tool-call', 'tool-result', 'meta'];
@@ -170,8 +180,19 @@ function normModel(m) {
 }
 function deriveState(row, notes, now) {
   const n = notes.filter((x) => x.session && x.session === row.id);
+  const latestTs = (lvl) => n.reduce((m, x) => (x.level === lvl ? Math.max(m, Date.parse(x.ts) || 0) : m), 0);
+  // A done note is the agent explicitly closing the loop: it clears needs-you
+  // immediately, as long as it is the newest note for the session and the
+  // session has not moved again since (activity after a done note reopens it).
+  const doneTs = latestTs('done');
+  if (doneTs && doneTs >= row.ageMs - DONE_NOTE_SLACK_MS
+    && doneTs >= latestTs('blocked') && doneTs >= latestTs('review')) return 'done';
   if (n.some((x) => x.level === 'blocked')) return 'block';
-  if (row.lastRole === 'assistant' || n.some((x) => x.level === 'review')) return 'need';
+  if (n.some((x) => x.level === 'review')) return 'need';
+  // Assistant-last means the ball is with you, but not forever: past the decay
+  // window with no activity it is history, not a queue item. Pure time decay;
+  // no fabricated signal.
+  if (row.lastRole === 'assistant') return (now - row.ageMs) <= NEED_DECAY_MS ? 'need' : 'idle';
   if (n.some((x) => x.level === 'done')) return 'done';
   if (row.lastRole === 'user' && (now - row.ageMs) < FRESH_MS) return 'work';
   return 'idle';
@@ -179,11 +200,11 @@ function deriveState(row, notes, now) {
 function mapAgent(row, notes, now) {
   const idn = identity(row.id);
   const state = deriveState(row, notes, now);
-  const cachedSummary = (aiOn && summaries.has(row.id)) ? summaries.get(row.id) : null;
+  const sum = summaries.get(row.id) || null; // {text, engine, at} once a summary was made
   // display-only: strip Codex wrapper boilerplate from the chosen narrative.
   // Stored row fields (lastUser/title/prevAgent) are never mutated.
-  const rawNarr = cachedSummary || row.lastUser || row.title || row.prevAgent || '(no recent prompt)';
-  const narrative = cleanNarrative(rawNarr);
+  const promptNarr = cleanNarrative(row.lastUser || row.title || row.prevAgent || '(no recent prompt)');
+  const narrative = sum ? sum.text : promptNarr;
   const cost = row.costUSD != null ? row.costUSD : (row.apiEquivUSD != null ? row.apiEquivUSD : null);
   const renamed = (row.customTitle || '').trim();  // the name set in the Claude Code sidebar, if any
   return {
@@ -194,7 +215,9 @@ function mapAgent(row, notes, now) {
     name: renamed || idn.name, face: idn.face, tag: idn.tag, titled: !!renamed,
     state,
     narrative,
-    aiNarr: !!cachedSummary,
+    promptNarr,
+    summary: sum,
+    aiNarr: !!sum,
     repo: row.repo || '',
     model: normModel(row.model),
     effort: row.reasoningEffort || null,
@@ -246,7 +269,6 @@ let selId = null;
 let expId = null;            // triage inline-expand
 let theme = 'dark';         // 'dark' | 'light'
 let temp = 'considered';    // 'considered' | 'loud'
-let aiOn = false;
 let pins = new Set();
 let summarizer = 'claude';  // 'claude' | 'codex': which local CLI powers AI summary
 let facet = 'timeline';      // watched-agent detail facet: 'timeline' | 'map'
@@ -273,9 +295,33 @@ function resumeActs(a) {
 
 // per-agent readSession detail cache (real signals only)
 const detailCache = new Map();  // id -> {data, usage, detail} | 'loading' | 'error'
-const summaries = new Map();     // id -> text (opt-in AI)
-const SUM_CAP = 400;
-function rememberSummary(id, text) { summaries.delete(id); summaries.set(id, text); if (summaries.size > SUM_CAP) summaries.delete(summaries.keys().next().value); }
+// Opt-in AI summaries. Each entry is {text, engine, at} so the dossier can say
+// which CLI wrote it and how old it is. Persisted via setState so reopening the
+// app still shows the last summary with its age; capped to stay tiny.
+const summaries = new Map();     // id -> {text, engine, at}
+const sumState = new Map();      // id -> 'loading' | {error} (transient, not persisted)
+const SUM_CAP = 60;
+function rememberSummary(id, entry) {
+  summaries.delete(id); summaries.set(id, entry);
+  if (summaries.size > SUM_CAP) summaries.delete(summaries.keys().next().value);
+  if (window.humanctl) window.humanctl.setState({ summaries: Object.fromEntries(summaries) });
+}
+function hydrateSummaries(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const [id, v] of Object.entries(obj)) {
+    if (v && typeof v.text === 'string' && v.text) {
+      summaries.set(id, { text: v.text, engine: v.engine === 'codex' ? 'codex' : 'claude', at: +v.at || 0 });
+    }
+  }
+}
+function agoTxt(at) {
+  if (!at) return '';
+  const m = (Date.now() - at) / 6e4;
+  if (m < 1) return 'just now';
+  if (m < 60) return Math.round(m) + 'm ago';
+  if (m < 48 * 60) return Math.round(m / 60) + 'h ago';
+  return Math.round(m / 1440) + 'd ago';
+}
 
 // ============================================================
 // SYNTHETIC FIXTURE (OSS-safe; used only when window.humanctl is absent).
@@ -289,6 +335,8 @@ const FIXTURE_ROWS = [
   { harness: 'claude-code', id: 'fixture-e5e5e5e5', repo: '~/demo/renderer', cwd: '~/demo/renderer', title: 'Extract the sparkline component', lastRole: 'user', age: '3m', ageMs: Date.now() - 3 * 6e4, contextPct: 48, costUSD: 0.74, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'extract Spark into a shared component', prevAgent: 'Created the component shell.' },
   { harness: 'claude-code', id: 'fixture-f6f6f6f6', repo: '~/demo/hygiene', cwd: '~/demo/hygiene', title: 'OSS hygiene sweep', lastRole: 'assistant', age: '24m', ageMs: Date.now() - 24 * 6e4, contextPct: 12, costUSD: 3.40, model: 'claude-opus-4-8', reasoningEffort: null, ultracode: false, lastUser: '', prevAgent: 'Swept history; checks are green.' },
   { harness: 'codex', id: 'rollout-fixture-g7g7', repo: '~/demo/icons', cwd: '~/demo/icons', title: 'Draft the squircle icons', lastRole: 'assistant', age: '41m', ageMs: Date.now() - 41 * 6e4, contextPct: 8, apiEquivUSD: 0.20, model: 'gpt-5.5', reasoningEffort: 'low', ultracode: false, lastUser: '', prevAgent: 'Drafted the squircle variants.' },
+  // assistant-last but stale (26h): decays past NEED_DECAY_MS to idle, not needs-you
+  { harness: 'claude-code', id: 'fixture-i9i9i9i9', repo: '~/demo/archive', cwd: '~/demo/archive', title: 'Spike the profiler wiring', lastRole: 'assistant', age: '26h', ageMs: Date.now() - 26 * 3.6e6, contextPct: 41, costUSD: 1.90, model: 'claude-sonnet-4-5', reasoningEffort: null, ultracode: false, lastUser: 'spike the profiler wiring', prevAgent: 'Profiler spike is parked; notes are in the doc.' },
 ];
 function fixtureStatus() {
   const now = Math.floor(Date.now() / 1000);
@@ -298,7 +346,7 @@ function fixtureStatus() {
       'claude-code': { sessions: 4, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
     },
     codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } },
-    needsYou: 3, working: 2, nearCompaction: 1, sessions: 7, pricingAsOf: '2026-06',
+    needsYou: 4, working: 2, nearCompaction: 1, sessions: 8, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
   };
 }
@@ -383,6 +431,17 @@ function renderHeader() {
   el('heroNum').textContent = needYou;
   const denom = agents.length || 1;
   el('heroShape').innerHTML = svgRing(100 * needYou / denom, hue('var(--s-need)'), 30);
+  // Fleet totals live here, once, for every mode. The Focus rail and Triage
+  // gutter stay queues and notes; they do not repeat these numbers.
+  const claude = r.claudeUSD != null ? fmtUSD(r.claudeUSD) : 'n/a';
+  const codex = r.codexUSD != null ? fmtUSD(r.codexUSD) : 'n/a';
+  const tokens = r.tokens ? fmtTok(r.tokens) : 'n/a';
+  const qp = r.quota && r.quota.primary;
+  const quota = qp && qp.used_percent != null ? `quota ${qp.used_percent}%` : '';
+  el('totA').textContent = `claude ${claude} · codex ${codex}`;
+  el('totB').textContent = `${tokens} tok${quota ? ' · ' + quota : ''}`;
+  el('totA').parentElement.title = 'fleet totals (est): claude spend, codex API-equivalent, total tokens, codex 5h quota'
+    + (qp && qp.resets_at ? ' (resets ' + fmtReset(qp.resets_at) + ')' : '');
   // Real app injects the package version via IPC; demo/fixture has none, so show
   // "demo" rather than asserting a version number that could drift out of sync.
   el('verTag').textContent = status && status.version ? 'v' + status.version : 'demo';
@@ -437,12 +496,32 @@ function renderRoster() {
     const items = agents.filter((a) => a.state === g.k && !pins.has(a.id));
     if (!items.length) continue;
     const h = hue(STATE[g.k].hue);
+    // The queue in the right rail owns needs-you and blocked. The roster keeps
+    // the inventory honest with a slim count line that jumps to the queue,
+    // instead of repeating the same sessions as full rows on both sides.
+    if (g.k === 'need' || g.k === 'block') {
+      html += `<div class="grp-hd jump" data-jump="${g.k}" title="handled in the queue on the right"><span class="gdot" style="background:${h}"></span>${g.label}<span class="gct">${items.length}</span><span class="gjump">in queue &rarr;</span></div>`;
+      continue;
+    }
     html += `<div class="grp-hd"><span class="gdot" style="background:${h}"></span>${g.label}<span class="gct">${items.length}</span></div>`;
     for (const a of items) html += rosterRow(a);
   }
   box.innerHTML = html || `<div class="watch-empty">no sessions in the last 72h.</div>`;
   box.querySelectorAll('.arow').forEach((r) => r.addEventListener('click', () => select(r.dataset.id)));
   box.querySelectorAll('.pinbtn').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); togglePin(b.dataset.pin); }));
+  box.querySelectorAll('.grp-hd.jump').forEach((hd) => hd.addEventListener('click', () => flashQueue(hd.dataset.jump)));
+}
+// Pull the eye to the right-rail queue (the owner of needs-you) and select the
+// first session of the requested state so the jump lands somewhere concrete.
+function flashQueue(state) {
+  const first = agents.find((a) => a.state === state) || agents.find((a) => a.state === 'need' || a.state === 'block');
+  if (first && first.id !== selId) select(first.id);
+  const pane = document.querySelector('#mode-focus .pane.right');
+  if (!pane) return;
+  pane.classList.remove('flash');
+  void pane.offsetWidth; // restart the animation on repeat clicks
+  pane.classList.add('flash');
+  setTimeout(() => pane.classList.remove('flash'), 1000);
 }
 function togglePin(id) {
   if (pins.has(id)) pins.delete(id); else pins.add(id);
@@ -488,8 +567,9 @@ function renderWatch() {
     <div class="props">${modelCell}${effortCell}${ctxCell}${costCell}</div>
     <div class="latest">
       <div class="lh"><span class="lbl">Latest prompt</span>${a.when ? `<span class="when">${esc(a.when)}</span>` : ''}</div>
-      <div class="narr">${a.aiNarr ? '<span class="ai">ai</span>' : ''}${esc(a.narrative)}</div>
+      <div class="narr">${esc(a.promptNarr)}</div>
     </div>
+    ${summaryBlockHtml(a)}
     <div class="facets" id="facets">
       <button class="facet-tab ${facet === 'timeline' ? 'on' : ''}" data-facet="timeline">Timeline</button>
       <button class="facet-tab ${facet === 'map' ? 'on' : ''}" data-facet="map">Map</button>
@@ -500,6 +580,31 @@ function renderWatch() {
     facet = b.dataset.facet; renderWatch(); ensureWatchDetail();
   }));
   renderDock(a, h);
+}
+
+// The AI summary's home: a labeled block in the dossier, directly under the
+// latest prompt. The dock button points up at it. Renders loading / error /
+// result (with engine + age); absent until a summary is asked for.
+function summaryBlockHtml(a) {
+  const st = sumState.get(a.id);
+  if (st === 'loading') {
+    return `<div class="sumblock load" id="sumBlock">
+      <div class="lh"><span class="lbl">AI summary</span><span class="meta">via ${esc(engineLabel(summarizer))} CLI</span></div>
+      <div class="txt">summarizing recent activity...</div>
+    </div>`;
+  }
+  if (st && st.error) {
+    return `<div class="sumblock err" id="sumBlock">
+      <div class="lh"><span class="lbl">AI summary failed</span></div>
+      <div class="txt">${esc(st.error)} Use the dock button to retry.</div>
+    </div>`;
+  }
+  const s = a.summary;
+  if (!s) return '';
+  return `<div class="sumblock" id="sumBlock">
+    <div class="lh"><span class="lbl">AI summary</span><span class="meta">via ${esc(engineLabel(s.engine))}${s.at ? ' · ' + esc(agoTxt(s.at)) : ''}</span></div>
+    <div class="txt">${esc(s.text)}</div>
+  </div>`;
 }
 
 function renderDock(a, h) {
@@ -513,13 +618,15 @@ function renderDock(a, h) {
   const ra = resumeActs(a);
   const primaryLabel = a.state === 'done' ? 'Reveal transcript' : ra.primary.label;
   const primaryAct = a.state === 'done' ? 'reveal' : ra.primary.act;
+  const sumLoading = sumState.get(a.id) === 'loading';
+  const sumLabel = sumLoading ? 'Summarizing...' : (summaries.has(a.id) ? 'Refresh AI summary &uarr;' : 'AI summary &uarr;');
   dock.innerHTML = `
     <button class="btn primary" data-act="${primaryAct}">${primaryLabel}</button>
     ${a.state === 'done' ? `<button class="btn" data-act="${ra.primary.act}">${ra.primary.label}</button>` : ''}
     ${ra.secondary ? `<button class="btn" data-act="${ra.secondary.act}">${ra.secondary.label}</button>` : ''}
     ${a.state === 'done' ? '' : `<button class="btn" data-act="reveal">Reveal transcript</button>`}
     <button class="btn ghost" data-act="linear" ${hasLinear ? '' : 'disabled'}>Open in Linear</button>
-    <button class="btn ghost" data-act="summary" title="sends recent messages to your local claude CLI">AI summary</button>
+    <button class="btn ghost" data-act="summary" ${sumLoading ? 'disabled' : ''} title="writes a summary into the dossier above; sends recent messages to your local ${esc(engineLabel(summarizer))} CLI">${sumLabel}</button>
     <span class="spacer"></span>
     <span class="hint">${esc(a.harnessLabel)}${a.model ? ' · ' + esc(a.model) : ''}${a.effort ? ' · ' + esc(a.effort) : ''}</span>`;
   dock.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', () => runAction(b.dataset.act, a)));
@@ -660,12 +767,12 @@ function bindMap() {
   map.addEventListener('mouseleave', () => tip.classList.remove('on'));
 }
 
-// ---- right rail: needs-you queue (scrollable) + fleet totals ----
+// ---- right rail: the needs-you queue. This surface OWNS needs-you; the left
+// roster only points here. Fleet totals live in the header, not in this rail.
 function renderConductor() {
   const cond = el('cond');
   const need = agents.filter((a) => a.state === 'need' || a.state === 'block');
-  const r = rollups();
-  let queue = need.map((a) => {
+  const queue = need.map((a) => {
     const h = hue(STATE[a.state].hue);
     return `<div class="qrow ${a.id === selId ? 'sel' : ''}" style="--c-sel:${h}" data-id="${esc(a.id)}">
       <span class="face">${a.face}</span>
@@ -674,35 +781,10 @@ function renderConductor() {
     </div>`;
   }).join('') || `<div class="queue-empty">nothing needs you right now.</div>`;
 
-  const claude = r.claudeUSD != null ? fmtUSD(r.claudeUSD) : 'n/a';
-  const codex = r.codexUSD != null ? fmtUSD(r.codexUSD) : 'n/a';
-  const tokens = r.tokens ? fmtTok(r.tokens) : 'n/a';
-  let quotaRow = '';
-  if (r.quota) {
-    const q = r.quota;
-    const prim = q.primary || {};
-    const pct = prim.used_percent != null ? prim.used_percent : null;
-    const qcolor = pct == null ? 'var(--q-ok)' : pct >= 90 ? 'var(--q-crit)' : pct >= 70 ? 'var(--q-warn)' : 'var(--q-ok)';
-    const reset = prim.resets_at ? fmtReset(prim.resets_at) : '';
-    quotaRow = `<div class="gstat">
-      <span class="k">codex quota${reset ? ' · resets ' + esc(reset) : ''}</span>
-      <span class="v">${pct != null ? svgBar(pct, hue(qcolor), 56, 5) + `<span class="mono">${pct}%</span>` : '<span class="mono">n/a</span>'}</span>
-    </div>`;
-  }
-
   cond.innerHTML = `
     <div>
       <div class="sec-l">Needs you now <span class="ct">${need.length}</span></div>
       <div class="queue">${queue}</div>
-    </div>
-    <div>
-      <div class="sec-l">Fleet totals</div>
-      <div class="gstats">
-        <div class="gstat"><span class="k">claude spend</span><span class="v"><span class="mono">${claude}</span></span></div>
-        <div class="gstat"><span class="k">codex API-equiv</span><span class="v"><span class="mono">${codex}</span></span></div>
-        <div class="gstat"><span class="k">tokens</span><span class="v"><span class="mono">${tokens}</span></span></div>
-        ${quotaRow}
-      </div>
     </div>`;
   cond.querySelectorAll('.qrow').forEach((r2) => r2.addEventListener('click', () => select(r2.dataset.id)));
 }
@@ -730,7 +812,7 @@ function tItemHTML(a) {
     + `<div class="row" tabindex="0">`
     + `<span class="rface"><span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h}"></span><span class="em">${a.face}</span></span>`
     + `<span class="who2"><span class="nm">${nameHtml(a)}</span><span class="hn">${esc(a.harnessLabel)}</span></span>`
-    + `<span class="rnarr">${esc(a.narrative)}</span>`
+    + `<span class="rnarr">${a.aiNarr ? '<span class="ai">ai</span>' : ''}${esc(a.narrative)}</span>`
     + `<span class="chip ${st.cls}"><span class="dt"></span>${st.label}</span>`
     + `<span class="rmeta"><span class="rdelta">${esc(meta)}</span></span>`
     + `<span class="rwhen">${esc(a.when || '')}</span>`
@@ -769,13 +851,15 @@ function tDrawerHTML(a, d) {
   const ra = resumeActs(a);
   const primeLabel = a.state === 'done' ? 'Reveal' : ra.primary.label;
   const primeAct = a.state === 'done' ? 'reveal' : ra.primary.act;
+  const sumLoading = sumState.get(a.id) === 'loading';
+  const sumLabel = sumLoading ? 'Summarizing...' : (summaries.has(a.id) ? 'Refresh AI summary' : 'AI summary');
   const acts = `<div class="acts">`
     + `<button class="abtn prime" data-act="${primeAct}">${primeLabel} <kbd>${a.state === 'done' ? 'r' : '↵'}</kbd></button>`
     + (a.state === 'done' ? `<button class="abtn" data-act="${ra.primary.act}">${ra.primary.label}</button>` : '')
     + (ra.secondary ? `<button class="abtn" data-act="${ra.secondary.act}">${ra.secondary.label}</button>` : '')
     + (a.state === 'done' ? '' : `<button class="abtn" data-act="reveal">Reveal</button>`)
     + `<button class="abtn" data-act="linear" ${hasLinear ? '' : 'disabled'}>Linear</button>`
-    + `<button class="abtn" data-act="summary" title="sends recent messages to your local claude CLI">AI summary</button>`
+    + `<button class="abtn" data-act="summary" ${sumLoading ? 'disabled' : ''} title="replaces this row's line with an AI summary; sends recent messages to your local ${esc(engineLabel(summarizer))} CLI">${sumLabel}</button>`
     + `<span class="fill"></span>`
     + `</div>`;
   return props + tl + acts;
@@ -799,20 +883,8 @@ function renderTriage() {
   applyTriageSelection();
 }
 function renderGutter() {
+  // keys + recent notes only: fleet totals live in the header for every mode.
   const g = el('gutter');
-  const r = rollups();
-  const claude = r.claudeUSD != null ? fmtUSD(r.claudeUSD) : 'n/a';
-  const codex = r.codexUSD != null ? fmtUSD(r.codexUSD) : 'n/a';
-  const tokens = r.tokens ? fmtTok(r.tokens) : 'n/a';
-  let quota = '';
-  if (r.quota && r.quota.primary && r.quota.primary.used_percent != null) {
-    const pct = r.quota.primary.used_percent;
-    const qcolor = pct >= 90 ? 'var(--q-crit)' : pct >= 70 ? 'var(--q-warn)' : 'var(--q-ok)';
-    const reset = r.quota.primary.resets_at ? fmtReset(r.quota.primary.resets_at) : '';
-    quota = `<div class="stat"><div class="sk">codex quota</div>`
-      + `<div class="sr">${svgRing(pct, hue(qcolor), 34)}<div class="fill"></div><div class="sv" style="font-size:14px">${pct}%</div></div>`
-      + (reset ? `<div class="rst">resets ${esc(reset)}</div>` : '') + `</div>`;
-  }
   const recent = allNotes.slice(0, 4).map((n) => {
     const NLHUE = { blocked: 'var(--s-block)', review: 'var(--s-need)', done: 'var(--s-done)', fyi: 'var(--iris)' };
     return `<div class="tnote" style="--nl:${NLHUE[n.level] || 'var(--iris)'}"><div class="nl">${esc(n.level)}</div><div class="nm">${esc(n.message)}</div><div class="nmeta">${esc(n.repo || '')}</div></div>`;
@@ -822,11 +894,6 @@ function renderGutter() {
     + `<span class="kk"><kbd>j</kbd><kbd>k</kbd> move</span>`
     + `<span class="kk"><kbd>↵</kbd> open</span>`
     + `<span class="kk"><kbd>esc</kbd> close</span></div>`
-    + `<div class="gh">fleet totals</div>`
-    + `<div class="stat"><div class="sk">claude</div><div class="sv">${claude}</div></div>`
-    + `<div class="stat"><div class="sk">codex API-equiv</div><div class="sv">${codex}</div></div>`
-    + `<div class="stat"><div class="sk">tokens</div><div class="sv">${tokens}</div></div>`
-    + quota
     + (recent ? `<div class="gh" style="margin-top:8px">recent notes</div>${recent}` : '');
 }
 function applyTriageSelection() {
@@ -909,7 +976,7 @@ function renderWall() {
         </div>
         ${viz}
         <div class="t-body">
-          <p class="t-narr">${esc(a.narrative)}</p>
+          <p class="t-narr">${a.aiNarr ? '<span class="ai">ai</span>' : ''}${esc(a.narrative)}</p>
           ${meter}
         </div>
         <div class="t-foot">
@@ -1049,26 +1116,46 @@ async function openLinear(a) {
   if (!window.humanctl) { toast('demo: would open ' + refs[0].url); return; }
   await window.humanctl.openExternal(refs[0].url);
 }
-let sumRun = 0;
+const sumRuns = new Map(); // id -> run token, so a stale response never lands
 const engineLabel = (e) => (e === 'codex' ? 'Codex' : 'Claude Code');
 async function summarizeAgent(a) {
-  if (summaries.has(a.id)) { applySummary(a.id); toast('summary ready (cached).'); return; }
-  toast('AI summary: sending recent messages to your local ' + engineLabel(summarizer) + ' CLI...');
-  const run = ++sumRun;
+  if (sumState.get(a.id) === 'loading') return;
+  sumState.set(a.id, 'loading');
+  repaintSummary(a.id);
+  const run = (sumRuns.get(a.id) || 0) + 1;
+  sumRuns.set(a.id, run);
+  const settle = (entry, err) => {
+    if (sumRuns.get(a.id) !== run) return;
+    if (entry) { sumState.delete(a.id); rememberSummary(a.id, entry); }
+    else { sumState.set(a.id, { error: err || 'could not summarize.' }); toast('summary failed: ' + (err || 'unknown error')); }
+    repaintSummary(a.id, !!entry);
+  };
   if (!window.humanctl) {
-    const s = 'Working through the latest instruction; see the timeline for the real signals.';
-    rememberSummary(a.id, s); applySummary(a.id); toast('demo summary set.'); return;
+    // demo: land a fixture summary after a beat so the loading state is visible
+    setTimeout(() => settle({ text: 'Working through the latest instruction; see the timeline for the real signals.', engine: summarizer, at: Date.now() }), 900);
+    return;
   }
-  const r = await window.humanctl.summarize({ path: a.path, harness: a.harness, engine: summarizer });
-  if (run !== sumRun) return;
-  if (r && r.ok && r.summary) { rememberSummary(a.id, r.summary); applySummary(a.id); toast('summary ready (via ' + engineLabel(r.engine || summarizer) + ').'); }
-  else toast(r && r.error ? 'summary failed: ' + r.error : 'could not summarize.');
+  try {
+    const r = await window.humanctl.summarize({ path: a.path, harness: a.harness, engine: summarizer });
+    if (r && r.ok && r.summary) settle({ text: r.summary, engine: r.engine || summarizer, at: Date.now() });
+    else settle(null, r && r.error);
+  } catch (e) { settle(null, String((e && e.message) || e)); }
 }
-function applySummary(id) {
-  // recompute the agent's narrative and repaint the active mode's view of it.
+// Repaint every surface that shows summary state. When a summary just landed
+// for the watched agent, pull the eye to the block so its home is unmistakable.
+function repaintSummary(id, landed) {
   remapAgents();
-  if (mode === 'focus') { renderRoster(); renderWatch(); ensureWatchDetail(); }
-  else if (mode === 'triage') applyTriageSelection();
+  if (mode === 'focus') {
+    renderRoster(); renderWatch(); ensureWatchDetail();
+    if (landed && selId === id) {
+      const blk = el('sumBlock');
+      if (blk) {
+        blk.scrollIntoView({ block: 'nearest', behavior: RM ? 'auto' : 'smooth' });
+        blk.classList.add('flash');
+        setTimeout(() => blk.classList.remove('flash'), 1200);
+      }
+    }
+  } else if (mode === 'triage') applyTriageSelection();
   else if (mode === 'wall') renderWall();
 }
 
@@ -1227,11 +1314,11 @@ async function load() {
     theme = st.state.theme === 'light' ? 'light' : 'dark';
     temp = st.state.temp === 'loud' ? 'loud' : 'considered';
     mode = ['focus', 'triage', 'wall'].includes(st.state.mode) ? st.state.mode : 'focus';
-    aiOn = !!st.state.aiOn;
     pins = new Set(st.state.pins || []);
     summarizer = st.state.summarizer === 'codex' ? 'codex' : 'claude';
     const op = st.state.openPref || {};
     openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
+    hydrateSummaries(st.state.summaries);
     if (st.state.selectedId) selId = st.state.selectedId;
   }
   applyTheme(); applyTemp();
@@ -1243,7 +1330,11 @@ const rowSubSig = new Map(); // id -> ageMs+':'+contextPct sub-signature from la
 async function _refresh() {
   if (!window.humanctl) return;
   await fetchData();
-  const sig = allRows.map((r) => r.id + r.ageMs + r.lastRole + r.contextPct).join('|')
+  // The decayed:S term makes the signature change when a needs-you session
+  // crosses NEED_DECAY_MS, so the 20s poll repaints the demotion to idle even
+  // though no file changed.
+  const now = Date.now();
+  const sig = allRows.map((r) => r.id + r.ageMs + r.lastRole + r.contextPct + (r.lastRole === 'assistant' && now - r.ageMs > NEED_DECAY_MS ? ':S' : '')).join('|')
     + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
     + '#' + (status ? status.needsYou + ':' + status.working + ':' + status.sessions : '');
   if (sig === lastSig) return; // nothing changed
