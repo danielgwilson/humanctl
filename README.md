@@ -27,7 +27,9 @@ lead, everything healthy recedes. Three modes (Focus / Triage / Wall, keys
 1/2/3) sit under a persistent chief-of-staff header that says who is waiting
 on you. Rows carry real signals only: context fill, token usage, spend at API
 rates, Codex 5h and weekly quota, model and reasoning effort. Pins and real
-session titles are kept. One click resumes a session in your terminal.
+session titles are kept. One click resumes a session in your terminal, or in
+the harness's own desktop app via its deep link (Claude or Codex, when
+installed); a per-harness setting picks which is primary.
 
 It is read-only and offline by default. It never writes to your transcripts
 and never sends anything off the machine, with one explicit opt-in exception:

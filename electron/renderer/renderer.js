@@ -250,6 +250,26 @@ let aiOn = false;
 let pins = new Set();
 let summarizer = 'claude';  // 'claude' | 'codex': which local CLI powers AI summary
 let facet = 'timeline';      // watched-agent detail facet: 'timeline' | 'map'
+// per-harness resume destination: 'terminal' (default, existing behavior) or
+// 'app' (the harness's own desktop app via its deep link). Persisted in state.json.
+let openPref = { 'claude-code': 'terminal', codex: 'terminal' };
+
+// The app destination is only offered when the OS reports a real handler for the
+// harness's deep link scheme (status.apps, probed in the main process). Honest
+// signals: no button for an app that is not installed. Demo mode shows both.
+function appAvailable(harness) {
+  if (demo) return true;
+  const key = harness === 'codex' ? 'codex' : 'claude';
+  return !!(status && status.apps && status.apps[key]);
+}
+// Linear-style pair: the preferred destination is primary, the other secondary.
+// Secondary is null when the desktop app is not installed.
+function resumeActs(a) {
+  const term = { act: 'resume-term', label: 'Resume in terminal' };
+  if (!appAvailable(a.harness)) return { primary: term, secondary: null };
+  const app = { act: 'resume-app', label: a.harness === 'codex' ? 'Open in Codex app' : 'Resume in Claude app' };
+  return openPref[a.harness] === 'app' ? { primary: app, secondary: term } : { primary: term, secondary: app };
+}
 
 // per-agent readSession detail cache (real signals only)
 const detailCache = new Map();  // id -> {data, usage, detail} | 'loading' | 'error'
@@ -488,11 +508,16 @@ function renderDock(a, h) {
   const det = detailCache.get(a.id);
   const hasLinear = det && det !== 'loading' && det !== 'error' && det.detail && det.detail.linearRefs && det.detail.linearRefs.length;
   // read-only + resume only. every state resumes except done (which reveals).
-  const primaryLabel = a.state === 'done' ? 'Reveal transcript' : 'Resume in terminal';
-  const primaryAct = a.state === 'done' ? 'reveal' : 'resume';
+  // resume splits per harness into terminal / desktop-app destinations; the
+  // preferred one (settings) is primary, the other stays one click away.
+  const ra = resumeActs(a);
+  const primaryLabel = a.state === 'done' ? 'Reveal transcript' : ra.primary.label;
+  const primaryAct = a.state === 'done' ? 'reveal' : ra.primary.act;
   dock.innerHTML = `
     <button class="btn primary" data-act="${primaryAct}">${primaryLabel}</button>
-    ${a.state === 'done' ? `<button class="btn" data-act="resume">Resume in terminal</button>` : `<button class="btn" data-act="reveal">Reveal transcript</button>`}
+    ${a.state === 'done' ? `<button class="btn" data-act="${ra.primary.act}">${ra.primary.label}</button>` : ''}
+    ${ra.secondary ? `<button class="btn" data-act="${ra.secondary.act}">${ra.secondary.label}</button>` : ''}
+    ${a.state === 'done' ? '' : `<button class="btn" data-act="reveal">Reveal transcript</button>`}
     <button class="btn ghost" data-act="linear" ${hasLinear ? '' : 'disabled'}>Open in Linear</button>
     <button class="btn ghost" data-act="summary" title="sends recent messages to your local claude CLI">AI summary</button>
     <span class="spacer"></span>
@@ -741,11 +766,14 @@ function tDrawerHTML(a, d) {
 
   const det = (d && d !== 'loading' && d !== 'error') ? d.detail : null;
   const hasLinear = det && det.linearRefs && det.linearRefs.length;
-  const primeLabel = a.state === 'done' ? 'Reveal' : 'Resume';
-  const primeAct = a.state === 'done' ? 'reveal' : 'resume';
+  const ra = resumeActs(a);
+  const primeLabel = a.state === 'done' ? 'Reveal' : ra.primary.label;
+  const primeAct = a.state === 'done' ? 'reveal' : ra.primary.act;
   const acts = `<div class="acts">`
     + `<button class="abtn prime" data-act="${primeAct}">${primeLabel} <kbd>${a.state === 'done' ? 'r' : '↵'}</kbd></button>`
-    + (a.state === 'done' ? `<button class="abtn" data-act="resume">Resume</button>` : `<button class="abtn" data-act="reveal">Reveal</button>`)
+    + (a.state === 'done' ? `<button class="abtn" data-act="${ra.primary.act}">${ra.primary.label}</button>` : '')
+    + (ra.secondary ? `<button class="abtn" data-act="${ra.secondary.act}">${ra.secondary.label}</button>` : '')
+    + (a.state === 'done' ? '' : `<button class="abtn" data-act="reveal">Reveal</button>`)
     + `<button class="abtn" data-act="linear" ${hasLinear ? '' : 'disabled'}>Linear</button>`
     + `<button class="abtn" data-act="summary" title="sends recent messages to your local claude CLI">AI summary</button>`
     + `<span class="fill"></span>`
@@ -946,8 +974,9 @@ function openPeek(id) {
     ['effort', a.effort || (a.ultracode ? 'ultra' : 'n/a')], ['ctx', a.ctxPct != null ? a.ctxPct + '%' : 'n/a'],
     ['cost', a.cost != null ? fmtUSD(a.cost) : 'n/a'], ['last', a.when || 'n/a'],
   ];
-  const primeLabel = a.state === 'done' ? 'reveal transcript' : 'resume in terminal';
-  const primeAct = a.state === 'done' ? 'reveal' : 'resume';
+  const ra = resumeActs(a);
+  const primeLabel = a.state === 'done' ? 'reveal transcript' : ra.primary.label.toLowerCase();
+  const primeAct = a.state === 'done' ? 'reveal' : ra.primary.act;
   el('peekIn').innerHTML = `
     <div class="pk-id">
       <span class="pk-face">${a.face}</span>
@@ -965,6 +994,8 @@ function openPeek(id) {
     </div>
     <div class="pk-act">
       <button class="primary" data-act="${primeAct}">${primeLabel}</button>
+      ${a.state === 'done' ? `<button data-act="${ra.primary.act}">${ra.primary.label.toLowerCase()}</button>` : ''}
+      ${ra.secondary ? `<button data-act="${ra.secondary.act}">${ra.secondary.label.toLowerCase()}</button>` : ''}
       <button data-act="reveal" ${a.state === 'done' ? 'style="display:none"' : ''}>reveal</button>
       <button data-act="linear" ${hasLinear ? '' : 'disabled'}>linear</button>
       <button class="pk-open" data-do="focus">Open in Focus</button>
@@ -985,7 +1016,9 @@ function closePeek() { el('peek').classList.remove('open'); el('scrim').classLis
 // ============================================================
 async function runAction(act, a) {
   if (!a) return;
-  if (act === 'resume') return resumeAgent(a);
+  if (act === 'resume') act = resumeActs(a).primary.act;  // generic entry (wall button, key r) -> preferred destination
+  if (act === 'resume-term') return resumeAgent(a);
+  if (act === 'resume-app') return openAppAgent(a);
   if (act === 'reveal') return revealAgent(a);
   if (act === 'linear') return openLinear(a);
   if (act === 'summary') return summarizeAgent(a);
@@ -995,6 +1028,14 @@ async function resumeAgent(a) {
   toast('opening Terminal for ' + a.name + '...');
   const r = await window.humanctl.resumeSession({ id: a.id, harness: a.harness, cwd: a.cwd });
   toast(r && r.ok ? 'resumed ' + a.name + ' in Terminal.' : 'could not resume ' + a.name + '.');
+}
+async function openAppAgent(a) {
+  const appName = a.harness === 'codex' ? 'Codex' : 'Claude';
+  const link = a.harness === 'codex' ? 'codex://threads/...' : 'claude://resume?session=...';
+  if (!window.humanctl) { toast('demo: would open ' + a.name + ' in the ' + appName + ' desktop app (' + link + ').'); return; }
+  toast('opening ' + a.name + ' in the ' + appName + ' app...');
+  const r = await window.humanctl.openInApp({ id: a.id, harness: a.harness });
+  toast(r && r.ok ? 'opened ' + a.name + ' in the ' + appName + ' app.' : (r && r.error ? r.error : 'could not open the ' + appName + ' app.'));
 }
 async function revealAgent(a) {
   if (!window.humanctl) { toast('demo: would reveal the transcript for ' + a.name + '.'); return; }
@@ -1107,13 +1148,36 @@ el('scrim').addEventListener('click', closePeek);
 
 // settings popover: pick the AI-summary engine (Claude Code or Codex), persisted
 function applySummarizerUI() { document.querySelectorAll('#engSeg button').forEach((b) => b.classList.toggle('on', b.dataset.eng === summarizer)); }
-function toggleSettings(force) { const pop = el('settingsPop'); const show = force !== undefined ? force : pop.hidden; pop.hidden = !show; if (show) applySummarizerUI(); }
+// resume destination per harness. The "Desktop app" side is disabled (with the
+// reason in the title) when the OS has no handler for that harness's deep link.
+function applyOpenPrefUI() {
+  document.querySelectorAll('[data-openseg]').forEach((seg) => {
+    const h = seg.dataset.openseg;
+    const avail = appAvailable(h);
+    seg.querySelectorAll('button').forEach((b) => {
+      const isApp = b.dataset.dest === 'app';
+      b.disabled = isApp && !avail;
+      b.title = (isApp && !avail) ? 'no desktop app registered for this harness on this machine' : '';
+      b.classList.toggle('on', b.dataset.dest === ((avail ? openPref[h] : 'terminal') || 'terminal'));
+    });
+  });
+}
+function toggleSettings(force) { const pop = el('settingsPop'); const show = force !== undefined ? force : pop.hidden; pop.hidden = !show; if (show) { applySummarizerUI(); applyOpenPrefUI(); } }
 el('btnSettings').addEventListener('click', (e) => { e.stopPropagation(); toggleSettings(); });
 document.querySelectorAll('#engSeg button').forEach((b) => b.addEventListener('click', () => {
   summarizer = b.dataset.eng === 'codex' ? 'codex' : 'claude';
   applySummarizerUI();
   if (window.humanctl) window.humanctl.setState({ summarizer });
   toast('AI summary engine: ' + engineLabel(summarizer));
+}));
+document.querySelectorAll('[data-openseg] button').forEach((b) => b.addEventListener('click', () => {
+  if (b.disabled) return;
+  const h = b.closest('[data-openseg]').dataset.openseg;
+  openPref = Object.assign({}, openPref, { [h]: b.dataset.dest === 'app' ? 'app' : 'terminal' });
+  applyOpenPrefUI();
+  if (window.humanctl) window.humanctl.setState({ openPref });
+  toast((h === 'codex' ? 'Codex' : 'Claude Code') + ' sessions now open in ' + (openPref[h] === 'app' ? 'the desktop app' : 'Terminal') + '.');
+  redrawActive();  // resume buttons across all modes pick up the new primary
 }));
 document.addEventListener('mousedown', (e) => {
   const pop = el('settingsPop');
@@ -1166,6 +1230,8 @@ async function load() {
     aiOn = !!st.state.aiOn;
     pins = new Set(st.state.pins || []);
     summarizer = st.state.summarizer === 'codex' ? 'codex' : 'claude';
+    const op = st.state.openPref || {};
+    openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
     if (st.state.selectedId) selId = st.state.selectedId;
   }
   applyTheme(); applyTemp();

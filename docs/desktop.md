@@ -148,6 +148,32 @@ estimated:
   limits, so the app shows the real Codex quota: 5h and weekly windows with
   used-percent and reset time, plus plan type.
 
+## Actions (resume destinations)
+
+Every session offers two resume destinations; a per-harness preference in the
+settings popover picks which one is the primary button, and the other stays one
+click away. The preference persists in local `state.json`.
+
+- Terminal: writes a temp `.command` file that opens a Terminal window in the
+  session's working directory running `claude --resume <id>` or
+  `codex resume <id>`. This is the original path and works with the CLIs alone.
+- Desktop app: opens the harness's own app through its registered deep link.
+  What each link actually does differs, and the labels say so:
+  - Claude Code: `claude://resume?session=<uuid>`. The Claude desktop app
+    imports the CLI session's transcript and opens it as a resumable desktop
+    session. Labeled "Resume in Claude app".
+  - Codex: `codex://threads/<thread-uuid>`. The Codex desktop app opens that
+    thread (the same link the app itself uses for "Open in app"); you can
+    continue it there. Labeled "Open in Codex app".
+
+Honest signals: the desktop-app option only appears when the OS reports a real
+handler for that harness's scheme (`app.getApplicationNameForProtocol`), so the
+button never exists on a machine where it could not work. If the link fails at
+click time, the error is surfaced in the toast. Both deep links were verified
+end to end on macOS with the current Claude and Codex desktop apps; the schemes
+are read from each app's `Info.plist` (`CFBundleURLTypes`) and are not a public
+documented API, so a future app release could change them.
+
 ## Status
 
 - Shipped (the 0.6.x conductor home): Atlas chief-of-staff header (a digest
@@ -162,11 +188,12 @@ estimated:
   persist. Rows show real signals only: last prompt (or the AI summary when
   one was made), context %, cost or API-equivalent, model, reasoning effort,
   ultracode, Linear refs, generated HTML files, skills. Codex 5h + weekly
-  quota and fleet spend totals; resume-in-terminal, reveal transcript, open in
-  Linear; opt-in AI summaries with a summary engine picker (Claude Code or
-  Codex CLI); light/dark themes and a considered/loud temperature toggle; live
-  fs.watch updates. The pre-0.6 tabs, back/forward nav, filter chips, search,
-  and spot-check were replaced by the three modes.
+  quota and fleet spend totals; resume in the harness desktop app or in a
+  Terminal window (see Actions below), reveal transcript, open in Linear;
+  opt-in AI summaries with a summary engine picker (Claude Code or Codex CLI);
+  light/dark themes and a considered/loud temperature toggle; live fs.watch
+  updates. The pre-0.6 tabs, back/forward nav, filter chips, search, and
+  spot-check were replaced by the three modes.
 - Next: per-repo grouping, and optional wake/ping actions (these cross from
   read-only into control, so they ship behind an explicit opt-in).
 
