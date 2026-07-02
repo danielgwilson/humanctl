@@ -425,6 +425,14 @@ function readUsage(file, harness) {
   return result;
 }
 
+// A session whose last message is from the assistant is "waiting on you", but
+// not forever: with no activity past this window it decays to idle instead of
+// piling up in needs-you. 18h clears yesterday's abandoned sessions by the next
+// morning while never decaying anything from the current working day. The
+// renderer's deriveState uses the same constant; keep them in sync.
+// Documented in docs/desktop.md ("Needs-you decay").
+const NEED_DECAY_MS = 18 * 60 * 60 * 1000;
+
 // Public: account-level rollup for the top bar. Real spend estimate for Claude
 // (metered), real rate-limit quota for Codex (plan-billed), and a needs-you count.
 function accountStatus(opts = {}) {
@@ -455,7 +463,7 @@ function accountStatus(opts = {}) {
   return {
     per,
     codexQuota,
-    needsYou: rows.filter((r) => r.lastRole === 'assistant').length,
+    needsYou: rows.filter((r) => r.lastRole === 'assistant' && Date.now() - r.ageMs <= NEED_DECAY_MS).length,
     working: rows.filter((r) => r.lastRole === 'user').length,
     nearCompaction,
     sessions: rows.length,
@@ -641,7 +649,7 @@ function readNotes(opts = {}) {
   return notes.slice(0, opts.limit || 100);
 }
 
-module.exports = { listRecent, readBlocks, readUsage, readRowExtras, readDetail, aggregateSkills, accountStatus, readNotes, NOTES_FILE, HARNESSES, KINDS };
+module.exports = { listRecent, readBlocks, readUsage, readRowExtras, readDetail, aggregateSkills, accountStatus, readNotes, NOTES_FILE, HARNESSES, KINDS, NEED_DECAY_MS };
 
 // CLI smoke: `node electron/sessions.js` prints a quick table (read-only).
 if (require.main === module) {
