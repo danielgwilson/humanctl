@@ -157,11 +157,21 @@ ipcMain.handle('session:summarize', async (_e, arg) => {
         try { cp.stdin.end(prompt); } catch (e) { rej(e); }
       });
     } else {
-      out = await new Promise((res, rej) => {
+      const runClaude = () => new Promise((res, rej) => {
         const cp = execFile(bin, ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 60000, maxBuffer: 1 << 20, env },
           (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300))) : res(String(stdout).trim()));
         try { cp.stdin.end(prompt); } catch (e) { rej(e); }
       });
+      out = await runClaude();
+      // The API can reject valid OAuth credentials in short transient bursts
+      // (401s and successes interleave within the same minute). Interactive
+      // Claude Code rides those out with automatic retries, but a one-shot -p
+      // run dies on its first request and prints "Failed to authenticate." to
+      // stdout, so give it one spaced retry before surfacing the failure.
+      if (/^failed to authenticate\b/i.test(out)) {
+        await new Promise((r) => setTimeout(r, 2500));
+        out = await runClaude();
+      }
     }
     const summary = out.slice(0, 600);
     if (!summary) return { ok: false, error: `the ${engine} CLI returned no output`, engine };
