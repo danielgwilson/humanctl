@@ -60,6 +60,14 @@ svg{display:block}
 /* the WORKING heartbeat gets a subtle pulse (ported behavior) */
 .hb.beat{ animation:beat 2.4s ease-in-out infinite; }
 @keyframes beat{ 0%,100%{ box-shadow:0 0 0 0 color-mix(in srgb, var(--s-work) 55%, transparent); opacity:1 } 50%{ box-shadow:0 0 0 5px color-mix(in srgb, var(--s-work) 0%, transparent); opacity:.6 } }
+
+/* attention tiers. drifting (idle 24h to 7d) stays listed with its needs-you
+   shape but recedes; archived (over 7d) only appears on the Wall, further
+   receded. Hover restores legibility: nothing is hidden, only calmed. */
+.arow.drift, .qrow.drift, .item.drift, .tile.drift{ opacity:.55; }
+.tile.archived{ opacity:.38; }
+.arow.drift:hover, .qrow.drift:hover, .item.drift:hover, .tile.drift:hover{ opacity:.85; }
+.tile.archived:hover{ opacity:.7; }
 </style>
 
 <!-- ===== LAYOUT (ported from variant F hybrid; tuned for 1240x840) ===== -->
