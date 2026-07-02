@@ -7,9 +7,11 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 
 - `electron/` is the desktop app. `main.js` is the Electron main process (window,
   IPC, the session-dir watcher). `renderer/` is the UI: plain static
-  `index.html` + `renderer.js` with no build step. `sessions.js` is the
-  read-only cross-harness session reader (Codex + Claude Code logs) and runs as a
-  plain Node module.
+  `index.html` + `renderer.js` with no build step.
+- `lib/` holds plain CommonJS Node modules shared by the desktop app and the
+  CLI: `sessions.js` is the read-only cross-harness session reader (Codex +
+  Claude Code logs), `pricing.js` its pricing table, and `pulse.js` the
+  read-only reconciliation engine behind `humanctl pulse` (see `docs/pulse.md`).
 - `bin/humanctl.js` is the CLI. `docs/` holds the deeper design and desktop docs
   (`docs/desktop.md` is the desktop reference).
 
@@ -38,8 +40,13 @@ the macOS traffic lights), or real-session performance.
 
 The session reader is non-visual, so it runs and is measured on its own:
 
-    npm run desktop:sessions           # print the recent-session table to stdout
-    node --check electron/sessions.js  # syntax gate
+    npm run desktop:sessions      # print the recent-session table to stdout
+    node --check lib/sessions.js  # syntax gate
+
+The pulse reconciler is pure over collected inputs and has a fixture-driven
+selftest (no network, no real data):
+
+    npm run pulse:selftest        # reconcile unit tests against synthetic fixtures
 
 ## Hygiene
 

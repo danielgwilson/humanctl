@@ -111,7 +111,7 @@ HUMANCTL_SMOKE=1 npm run desktop  # boot the window, print a marker, quit (CI-sa
 
 No build step, no bundler. The renderer is plain HTML and JS.
 
-- `electron/sessions.js` is the reader. It scans `~/.codex/sessions` and
+- `lib/sessions.js` is the reader. It scans `~/.codex/sessions` and
   `~/.claude/projects`, reads each transcript by bounded slices, and returns
   metadata, a per-session context map (`readBlocks`), and real token usage
   (`readUsage`, cached by mtime). It never writes and never makes a network

@@ -24,7 +24,7 @@ All counts are for one local calendar day (default: today).
   runs (`originator: codex_exec` or `source: exec`), and scheduled automation
   runs (`thread_source: automation`). This is the same classification the
   humanctl desktop app uses to hide noise (`isCodexAutomation` in
-  `electron/sessions.js`). Files whose first line is unparseable or carries no
+  `lib/sessions.js`). Files whose first line is unparseable or carries no
   recognizable meta land in `codexUnknown`, never guessed into a bucket. The
   three buckets always sum to `codexSessionsTouched`.
 - `claudeSessionsTouched`: `*.jsonl` files directly inside each
