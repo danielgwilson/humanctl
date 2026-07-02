@@ -35,6 +35,292 @@ function appendNote(message, flags) {
   else console.log(`noted (${level}): ${message}`);
 }
 
+// Span of control: how many agent sessions one human actually touched in a
+// day, plus the human-side signals (notes, merged PRs) for the same day. All
+// counts are for one local calendar day. Missing sources report null instead
+// of a fabricated zero; see docs/span.md.
+function localDateString(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function parseLocalDate(value) {
+  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
+  if (!match) {
+    return null;
+  }
+
+  const year = Number(match[1]);
+  const month = Number(match[2]);
+  const day = Number(match[3]);
+  const date = new Date(year, month - 1, day);
+
+  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
+    return null;
+  }
+
+  return date;
+}
+
+function mtimeInWindow(filePath, dayStartMs, dayEndMs) {
+  try {
+    const stat = fs.statSync(filePath);
+    return stat.mtimeMs >= dayStartMs && stat.mtimeMs < dayEndMs;
+  } catch {
+    return false;
+  }
+}
+
+// Codex writes one rollout-*.jsonl per session under
+// ~/.codex/sessions/YYYY/MM/DD/. Sessions resumed later keep their original
+// date directory, so scan date dirs within 7 days of the target instead of the
+// whole tree. Counts every rollout file touched that day; codex exec and
+// subagent noise is only detectable by reading file contents, so it is
+// included rather than guessed at. Null if ~/.codex/sessions is missing.
+function countCodexSessionsTouched(dayStart, dayEnd) {
+  const sessionsRoot = path.join(os.homedir(), ".codex", "sessions");
+
+  if (!fs.existsSync(sessionsRoot)) {
+    return null;
+  }
+
+  const dayStartMs = dayStart.getTime();
+  const dayEndMs = dayEnd.getTime();
+  let count = 0;
+
+  for (let offset = -7; offset <= 7; offset += 1) {
+    const scanDay = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + offset);
+    const dayDir = path.join(
+      sessionsRoot,
+      String(scanDay.getFullYear()),
+      String(scanDay.getMonth() + 1).padStart(2, "0"),
+      String(scanDay.getDate()).padStart(2, "0")
+    );
+
+    let entries;
+    try {
+      entries = fs.readdirSync(dayDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !/^rollout-.*\.jsonl$/.test(entry.name)) {
+        continue;
+      }
+      if (mtimeInWindow(path.join(dayDir, entry.name), dayStartMs, dayEndMs)) {
+        count += 1;
+      }
+    }
+  }
+
+  return count;
+}
+
+// Claude Code writes one *.jsonl per session directly inside each
+// ~/.claude/projects/<project>/ dir. Subdirectories (subagents etc.) are
+// intentionally not counted. Null if ~/.claude/projects is missing.
+function countClaudeSessionsTouched(dayStart, dayEnd) {
+  const projectsRoot = path.join(os.homedir(), ".claude", "projects");
+
+  if (!fs.existsSync(projectsRoot)) {
+    return null;
+  }
+
+  const dayStartMs = dayStart.getTime();
+  const dayEndMs = dayEnd.getTime();
+  let count = 0;
+  let projects;
+
+  try {
+    projects = fs.readdirSync(projectsRoot, { withFileTypes: true });
+  } catch {
+    return null;
+  }
+
+  for (const project of projects) {
+    if (!project.isDirectory()) {
+      continue;
+    }
+
+    const projectDir = path.join(projectsRoot, project.name);
+    let entries;
+    try {
+      entries = fs.readdirSync(projectDir, { withFileTypes: true });
+    } catch {
+      continue;
+    }
+
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
+        continue;
+      }
+      if (mtimeInWindow(path.join(projectDir, entry.name), dayStartMs, dayEndMs)) {
+        count += 1;
+      }
+    }
+  }
+
+  return count;
+}
+
+function countNotesForDay(dayStart, dayEnd) {
+  const notesPath = path.join(globalDir(), "notes.jsonl");
+
+  if (!fs.existsSync(notesPath)) {
+    return null;
+  }
+
+  const dayStartMs = dayStart.getTime();
+  const dayEndMs = dayEnd.getTime();
+  const counts = { fyi: 0, review: 0, blocked: 0, done: 0 };
+
+  for (const line of safeReadFile(notesPath).split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let note;
+    try {
+      note = JSON.parse(line);
+    } catch {
+      continue;
+    }
+
+    const tsMs = Date.parse(note?.ts);
+    if (!Number.isFinite(tsMs) || tsMs < dayStartMs || tsMs >= dayEndMs) {
+      continue;
+    }
+
+    if (NOTE_LEVELS.has(note.level)) {
+      counts[note.level] += 1;
+    }
+  }
+
+  return counts;
+}
+
+// Real signal or null, never a guess: any gh failure (missing binary, offline,
+// auth, rate limit) reports null rather than zero.
+function countPrsMergedByMe(dateString) {
+  try {
+    const stdout = childProcess.execFileSync(
+      "gh",
+      [
+        "search",
+        "prs",
+        "--author=@me",
+        "--merged",
+        `--merged-at=${dateString}`,
+        "--json",
+        "number",
+        "--limit",
+        "100"
+      ],
+      { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }
+    );
+    const parsed = JSON.parse(stdout);
+    return Array.isArray(parsed) ? parsed.length : null;
+  } catch {
+    return null;
+  }
+}
+
+// Upsert by date: one line per local day in ~/.humanctl/span.jsonl, so
+// re-running --record refreshes that day instead of appending duplicates.
+function upsertSpanRecord(record) {
+  const dir = globalDir();
+  ensureDir(dir);
+  const spanPath = path.join(dir, "span.jsonl");
+  const kept = [];
+  let replaced = false;
+
+  for (const line of safeReadFile(spanPath).split("\n")) {
+    if (!line.trim()) {
+      continue;
+    }
+
+    let existing;
+    try {
+      existing = JSON.parse(line);
+    } catch {
+      kept.push(line);
+      continue;
+    }
+
+    if (existing?.date === record.date) {
+      if (!replaced) {
+        kept.push(JSON.stringify(record));
+        replaced = true;
+      }
+      continue;
+    }
+
+    kept.push(line);
+  }
+
+  if (!replaced) {
+    kept.push(JSON.stringify(record));
+  }
+
+  const tempPath = `${spanPath}.${process.pid}.tmp`;
+  fs.writeFileSync(tempPath, `${kept.join("\n")}\n`, "utf8");
+  fs.renameSync(tempPath, spanPath);
+  return spanPath;
+}
+
+function formatSpanCount(value) {
+  return value === null ? "unavailable" : String(value);
+}
+
+function spanCommand(flags) {
+  const dateFlag = flagValue(flags, "date");
+  let dayStart;
+
+  if (dateFlag === undefined) {
+    const now = new Date();
+    dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  } else {
+    dayStart = dateFlag === true ? null : parseLocalDate(dateFlag);
+    if (!dayStart) {
+      console.error("humanctl span requires --date in YYYY-MM-DD form.");
+      process.exit(1);
+    }
+  }
+
+  const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
+  const date = localDateString(dayStart);
+
+  const record = {
+    date,
+    codexSessionsTouched: countCodexSessionsTouched(dayStart, dayEnd),
+    claudeSessionsTouched: countClaudeSessionsTouched(dayStart, dayEnd),
+    notes: countNotesForDay(dayStart, dayEnd),
+    prsMergedByMe: countPrsMergedByMe(date),
+    generatedAt: nowIso()
+  };
+
+  const recordedTo = booleanFlag(flags, "record", false) ? upsertSpanRecord(record) : undefined;
+
+  outputResult(recordedTo ? { ...record, recordedTo } : record, flags, (value) => {
+    console.log(`Span for ${value.date} (local day)`);
+    console.log(`  codex sessions touched   ${formatSpanCount(value.codexSessionsTouched)}`);
+    console.log(`  claude sessions touched  ${formatSpanCount(value.claudeSessionsTouched)}`);
+    if (value.notes === null) {
+      console.log("  notes                    unavailable");
+    } else {
+      const { fyi, review, blocked, done } = value.notes;
+      console.log(`  notes                    fyi ${fyi} / review ${review} / blocked ${blocked} / done ${done}`);
+    }
+    console.log(`  PRs merged by me         ${formatSpanCount(value.prsMergedByMe)}`);
+    if (value.recordedTo) {
+      console.log(`Recorded to ${value.recordedTo}`);
+    }
+  });
+}
+
 function usage() {
   console.log(`humanctl
 
@@ -44,6 +330,9 @@ Usage:
 
   humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] "message"
     post a short aside/BTW to the human (shows in the humanctl desktop inbox)
+
+  humanctl span [--date YYYY-MM-DD] [--record] [--json]
+    daily span-of-control counts: sessions touched, notes, PRs merged (see docs/span.md)
 
   humanctl ask create [--workspace dir] --title text --prompt text [--summary text] [--artifact id]
     [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
@@ -1214,6 +1503,12 @@ if (command === "note" || command === "btw") {
     process.exit(1);
   }
   appendNote(message, flags);
+  process.exit(0);
+}
+
+if (command === "span") {
+  const { flags } = parseFlags(args.slice(1));
+  spanCommand(flags);
   process.exit(0);
 }
 
