@@ -69,13 +69,17 @@ function textOf(content, claude) {
 
 // Codex auto-spawns subagent sub-threads (and headless `codex exec` runs) as
 // top-level rollout files. They are not human-driven sessions, so treat them as
-// automation and hide them by default.
+// automation and hide them by default. Newer Codex versions also stamp
+// session_meta with thread_source ("user" / "subagent" / "automation"), which
+// catches scheduled automation runs directly, without the prompt-shape check
+// in metaFor. bin/humanctl.js span mirrors these semantics; keep them in sync.
 function isCodexAutomation(meta) {
   if (!meta) return false;
   if (meta.parent_thread_id) return true;
   if (meta.agent_role || meta.agent_nickname) return true;
   if (meta.source && typeof meta.source === 'object' && meta.source.subagent) return true;
   if (meta.originator === 'codex_exec' || meta.source === 'exec') return true;
+  if (meta.thread_source === 'subagent' || meta.thread_source === 'automation') return true;
   return false;
 }
 
