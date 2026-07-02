@@ -12,7 +12,7 @@ try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
-const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, HARNESSES } = require('./sessions');
+const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, HARNESSES } = require('../lib/sessions');
 
 let win = null;
 

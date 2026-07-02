@@ -485,6 +485,12 @@ Usage:
     daily span-of-control counts: interactive vs automation sessions touched,
     notes, PRs merged (see docs/span.md)
 
+  humanctl pulse [--json] [--repo name] [--lane lane] [--fresh]
+    read-only reconciliation of Linear issues, local git worktrees, GitHub
+    PRs/checks, agent sessions, and notes into exclusive attention lanes:
+    needs-you, ready-for-review, blocked-on-agent, stale, missing-owner,
+    verified. Config at ~/.humanctl/pulse.json (see docs/pulse.md)
+
   humanctl ask create [--workspace dir] --title text --prompt text [--summary text] [--artifact id]
     [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
     [--escalation ask] [--why-now text] [--if-ignored text] [--status open] [--json]
@@ -1661,6 +1667,29 @@ if (command === "span") {
   const { flags } = parseFlags(args.slice(1));
   spanCommand(flags);
   process.exit(0);
+}
+
+if (command === "pulse") {
+  const { flags } = parseFlags(args.slice(1));
+  // Lazy require: pulse pulls in the session reader; keep every other command
+  // free of that cost.
+  const { runPulse } = require("../lib/pulse");
+  runPulse({
+    json: booleanFlag(flags, "json", false),
+    fresh: booleanFlag(flags, "fresh", false),
+    repo: flagValue(flags, "repo"),
+    lane: flagValue(flags, "lane"),
+    config: flagValue(flags, "config"),
+  }).then(
+    // No process.exit here: a hard exit can truncate large --json output
+    // before stdout flushes. Let the event loop drain instead.
+    (code) => { process.exitCode = code; },
+    (error) => {
+      console.error(`humanctl pulse failed: ${error.message}`);
+      process.exitCode = 1;
+    }
+  );
+  return;
 }
 
 if (command === "status") {

@@ -69,6 +69,19 @@ humanctl ask create --title "Redis or Postgres?" --prompt "Pick one" \
   --option "redis|Redis|fast, volatile" --option "pg|Postgres|durable"
 ```
 
+The human runs one read-only command to see whether the work graph and local
+reality still agree:
+
+```bash
+humanctl pulse         # needs-you, ready-for-review, blocked, stale, unowned, verified
+humanctl pulse --json  # stable contract for scripts and future surfaces
+```
+
+Pulse reconciles Linear issues, local git worktrees, GitHub PRs and checks,
+agent sessions, and notes into exclusive attention lanes, and says which
+sources were degraded instead of pretending they were empty. See
+[docs/pulse.md](./docs/pulse.md).
+
 ## The agent inbox
 
 `humanctl note` is the core loop: a short aside to the human, appended to
@@ -94,6 +107,8 @@ resume from durable state instead of chat-history reconstruction. Prefer
 Current:
 
 - [docs/desktop.md](./docs/desktop.md): the desktop control room reference
+- [docs/pulse.md](./docs/pulse.md): the pulse reconciliation reference (lanes,
+  join token, config, degradation semantics)
 - [docs/agentic-control-layer.md](./docs/agentic-control-layer.md): the
   control-layer spec (workRef / executionRef / proofRef / checkpoint, pulse)
 - [docs/control-layer.md](./docs/control-layer.md): the deeper control-layer
