@@ -143,6 +143,10 @@ body.light .seg button.on{ color:#fff; }
 .setpop .seg2 button.on{ background:var(--iris); color:#0a0c10; }
 body.light .setpop .seg2 button.on{ color:#fff; }
 .setpop .note{ margin:var(--s3) 0 0; font-size:10px; color:var(--ink4); line-height:1.45; }
+.setpop .sect{ margin-top:var(--s4); padding-top:var(--s4); border-top:1px solid var(--rule); }
+.setpop .prow{ display:grid; grid-template-columns:76px 1fr; align-items:center; gap:var(--s2); margin-bottom:var(--s2); }
+.setpop .prow .pk{ font-family:var(--mono); font-size:10px; color:var(--ink2); }
+.setpop .seg2 button:disabled{ opacity:.35; cursor:default; }
 .ctl button.on{ color:var(--iris); border-color:var(--iris-dim); }
 
 /* mode host */
@@ -563,6 +567,23 @@ body.light .pk-act button.primary{ color:#fff; }
     <button data-eng="codex">Codex</button>
   </div>
   <p class="note">Only the "AI summary" action sends data off-device (recent messages to the selected model). Nothing else leaves your machine.</p>
+  <div class="sect">
+    <h4>Resume sessions in</h4>
+    <p class="sub">Where the resume action takes you, per harness.</p>
+    <div class="prow"><span class="pk">Claude Code</span>
+      <div class="seg2" data-openseg="claude-code">
+        <button data-dest="app">Desktop app</button>
+        <button data-dest="terminal">Terminal</button>
+      </div>
+    </div>
+    <div class="prow"><span class="pk">Codex</span>
+      <div class="seg2" data-openseg="codex">
+        <button data-dest="app">Desktop app</button>
+        <button data-dest="terminal">Terminal</button>
+      </div>
+    </div>
+    <p class="note">Desktop app uses the harness deep link: Claude imports and resumes the CLI session, Codex opens the thread. Terminal opens a new window running claude --resume or codex resume. The other choice stays one click away on every session.</p>
+  </div>
 </div>
 <aside id="peek" role="dialog" aria-modal="true"><div class="peek-in" id="peekIn"></div></aside>
 

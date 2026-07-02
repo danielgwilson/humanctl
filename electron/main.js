@@ -83,8 +83,19 @@ ipcMain.handle('sessions:list', (_e, opts) => {
   try { return { ok: true, rows: listRecent(opts || {}) }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// Honest capability probe: ask the OS which app (if any) handles each harness
+// deep link scheme. The renderer only offers "open in app" when a real handler
+// is registered, so the button can never be a fictional action.
+function deepLinkApps() {
+  try {
+    return {
+      claude: !!app.getApplicationNameForProtocol('claude://'),
+      codex: !!app.getApplicationNameForProtocol('codex://'),
+    };
+  } catch { return { claude: false, codex: false }; }
+}
 ipcMain.handle('status:get', (_e, opts) => {
-  try { return { ok: true, status: Object.assign(accountStatus(opts || {}), { version: APP_VERSION }) }; }
+  try { return { ok: true, status: Object.assign(accountStatus(opts || {}), { version: APP_VERSION, apps: deepLinkApps() }) }; }
   catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 ipcMain.handle('sessions:read', (_e, arg) => {
@@ -210,6 +221,28 @@ ipcMain.handle('session:resume', (_e, arg) => {
     execFile('open', [file], () => { setTimeout(() => fs.unlink(file, () => {}), 8000); });
     return { ok: true, cmd };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
+// Open the session in the harness's own desktop app via its registered deep
+// link (the same links the apps use themselves; both verified end to end):
+//   Claude desktop  claude://resume?session=<uuid>   imports + opens the CLI session
+//   Codex desktop   codex://threads/<thread-uuid>    opens that thread in the app
+const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+ipcMain.handle('session:open-app', async (_e, arg) => {
+  try {
+    if (!arg || !arg.id) return { ok: false, error: 'no id' };
+    const m = String(arg.id).match(UUID_RE);
+    if (!m) return { ok: false, error: 'no session uuid in this id' };
+    const codex = arg.harness === 'codex';
+    const url = codex ? `codex://threads/${m[1]}` : `claude://resume?session=${m[1]}`;
+    // openExternal rejects when no app is registered for the scheme, so a
+    // missing desktop app surfaces as a real error instead of a silent no-op.
+    await shell.openExternal(url);
+    return { ok: true, url };
+  } catch (err) {
+    const appName = arg && arg.harness === 'codex' ? 'Codex' : 'Claude';
+    return { ok: false, error: `could not open the ${appName} desktop app: ${String((err && err.message) || err)}` };
+  }
 });
 
 ipcMain.handle('skills:aggregate', (_e, opts) => {
