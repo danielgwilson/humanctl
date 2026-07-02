@@ -41,7 +41,8 @@ Desktop (macOS, from source):
 
 ```bash
 npm install
-npm run app:install   # builds and copies to ~/Applications/humanctl.app
+npm run app:install   # builds and installs to /Applications/humanctl.app
+                      # (falls back to ~/Applications if /Applications is not writable)
 ```
 
 CLI:

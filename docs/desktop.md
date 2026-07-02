@@ -24,21 +24,26 @@ npm install
 npm run desktop
 ```
 
-## Install it (~/Applications)
+## Install it (/Applications)
 
 Build a real `.app` and drop it in your Applications folder:
 
 ```bash
 npm install
-npm run app:install     # builds with electron-builder, copies to ~/Applications/humanctl.app
-open ~/Applications/humanctl.app
+npm run app:install     # builds with electron-builder, installs to /Applications/humanctl.app
+open /Applications/humanctl.app
 ```
+
+The installer (`scripts/install-app.sh`) targets `/Applications`; if that is
+not writable it falls back to `~/Applications` and says so. It removes any
+existing copy at both locations first, so there is never a duplicate for
+Spotlight to get confused by.
 
 `npm run app:build` alone produces `dist/mac-arm64/humanctl.app`; `npm run
 app:dmg` produces a shareable `.dmg`. These are unsigned (no Apple Developer
 cert needed); a locally built app opens without a Gatekeeper prompt. If you ever
 move a downloaded copy and macOS blocks it, right-click the app and choose Open
-once, or run `xattr -dr com.apple.quarantine ~/Applications/humanctl.app`.
+once, or run `xattr -dr com.apple.quarantine /Applications/humanctl.app`.
 
 ## Signed + notarized release (to share with other Macs)
 
