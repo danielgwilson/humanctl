@@ -33,4 +33,11 @@ contextBridge.exposeInMainWorld('humanctl', {
     ipcRenderer.on('session:append', handler);
     return () => ipcRenderer.removeListener('session:append', handler);
   },
+  // State mutated outside the renderer (a CLI/socket command wrote state.json);
+  // carries the fresh state so the open window can apply it live.
+  onStateChanged: (cb) => {
+    const handler = (_e, state) => { try { cb(state); } catch {} };
+    ipcRenderer.on('state:changed', handler);
+    return () => ipcRenderer.removeListener('state:changed', handler);
+  },
 });

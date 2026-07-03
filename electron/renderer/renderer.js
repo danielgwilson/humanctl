@@ -1814,5 +1814,21 @@ function scheduleRefresh() {
 if (window.humanctl && window.humanctl.onSessionsChanged) window.humanctl.onSessionsChanged(scheduleRefresh);
 // Hot-session appends: near-immediate, for the watched session only.
 if (window.humanctl && window.humanctl.onSessionAppend) window.humanctl.onSessionAppend(onSessionAppend);
+// State mutated from outside this window (a registered command invoked over
+// the control socket, e.g. `humanctl app app.set-mode --mode wall`): apply the
+// pushed state live so the CLI-driven app is visibly the same app.
+function applyExternalState(st) {
+  if (!st || typeof st !== 'object') return;
+  theme = st.theme === 'light' ? 'light' : 'dark';
+  temp = st.temp === 'loud' ? 'loud' : 'considered';
+  pins = new Set(st.pins || []);
+  summarizer = st.summarizer === 'codex' ? 'codex' : 'claude';
+  const op = st.openPref || {};
+  openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
+  applyTheme(); applyTemp();
+  const m = ['focus', 'triage', 'wall'].includes(st.mode) ? st.mode : mode;
+  if (m !== mode) setMode(m); else redrawActive();
+}
+if (window.humanctl && window.humanctl.onStateChanged) window.humanctl.onStateChanged(applyExternalState);
 setInterval(() => { if (window.humanctl) scheduleRefresh(); }, 20000);
 load();

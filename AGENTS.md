@@ -10,10 +10,31 @@ Operator notes for agents working in this repo. Start with `README.md` for what
   `index.html` + `renderer.js` with no build step.
 - `lib/` holds plain CommonJS Node modules shared by the desktop app and the
   CLI: `sessions.js` is the read-only cross-harness session reader (Codex +
-  Claude Code logs), `pricing.js` its pricing table, and `pulse.js` the
-  read-only reconciliation engine behind `humanctl pulse` (see `docs/pulse.md`).
+  Claude Code logs), `pricing.js` its pricing table, `pulse.js` the
+  read-only reconciliation engine behind `humanctl pulse` (see `docs/pulse.md`),
+  `span.js` the span-of-control counter behind `humanctl span` (see
+  `docs/span.md`), and `commands.js` the command registry (see below and
+  `docs/commands.md`).
 - `bin/humanctl.js` is the CLI. `docs/` holds the deeper design and desktop docs
   (`docs/desktop.md` is the desktop reference).
+
+## Command registry (hardline)
+
+Every mutation of durable state, every process spawn, and every cross-session
+observation is a registered command: declared once in `lib/commands.js`,
+invocable from the UI (IPC routed through `registry.invoke`, the single choke
+point), from the CLI against the running app (`humanctl app <name>`, see
+`docs/commands.md`), and logged as one event line in
+`~/.humanctl/events.jsonl`. Renderer-only ephemera (hover, selection, scroll
+position) are exempt; nothing that touches disk, a process, or another
+session is.
+
+**Register the command in `lib/commands.js` before wiring any UI to it.** A
+declared command with no handler fails loudly ("only available through the
+running desktop app"); an unregistered mutation wired straight into the
+renderer or main process is the failure mode this rule exists to prevent. See
+`docs/commands.md` for the full table, the event format, and the local-trust
+model of the control socket.
 
 ## Local development and testing
 
@@ -52,6 +73,11 @@ The live-timeline readers (backward pages + the incremental append cursor)
 have their own fixture-driven selftest (synthetic transcripts in a temp dir):
 
     npm run reader:selftest       # timeline paging + cursor math incl. rotation
+
+The command registry (param validation, the event log, and the control
+socket) has its own selftest, also no network and no real `~/.humanctl` data:
+
+    npm run commands:selftest     # registry, event log, and socket round-trip
 
 ## Hygiene
 
