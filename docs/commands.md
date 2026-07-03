@@ -24,6 +24,7 @@ writing:
 |---|---|---|---|
 | `sessions.list` | observation | yes | `maxAgeH, limit, withUsage, includeAutomation` |
 | `session.detail` | observation | yes | `id, path, harness` |
+| `session.timeline` | observation | yes | `id, path, harness, before` |
 | `skills.aggregate` | observation | yes | `maxAgeH, limit` |
 | `notes.list` | observation | yes | `limit` |
 | `note.post` | action | yes | `message*, level, repo, session, agent, cwd` |
