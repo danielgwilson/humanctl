@@ -36,6 +36,15 @@ contextBridge.exposeInMainWorld('humanctl', {
     ipcRenderer.on('sessions:changed', handler);
     return () => ipcRenderer.removeListener('sessions:changed', handler);
   },
+  // Fast path for ~/.humanctl itself (notes.jsonl + asks/): fires on a short
+  // coalesce window independent of the general sessions:changed debounce, so
+  // a posted note can update the Inbox without waiting on the full list
+  // refresh floor.
+  onInboxFast: (cb) => {
+    const handler = () => { try { cb(); } catch {} };
+    ipcRenderer.on('inbox:fast', handler);
+    return () => ipcRenderer.removeListener('inbox:fast', handler);
+  },
   onSessionAppend: (cb) => {
     const handler = (_e, payload) => { try { cb(payload); } catch {} };
     ipcRenderer.on('session:append', handler);
