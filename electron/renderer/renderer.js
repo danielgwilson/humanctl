@@ -1590,6 +1590,31 @@ async function fetchData() {
   if (nt && nt.ok) allNotes = nt.notes || [];
   if (it && it.ok) inboxThreads = it.threads || [];
 }
+// Fast path for the Inbox: notes.jsonl and ~/.humanctl/asks/ are tiny
+// append-only writes, so re-reading just those (skipping the session-list
+// scan and its usage/detail joins) is cheap enough to run on the main
+// process's short inbox:fast coalesce window instead of waiting on the
+// general REFRESH_MIN_MS floor below. Applies straight to the Inbox pane
+// without touching allRows/status, so it never fights the fuller refresh.
+let inboxFastRunning = false, inboxFastQueued = false;
+async function runInboxFast() {
+  if (!window.humanctl) return;
+  if (inboxFastRunning) { inboxFastQueued = true; return; }
+  inboxFastRunning = true;
+  try {
+    const [nt, it] = await Promise.all([
+      window.humanctl.getNotes({ limit: 100 }),
+      window.humanctl.getInboxThreads({ limit: 200 }),
+    ]);
+    if (nt && nt.ok) allNotes = nt.notes || [];
+    if (it && it.ok) inboxThreads = it.threads || [];
+    if (mode === 'inbox' && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
+    if (window.Atlas) window.Atlas.renderPanel();
+  } finally {
+    inboxFastRunning = false;
+    if (inboxFastQueued) { inboxFastQueued = false; runInboxFast(); }
+  }
+}
 function applyRailState(st) {
   leftRailCollapsed = !!(st && st.leftRailCollapsed);
   rightRailCollapsed = !!(st && st.rightRailCollapsed);
@@ -1673,6 +1698,9 @@ function scheduleRefresh() {
   refreshTimer = setTimeout(runRefresh, wait);
 }
 if (window.humanctl && window.humanctl.onSessionsChanged) window.humanctl.onSessionsChanged(scheduleRefresh);
+// Inbox fast path: a note or persisted ask landed in ~/.humanctl. Update the
+// Inbox immediately rather than waiting on scheduleRefresh's 2.5s floor.
+if (window.humanctl && window.humanctl.onInboxFast) window.humanctl.onInboxFast(runInboxFast);
 // Hot-session appends: near-immediate, for the watched session only.
 if (window.humanctl && window.humanctl.onSessionAppend) window.humanctl.onSessionAppend(onSessionAppend);
 // State mutated from outside this window (a registered command invoked over

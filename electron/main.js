@@ -68,16 +68,23 @@ function createWindow() {
 }
 
 // ---- realtime: watch the session dirs, debounce, tell the renderer to refresh ----
-// Two speeds. LIST refreshes stay behind the 2.5s trailing debounce (a fleet of
-// active agents writes constantly; the scan is mtime-cached but not free). The
-// HOT session, the one open in the dossier, skips the debounce: its fs events
-// run a cursor-based incremental read of only the appended bytes and push the
-// new events straight to the renderer, so a message landing in the watched
-// transcript appears in the open dossier in well under 2 seconds.
+// Three speeds now. LIST refreshes (harness transcript dirs) stay behind the
+// 2.5s trailing debounce (a fleet of active agents writes constantly; the
+// scan is mtime-cached but not free). The HOT session, the one open in the
+// dossier, skips the debounce: its fs events run a cursor-based incremental
+// read of only the appended bytes and push the new events straight to the
+// renderer, so a message landing in the watched transcript appears in the
+// open dossier in well under 2 seconds. ~/.humanctl itself (notes.jsonl +
+// asks/) gets its own fast path: those are tiny appends, high-signal (a
+// posted note or a persisted ask answer), and cheap to react to, so they skip
+// the 2.5s list debounce entirely and push a dedicated inbox-refresh event on
+// a short coalesce window instead of waiting on the general list ping.
 let watchTimer = null;
 const watchers = [];
 let hotPath = null, hotHarness = null, hotTimer = null;
 const HOT_COALESCE_MS = 120;
+let inboxTimer = null;
+const INBOX_COALESCE_MS = 200;
 
 function pumpHot() {
   hotTimer = null;
@@ -110,15 +117,22 @@ function scheduleHot() {
   hotTimer = setTimeout(pumpHot, HOT_COALESCE_MS);
 }
 
+function pumpInbox() {
+  inboxTimer = null;
+  if (win && !win.isDestroyed()) win.webContents.send('inbox:fast');
+}
+function scheduleInbox() {
+  if (inboxTimer) return;
+  inboxTimer = setTimeout(pumpInbox, INBOX_COALESCE_MS);
+}
+
 function watchSessions() {
   // Trailing debounce: active agents write constantly, so coalesce a burst of
   // fs events into one refresh. 2.5s keeps the UI live without pinning the main
   // thread on the (now mtime-cached) session scan.
   const ping = () => { clearTimeout(watchTimer); watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 2500); };
-  // ensure the inbox dir exists so its watcher attaches even before the first note
-  try { fs.mkdirSync(path.join(os.homedir(), '.humanctl'), { recursive: true }); } catch {}
-  const dirs = [...HARNESSES.map((h) => h.dir), path.join(os.homedir(), '.humanctl')];
-  for (const dir of dirs) {
+  const harnessDirs = HARNESSES.map((h) => h.dir);
+  for (const dir of harnessDirs) {
     try {
       // macOS recursive fs.watch (FSEvents) reports files in subdirectories
       // created after the watch attached (verified: fresh Codex date dirs
@@ -133,6 +147,19 @@ function watchSessions() {
       watchers.push(w);
     } catch { /* dir may not exist; ignore */ }
   }
+  // ensure the inbox dir exists so its watcher attaches even before the first note
+  const inboxDir = path.join(os.homedir(), '.humanctl');
+  try { fs.mkdirSync(inboxDir, { recursive: true }); } catch {}
+  try {
+    // notes.jsonl and asks/*.jsonl are small append-only writes; a short
+    // coalesce here (INBOX_COALESCE_MS) is cheap because the consumer side
+    // (inbox.threads) is itself mtime-cached (lib/sessions.js's baseScan has
+    // a 1.5s TTL), so firing this more often than the list debounce does not
+    // add a second full session scan on every keystroke of a note.
+    const w = fs.watch(inboxDir, { recursive: true }, () => { ping(); scheduleInbox(); });
+    w.on('error', () => {});
+    watchers.push(w);
+  } catch { /* dir may not exist; ignore */ }
 }
 
 // Honest capability probe: ask the OS which app (if any) handles each harness
