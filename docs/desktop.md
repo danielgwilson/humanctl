@@ -6,19 +6,71 @@ list: which harness, which repo, the opening prompt, who the turn is waiting on,
 and how long ago it moved.
 
 It is read-only and offline by default. It never writes to your transcripts and
-never sends anything off the machine, with two explicit, opt-in exceptions,
-both running through your own local CLI auth when you ask for them: the
-AI-summary action sends a session's recent messages to a model through your
-local `claude` or `codex` CLI (you pick the engine in settings), and the
-ask-the-session action injects a one-turn question into a session through that
-session's own harness CLI. Claude asks leave no trace in the session; Codex
-asks write the marked question into the thread itself and are disclosed and
-acknowledged before the first one runs (see
-[ask-session.md](./ask-session.md)).
+never sends anything off the machine, with explicit, opt-in exceptions, all
+running through your own local CLI auth when you ask for them: the AI-summary
+action sends a session's recent messages to a model through your local
+`claude` or `codex` CLI (you pick the engine in settings); the ask-the-session
+action injects a one-turn question into a session through that session's own
+harness CLI (Claude asks leave no trace in the session; Codex asks write the
+marked question into the thread itself and are disclosed and acknowledged
+before the first one runs, see [ask-session.md](./ask-session.md)); and Atlas
+(below) sends a fleet-level prompt (pulse summary, recent notes, top session
+states) through the same local CLI, advisory only, never executing anything.
 
 The surface is exception-first: sessions that need you (the agent's turn is done,
-the ball is with you) lead; everything healthy recedes. Three modes (Focus /
-Triage / Wall, keys 1/2/3) sit under one persistent conductor header.
+the ball is with you) lead; everything healthy recedes. Three modes (Inbox /
+Focus / Wall, keys 1/2/3) sit under one persistent conductor header, alongside
+a persistent left roster and right Atlas panel that stay on screen in every
+mode (both collapsible, both persisted). Inbox is message-centric and is the
+default on launch; Focus and Wall stay session-centric for deep work and
+ambient overview.
+
+## Inbox (default mode)
+
+Inbox groups agent communication into one thread per session, sorted by
+newest item first: `humanctl note` posts, detected needs-you asks (the v3
+reader's state transitions, with their `stateReason`), and persisted
+ask-the-session Q&A. The thread list row shows the agent, a one-line preview
+of the newest item, a level chip (blocked / review / done / fyi, the same
+semantic colors as everywhere else), relative time, and an unread dot. Unread
+means any item newer than that thread's last-read watermark
+(`inbox.mark-read` / `inbox.mark-all-read`, persisted in `state.json` as
+`lastReadTs`); opening a thread marks it read.
+
+The detail pane renders the humanctl-updates stream by default (notes,
+detected asks, and Q&A as calm timeline entries); "Show full conversation"
+expands the same dossier timeline component Focus uses (not a fork) inline,
+for when the stream alone is not enough context. The thread header offers
+Reply (the same ask-the-session composer as Focus, against that session),
+Resume, and Open in Linear when a ref exists.
+
+The empty state is honest: "No agent updates yet. Agents post here via
+`humanctl note`," with the CLI one-liner shown, never a fake zero-state
+graphic.
+
+## Atlas panel (right rail, all modes)
+
+The right rail is Atlas in every mode: a digest line, the needs-you queue
+(unchanged behavior from the old Focus-only right rail, now shared), and an
+advisory chat. Atlas answers are grounded in `pulse --json`'s lane summary,
+recent notes, and the top-N session states with their reasons; the prompt
+requires citing which sessions or lanes an answer refers to and saying "I
+don't see that" rather than guessing. Atlas is advisory only: it answers and
+recommends, it never invokes a registry command itself. Every exchange is
+logged as an `atlas.ask` observation and persisted to `~/.humanctl/atlas.jsonl`,
+restored on launch so the thread survives a restart.
+
+## Custom right-click context menu
+
+Every session row, inbox thread, and the empty background area has a custom
+HTML context menu (not the native OS menu, so it can match the app's design
+language and show consistent entries). Menu entries are exactly the
+applicable REGISTERED commands for that target (a session row offers resume,
+open-in-app, reveal, summarize, ask, pin/unpin, and mark-read when it has an
+inbox thread; a thread offers open, mark-read, reply, resume; the background
+offers mode and rail/theme toggles). No entry bypasses the registry. Keyboard
+navigable (arrow keys, Enter, Escape); dismisses on Escape or a click outside
+the menu.
 
 ## State model (who the ball is with)
 
@@ -52,7 +104,7 @@ top and owns no classification logic or time constants of its own.
 
 Every state carries an honest reason ("asks you a question", "awaiting your
 go-ahead", "note: blocked"), surfaced in the queue rows, the dossier subline,
-tooltips, and the Triage drawer.
+tooltips, and the Inbox thread stream.
 
 Substantive events only: trailing local commands (`/model`, `/effort`) and
 metadata appends (pr-link, mode, custom-title, last-prompt lines) neither
@@ -73,9 +125,8 @@ resume-pattern mining over the full local session history:
   visually secondary. About 1 in 3 day-old sessions is eventually picked back
   up, but few within the next day; drifting keeps them reachable without
   stealing attention.
-- archived (over 7 days): drops from Focus and Triage and from all counts;
-  the Wall keeps it, dimmed. Past 7 idle days only ~6% of sessions ever
-  resume.
+- archived (over 7 days): drops from Focus and Inbox and from all counts; the
+  Wall keeps it, dimmed. Past 7 idle days only ~6% of sessions ever resume.
 
 Within tiers the reader sorts needs-you first, then session depth (message
 count), then recency, following the mining's odds ratios (depth 2.23, age
@@ -84,12 +135,12 @@ count), then recency, following the mining's odds ratios (depth 2.23, age
 alias equal to the hot tier for `lib/pulse.js` consumers. Explicit notes
 (`blocked`, `review`) do not decay.
 
-In Focus mode the right-rail queue owns needs-you and blocked: it is the
-priority queue you work down. The left roster is the full inventory; its
-needs-you and blocked groups render as slim count lines that jump to the
-queue rather than repeating the same sessions as full rows. Fleet totals
-(claude spend, codex API-equivalent, tokens, codex quota) live once, in the
-header, for every mode.
+The persistent right rail's needs-you queue (part of the Atlas panel, above)
+owns needs-you and blocked in every mode: it is the priority queue you work
+down. The left roster is the full inventory, every state as full rows (rail
+v2: title, one-line summary, cwd basename + harness + time; no context bar).
+Fleet totals (claude spend, codex API-equivalent, tokens, codex quota) live in
+the Atlas panel and the header, for every mode.
 
 ## Run it
 
@@ -216,7 +267,7 @@ No build step, no bundler. The renderer is plain HTML and JS.
   sets the app icon from `electron/assets/`.
 - `electron/preload.js` is the locked bridge: a small, explicit set of calls,
   no direct fs, no network.
-- `electron/renderer/` is the UI: the conductor home with Focus / Triage / Wall
+- `electron/renderer/` is the UI: the conductor home with Inbox / Focus / Wall
   modes, a per-session timeline and context map, light/dark themes. With no
   bridge (a plain browser, for a screenshot) it falls back to synthetic
   fixtures, so demos never contain real session content.
@@ -317,27 +368,36 @@ Mechanics, verification, and the cost notes live in
 
 ## Status
 
+- Shipped (0.14.0, the inbox + shell redesign): Inbox replaces Triage as the
+  keys-1 default, message-centric rather than session-centric (see "Inbox
+  (default mode)" above). The left roster and the Atlas right rail (digest,
+  needs-you queue, advisory chat) are now persistent across every mode,
+  collapsible and persisted (`app.set-left-rail`, `app.set-right-rail`). Rail
+  v2 rows drop the per-row context bar (context % moved to the Focus dossier
+  only) in favor of title + status, a one-line summary (cached AI summary or
+  last-exchange snippet), and cwd basename + harness + time. A custom
+  registry-driven right-click context menu replaces any native menu. btw
+  (ask-the-session) threads now persist to `~/.humanctl/asks/<sessionId>.jsonl`
+  and survive a restart; a probe still in flight when the window closes is
+  recorded as interrupted, never silently lost.
 - Shipped (the 0.6.x conductor home): Atlas chief-of-staff header (a digest
-  sentence naming who is waiting on you, plus a needs-you hero count); three
-  modes on keys 1/2/3. Focus is the roster (the full inventory: pinned /
-  working / idle / done rows, with needs-you and blocked as count lines that
-  jump to the queue) plus a watched-agent panel with timeline and context-map
-  facets, a cumulative-token sparkline, and the needs-you queue in the right
-  rail. Fleet totals sit in the header. Triage is a keyboard-first grouped
-  list (j/k move, enter opens an inline drawer, r resumes). Wall is a tile
-  grid of the whole fleet with a peek overlay. Agents get deterministic
-  nicknames and faces from the session id; a session renamed in Claude Code
-  shows its real title instead. Pins persist. Rows show real signals only:
-  last prompt (or the AI summary when one was made, marked "ai"), context %,
-  cost or API-equivalent, model, reasoning effort, ultracode, Linear refs,
-  generated HTML files, skills. Codex 5h + weekly quota and fleet spend
-  totals; resume in the harness desktop app or in a Terminal window (see
-  Actions below), reveal transcript, open in Linear; opt-in AI summaries with
-  a summary engine picker (Claude Code or Codex CLI) that land in a labeled
-  block in the watched-agent dossier, with engine + age, and persist across
-  restarts; light/dark themes and a considered/loud temperature toggle; live
-  fs.watch updates. The pre-0.6 tabs, back/forward nav, filter chips, search,
-  and spot-check were replaced by the three modes.
+  sentence naming who is waiting on you, plus a needs-you hero count). Focus
+  is the roster (the full inventory: pinned / working / idle / done rows)
+  plus a watched-agent panel with timeline and context-map facets and a
+  cumulative-token sparkline. Wall is a tile grid of the whole fleet with a
+  peek overlay. Agents get deterministic nicknames and faces from the session
+  id; a session renamed in Claude Code shows its real title instead. Pins
+  persist. Rows show real signals only: last prompt (or the AI summary when
+  one was made, marked "ai"), context %, cost or API-equivalent, model,
+  reasoning effort, ultracode, Linear refs, generated HTML files, skills.
+  Codex 5h + weekly quota and fleet spend totals; resume in the harness
+  desktop app or in a Terminal window (see Actions below), reveal transcript,
+  open in Linear; opt-in AI summaries with a summary engine picker (Claude
+  Code or Codex CLI) that land in a labeled block in the watched-agent
+  dossier, with engine + age, and persist across restarts; light/dark themes
+  and a considered/loud temperature toggle; live fs.watch updates. The
+  pre-0.6 tabs, back/forward nav, filter chips, search, and spot-check were
+  replaced by the three (then Focus/Triage/Wall, now Inbox/Focus/Wall) modes.
 - Next: per-repo grouping, and optional wake/ping actions (these cross from
   read-only into control, so they ship behind an explicit opt-in).
 

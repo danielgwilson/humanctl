@@ -7,7 +7,13 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 
 - `electron/` is the desktop app. `main.js` is the Electron main process (window,
   IPC, the session-dir watcher). `renderer/` is the UI: plain static
-  `index.html` + `renderer.js` with no build step.
+  `index.html` + a handful of plain `<script>`-tag JS files, no build step.
+  `renderer.js` owns shared state, utils, the persistent left roster, Focus,
+  and Wall; `inbox.js` the default Inbox mode; `atlas.js` the persistent right
+  rail (digest, needs-you queue, Atlas chat); `contextmenu.js` the custom
+  right-click menu; `boot.js` calls `renderer.js`'s boot function last, after
+  the other three have registered their `window.*` globals (load order in
+  `index.html` matters).
 - `lib/` holds plain CommonJS Node modules shared by the desktop app and the
   CLI: `sessions.js` is the read-only cross-harness session reader (Codex +
   Claude Code logs), `pricing.js` its pricing table, `pulse.js` the
@@ -48,7 +54,7 @@ not read any real session data:
 
     npm run renderer     # serves electron/renderer/ at http://localhost:4173
 
-Open that URL and verify layout, the Focus / Triage / Wall modes, the theme and
+Open that URL and verify layout, the Inbox / Focus / Wall modes, the theme and
 temperature toggles, and interactions against fixture data. This is the default
 way to iterate on the interface.
 
@@ -74,8 +80,11 @@ have their own fixture-driven selftest (synthetic transcripts in a temp dir):
 
     npm run reader:selftest       # timeline paging + cursor math incl. rotation
 
-The command registry (param validation, the event log, and the control
-socket) has its own selftest, also no network and no real `~/.humanctl` data:
+The command registry (param validation, the event log, the control socket,
+and inbox thread assembly) has its own selftest, no network and no durable
+real-data footprint (one case briefly appends then truncates one line of
+`~/.humanctl/notes.jsonl` to prove `note.post` -> `inbox.threads` end to
+end; see `docs/commands.md`'s Selftest section):
 
     npm run commands:selftest     # registry, event log, and socket round-trip
 

@@ -27,6 +27,7 @@ writing:
 | `session.timeline` | observation | yes | `id, path, harness, before` |
 | `skills.aggregate` | observation | yes | `maxAgeH, limit` |
 | `notes.list` | observation | yes | `limit` |
+| `inbox.threads` | observation | yes | `limit` |
 | `note.post` | action | yes | `message*, level, repo, session, agent, cwd` |
 | `span.run` | observation | yes | `date, record` |
 | `pulse.run` | observation | yes | `repo, lane, fresh` |
@@ -34,10 +35,13 @@ writing:
 | `app.status` | observation | no | `maxAgeH, limit` |
 | `app.state` | observation | no | (none) |
 | `app.set-state` | action | no | `patch*` |
-| `app.set-mode` | action | no | `mode*` (`focus\|triage\|wall`) |
+| `app.set-mode` | action | no | `mode*` (`inbox\|focus\|wall`) |
 | `app.set-theme` | action | no | `theme*` (`light\|dark\|system`) |
 | `app.set-engine` | action | no | `engine*` (`claude\|codex`) |
-| `app.mark-read` | action | no | (none) |
+| `app.set-left-rail` | action | no | `collapsed*` |
+| `app.set-right-rail` | action | no | `collapsed*` |
+| `inbox.mark-read` | action | no | `threadId*, at` |
+| `inbox.mark-all-read` | action | no | (none) |
 | `session.pin` | action | no | `id*` |
 | `session.unpin` | action | no | `id*` |
 | `session.resume` | action | no | `id*, harness, cwd` |
@@ -45,6 +49,7 @@ writing:
 | `session.reveal` | action | no | `id, path` |
 | `session.summarize` | action | no | `id, path, harness, engine` |
 | `session.ask` | action | no | `id, path, harness, cwd, question*` |
+| `atlas.ask` | action | no | `question*, engine` |
 | `app.open-external` | action | no | `url*` |
 | `app.open-path` | action | no | `path*` |
 
@@ -180,11 +185,21 @@ All three forms try the control socket first. If nothing is listening:
 
     npm run commands:selftest
 
-Plain node, zero network, zero real `~/.humanctl` data (every case uses a
-temp `HOME` or a temp socket path). Covers: the `COMMANDS` table shape, param
-validation (required / unknown / enum / type / truncation), `digestParams`
-shaping, registry dispatch (unknown command, missing handler, validation
-short-circuit, a throwing handler turned into `ok: false`, a real `note.post`
-write), the event log (entry shape, rotation at the byte boundary, a broken
-log directory degrading to a no-op), and a real control-socket round-trip
-(including the 0600 mode and stale-socket unlink).
+Plain node, zero network. Almost every case uses a temp `HOME` or a temp
+socket path; the one exception (`inbox.threads` proving the `note.post` ->
+thread-assembly join end to end) writes through the real `note.post` path
+and truncates its own appended line back off `~/.humanctl/notes.jsonl` in a
+`finally` block, verified byte-identical before/after (a pre-existing quirk
+in `lib/sessions.js`, tracked separately, means `readNotes()` cannot be
+sandboxed by swapping `process.env.HOME` after the module's first
+`require()`, unlike the `controlDir()`-based writers). Covers: the
+`COMMANDS` table shape, param validation (required / unknown / enum / type /
+truncation), `digestParams` shaping, registry dispatch (unknown command,
+missing handler, validation short-circuit, a throwing handler turned into
+`ok: false`, a real `note.post` write), inbox thread assembly (notes,
+detected asks, and persisted btw Q&A each producing the right thread shape),
+the ask-log round-trip (`appendAskLog`/`readAskLog`), the new command
+declarations (`inbox.mark-read`, `app.set-left-rail`/`app.set-right-rail`,
+`atlas.ask`), the event log (entry shape, rotation at the byte boundary, a
+broken log directory degrading to a no-op), and a real control-socket
+round-trip (including the 0600 mode and stale-socket unlink).

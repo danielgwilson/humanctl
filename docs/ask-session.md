@@ -83,6 +83,25 @@ always; Claude only if a future fork path is used):
 
 Covered by fixtures in `npm run pulse:selftest`.
 
+## Persistence (the Inbox btw thread)
+
+Every ask exchange (question, answer, engine, timestamp) is appended to
+`~/.humanctl/asks/<sessionId>.jsonl` by `electron/main.js`'s
+`sessionAskPersisted` wrapper around `sessionAsk`, using the same
+`appendAskLog`/`readAskLog` helpers `lib/commands.js` exposes for the
+`inbox.threads` command. This is independent of the renderer's own
+`state.json` copy (`asks`, used for the Focus dossier's compact thread and
+capped in memory): the jsonl log is the durable record the Inbox surfaces and
+restores across a restart.
+
+A probe still in flight (the process has been spawned but has not resolved)
+when the app quits is recorded as `{status: "interrupted", q, ts}` rather than
+silently dropped: `will-quit` sweeps an in-memory map of in-flight asks before
+the control socket closes. The Inbox thread renders an interrupted entry with
+a retry button; retrying re-runs the same question through the normal ask
+path (a fresh probe, not a resume of the dropped one, since a headless CLI
+call has no resumable handle once its process is gone).
+
 ## Cost honesty
 
 - Claude asks are metered API spend on your account: about $0.006 per warm

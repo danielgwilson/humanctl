@@ -23,18 +23,24 @@ keep the supporting context attached, and resume as soon as the answer lands.
 
 The app reads recent Codex and Claude Code transcripts on your machine and
 shows the whole fleet in one exception-first surface: sessions that need you
-lead, everything healthy recedes. Three modes (Focus / Triage / Wall, keys
+lead, everything healthy recedes. Three modes (Inbox / Focus / Wall, keys
 1/2/3) sit under a persistent chief-of-staff header that says who is waiting
-on you. Rows carry real signals only: context fill, token usage, spend at API
+on you. Inbox is the default: a message-centric view of every session's agent
+notes, detected asks, and btw questions, one thread per session, so the
+primary surface matches the thesis (attention routing, not session picking).
+The left roster and the right Atlas panel (digest, needs-you queue, and an
+advisory chat grounded in the live fleet) are both collapsible and persist
+across every mode. Rows carry real signals only: a one-line summary, cwd and
+harness, and (in the Focus dossier) context fill, token usage, spend at API
 rates, Codex 5h and weekly quota, model and reasoning effort. Pins and real
 session titles are kept. One click resumes a session in your terminal, or in
 the harness's own desktop app via its deep link (Claude or Codex, when
 installed); a per-harness setting picks which is primary.
 
 It is read-only and offline by default. It never writes to your transcripts
-and never sends anything off the machine, with one explicit opt-in exception:
-AI summaries, which pipe a session's recent messages through your local
-`claude` or `codex` CLI (you pick the engine). See
+and never sends anything off the machine, with explicit opt-in exceptions: AI
+summaries and Atlas answers, which pipe recent messages/fleet state through
+your local `claude` or `codex` CLI (you pick the engine). See
 [docs/desktop.md](./docs/desktop.md).
 
 ## Install

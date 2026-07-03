@@ -21,7 +21,7 @@ const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
-const { createRegistry, createEventLog, createControlServer, resolveSessionRow } = require('../lib/commands');
+const { createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads, appendAskLog } = require('../lib/commands');
 
 let win = null;
 
@@ -228,6 +228,31 @@ function pinSession(id, on, ctx) {
   return { ok: true, id: r.row.id, pinned: on, pins: res.state.pins };
 }
 
+// Inbox unread state: lastReadTs[threadId] persists in state.json (same store
+// as pins/theme). Unread is real: a thread is unread when it has an item
+// newer than its lastReadTs (or no entry at all), computed in the renderer
+// from data it already has; this command only owns the watermark.
+function markThreadRead(threadId, at, ctx) {
+  const id = String(threadId || '').trim();
+  if (!id) return { ok: false, error: 'inbox.mark-read requires a threadId' };
+  const s = readState();
+  const lastReadTs = Object.assign({}, s.lastReadTs || {});
+  lastReadTs[id] = Number.isFinite(at) ? at : Date.now();
+  const res = applyStatePatch({ lastReadTs }, ctx);
+  if (!res.ok) return res;
+  return { ok: true, threadId: id, at: lastReadTs[id] };
+}
+function markAllThreadsRead(ctx) {
+  const now = Date.now();
+  const threads = inboxThreads({});
+  const s = readState();
+  const lastReadTs = Object.assign({}, s.lastReadTs || {});
+  for (const t of threads) lastReadTs[t.sessionId] = now;
+  const res = applyStatePatch({ lastReadTs }, ctx);
+  if (!res.ok) return res;
+  return { ok: true, at: now, count: threads.length };
+}
+
 // Opt-in only: summarize a session's recent activity via the user's chosen local
 // CLI (Claude Code `claude -p`, or Codex `codex exec`). This is the one action
 // that sends data off the machine (to the model, through the user's own CLI auth),
@@ -295,6 +320,108 @@ async function sessionSummarize(p) {
   summaryCache.set(key, summary);
   if (summaryCache.size > 200) summaryCache.clear();
   return { ok: true, summary, engine };
+}
+
+// ---- Atlas: the right-rail advisory chat (spec: docs/inbox-ui-v1-spec.md) ----
+// Same headless-probe plumbing as ask-the-session (a one-shot local CLI call,
+// no persisted session), but grounded in the FLEET rather than one
+// transcript: the pulse lane summary, recent notes, and the top-N session
+// states with their reasons. Advisory only: Atlas answers and recommends, it
+// never invokes a registry command itself. Every exchange is logged (this IS
+// the atlas.ask observation, via the registry) and persisted to
+// ~/.humanctl/atlas.jsonl so the thread survives a restart.
+const ATLAS_LOG = () => path.join(os.homedir(), '.humanctl', 'atlas.jsonl');
+function appendAtlasLog(entry) {
+  try {
+    fs.mkdirSync(path.dirname(ATLAS_LOG()), { recursive: true });
+    fs.appendFileSync(ATLAS_LOG(), `${JSON.stringify(entry)}\n`, 'utf8');
+  } catch { /* best effort; the state.json copy the renderer keeps is the fast path */ }
+}
+function readAtlasLog(limit = 200) {
+  let txt;
+  try { txt = fs.readFileSync(ATLAS_LOG(), 'utf8'); } catch { return []; }
+  const out = [];
+  for (const line of txt.split('\n')) {
+    if (!line) continue;
+    try { const o = JSON.parse(line); if (o && typeof o === 'object') out.push(o); } catch { /* skip a corrupt line */ }
+  }
+  return out.slice(-limit);
+}
+const ATLAS_TOP_N = 20;
+function atlasContext() {
+  const rows = listRecent({ maxAgeH: 24 * 30, limit: 200, withUsage: false })
+    .filter((r) => r.tier !== 'archived')
+    .slice(0, ATLAS_TOP_N)
+    .map((r) => ({ id: r.id.slice(0, 12), repo: r.repo, harness: r.harness, state: r.state, reason: r.stateReason, age: r.age }));
+  const notes = readNotes({ limit: 20 }).map((n) => ({ level: n.level, message: n.message, repo: n.repo, session: n.session ? n.session.slice(0, 12) : '', ts: n.ts }));
+  return { rows, notes };
+}
+const ATLAS_PROMPT = (ctx, pulseSummary, question) => `You are Atlas, the advisory chief-of-staff panel in humanctl, a control room for one human overseeing many autonomous coding-agent sessions. Answer the operator's question using ONLY the data below. Cite the specific sessions (by their short id) or lanes you are referring to. If the data does not cover the question, say "I don't see that in the current fleet data" rather than guessing. Be terse and concrete; no preamble, no fabricated actions (you are advisory only and cannot execute anything).
+
+Pulse lane summary (read-only reconciliation across issues, worktrees, PRs, sessions, notes):
+${pulseSummary}
+
+Recent notes (agents posting to the human inbox):
+${JSON.stringify(ctx.notes, null, 0)}
+
+Top session states (id, repo, harness, state, reason, age):
+${JSON.stringify(ctx.rows, null, 0)}
+
+Operator's question: ${question}`;
+async function atlasAsk(p) {
+  const question = String((p && p.question) || '').trim();
+  if (!question) return { ok: false, error: 'no question' };
+  const engine = p.engine === 'codex' ? 'codex' : 'claude';
+  const bin = resolveCli(engine);
+  if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
+  const { runPulse } = require('../lib/pulse');
+  let pulseSummary = '(pulse unavailable)';
+  try {
+    let out = '';
+    const code = await runPulse({ json: false }, { out: (s) => { out += `${s}\n`; }, err: () => {} });
+    if (code === 0 && out.trim()) pulseSummary = out.trim().slice(0, 4000);
+  } catch { /* Atlas still answers from notes + session states alone */ }
+  const ctx = atlasContext();
+  const prompt = ATLAS_PROMPT(ctx, pulseSummary, question);
+  const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  delete env.CLAUDECODE;
+  let out;
+  if (engine === 'codex') {
+    const outFile = path.join(os.tmpdir(), `humanctl-atlas-${Date.now()}-${process.pid}.txt`);
+    out = await new Promise((res, rej) => {
+      const cp = execFile(bin, ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '-C', os.tmpdir(), '-o', outFile, '-'],
+        { timeout: 90000, maxBuffer: 4 << 20, env },
+        (err, stdout, stderr) => {
+          let msg = '';
+          try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
+          try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+          if (msg) return res(msg);
+          if (err) return rej(new Error(String(stderr || err.message || 'atlas ask failed').slice(0, 300)));
+          return res(String(stdout).trim());
+        });
+      try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+    });
+  } else {
+    const runClaude = () => new Promise((res, rej) => {
+      const cp = execFile(bin, ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 60000, maxBuffer: 1 << 20, env },
+        (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'atlas ask failed').slice(0, 300))) : res(String(stdout).trim()));
+      try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+    });
+    out = await runClaude();
+    if (/^failed to authenticate\b/i.test(out)) {
+      await new Promise((r) => setTimeout(r, 2500));
+      out = await runClaude();
+    }
+  }
+  const answer = out.slice(0, 3000);
+  if (!answer) return { ok: false, error: `the ${engine} CLI returned no output`, engine };
+  if (/\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated)\b/i.test(answer)) {
+    return { ok: false, error: `${engine} CLI is not authenticated: ${answer.slice(0, 140)}`, engine };
+  }
+  const at = Date.now();
+  appendAtlasLog({ q: question, a: answer, engine, ts: new Date(at).toISOString() });
+  return { ok: true, answer, engine, at };
 }
 
 // Ask the session: inject one sentinel-marked question into an existing session
@@ -404,6 +531,35 @@ async function sessionAsk(p) {
   return { ok: true, answer, engine, at: Date.now() };
 }
 
+// btw persistence (docs/ask-session.md): every ask thread survives a restart
+// in ~/.humanctl/asks/<sessionId>.jsonl (see lib/commands.js appendAskLog),
+// restored by the inbox.threads command. A probe still in flight when the
+// window closes is recorded as {status:"interrupted"} rather than silently
+// lost, so the inbox can render it with a retry affordance next launch.
+// inFlightAsks tracks the (session id -> question) of every ask this process
+// has started but not yet settled; app 'will-quit' sweeps it.
+const inFlightAsks = new Map();
+async function sessionAskPersisted(p) {
+  const t = resolveTarget(p, ['id', 'path']);
+  if (!t.ok) return t; // resolution failure: nothing to persist, nothing was in flight
+  const sessionId = t.target.id;
+  const question = String(t.target.question || '').trim();
+  if (sessionId && question) inFlightAsks.set(sessionId, { q: question, ts: new Date().toISOString() });
+  let res;
+  try { res = await sessionAsk(p); }
+  finally { if (sessionId) inFlightAsks.delete(sessionId); }
+  if (sessionId && question && res && res.ok) {
+    appendAskLog(sessionId, { q: question, a: res.answer, engine: res.engine, ts: new Date(res.at || Date.now()).toISOString() });
+  }
+  return res;
+}
+function flushInFlightAsksAsInterrupted() {
+  for (const [sessionId, entry] of inFlightAsks) {
+    appendAskLog(sessionId, { status: 'interrupted', q: entry.q, ts: entry.ts });
+  }
+  inFlightAsks.clear();
+}
+
 // Open/resume the actual session in a Terminal window (hands it back to the human).
 function sessionResume(p) {
   const t = resolveTarget(p, ['id', 'harness', 'cwd']);
@@ -474,7 +630,6 @@ const registry = createRegistry({
     },
     'skills.aggregate': (p) => ({ ok: true, agg: aggregateSkills(p || {}) }),
     'session.summarize': (p) => sessionSummarize(p),
-    'session.ask': (p) => sessionAsk(p),
     'session.resume': (p) => sessionResume(p),
     'session.open-app': (p) => sessionOpenApp(p),
     'session.reveal': (p) => sessionReveal(p),
@@ -490,10 +645,12 @@ const registry = createRegistry({
     'app.set-mode': (p, ctx) => applyStatePatch({ mode: p.mode }, ctx),
     'app.set-theme': (p, ctx) => applyStatePatch({ theme: p.theme }, ctx),
     'app.set-engine': (p, ctx) => applyStatePatch({ summarizer: p.engine }, ctx),
-    // Honest stub: stores the read watermark, and docs/commands.md says the
-    // inbox UI does not consume it yet. Registered now so the surface exists
-    // before the feature, per the registry invariant.
-    'app.mark-read': (_p, ctx) => applyStatePatch({ notesReadAt: Date.now() }, ctx),
+    'app.set-left-rail': (p, ctx) => applyStatePatch({ leftRailCollapsed: !!p.collapsed }, ctx),
+    'app.set-right-rail': (p, ctx) => applyStatePatch({ rightRailCollapsed: !!p.collapsed }, ctx),
+    'inbox.mark-read': (p, ctx) => markThreadRead(p.threadId, p.at, ctx),
+    'inbox.mark-all-read': (_p, ctx) => markAllThreadsRead(ctx),
+    'session.ask': (p) => sessionAskPersisted(p),
+    'atlas.ask': (p) => atlasAsk(p),
   },
 });
 
@@ -501,6 +658,7 @@ const registry = createRegistry({
 // The legacy channels that passed bare strings are wrapped into params objects
 // here so the renderer needs no changes.
 const IPC_ROUTES = [
+  ['app:commands', 'app.commands', () => ({})],
   ['sessions:list', 'sessions.list'],
   ['status:get', 'app.status'],
   ['sessions:read', 'session.detail'],
@@ -508,6 +666,10 @@ const IPC_ROUTES = [
   ['session:summarize', 'session.summarize'],
   ['session:ask', 'session.ask'],
   ['notes:get', 'notes.list'],
+  ['inbox:threads', 'inbox.threads'],
+  ['inbox:mark-read', 'inbox.mark-read'],
+  ['inbox:mark-all-read', 'inbox.mark-all-read', () => ({})],
+  ['atlas:ask', 'atlas.ask'],
   ['session:resume', 'session.resume'],
   ['session:open-app', 'session.open-app'],
   ['skills:aggregate', 'skills.aggregate'],
@@ -516,10 +678,17 @@ const IPC_ROUTES = [
   ['open:path', 'app.open-path', (arg) => ({ path: typeof arg === 'string' ? arg : '' })],
   ['state:get', 'app.state', () => ({})],
   ['state:set', 'app.set-state', (arg) => ({ patch: arg && typeof arg === 'object' ? arg : {} })],
+  ['rail:set-left', 'app.set-left-rail', (arg) => ({ collapsed: !!(arg && arg.collapsed) })],
+  ['rail:set-right', 'app.set-right-rail', (arg) => ({ collapsed: !!(arg && arg.collapsed) })],
 ];
 for (const [channel, name, map] of IPC_ROUTES) {
   ipcMain.handle(channel, (_e, arg) => registry.invoke(name, map ? map(arg) : (arg || {}), { source: 'ipc' }));
 }
+// Atlas thread restore is a plain file read (not a mutation, not a
+// cross-session observation over lib/ the registry table is meant for), so
+// it stays a direct IPC read the same way session:hot does; the exchange
+// itself is logged via the atlas.ask registry command above.
+ipcMain.handle('atlas:get-log', () => ({ ok: true, log: readAtlasLog(200) }));
 
 // ---- control socket: the same registry, drivable from the CLI ----
 // Local-trust model (docs/commands.md): a 0600 unix socket under $HOME; any
@@ -541,6 +710,9 @@ app.whenReady().then(() => {
   createWindow();
   startControlServer();
 });
-app.on('will-quit', () => { if (controlServer) { try { controlServer.close(); } catch {} } });
+app.on('will-quit', () => {
+  flushInFlightAsksAsInterrupted();
+  if (controlServer) { try { controlServer.close(); } catch {} }
+});
 app.on('window-all-closed', () => { for (const w of watchers) { try { w.close(); } catch {} } if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
