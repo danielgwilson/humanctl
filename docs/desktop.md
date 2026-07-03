@@ -156,6 +156,36 @@ npm run desktop:sessions          # print the recent-session table to stdout
 HUMANCTL_SMOKE=1 npm run desktop  # boot the window, print a marker, quit (CI-safe)
 ```
 
+## Live dossier timeline (honest truncation + sub-2s appends)
+
+The watched-agent timeline is built from real substantive events (your
+messages, the agent's messages, interrupts, tool activity collapsed into
+counted runs) read TAIL-FIRST from the transcript, so it always matches the
+latest messages. Two rules keep it honest and live:
+
+- Explicit truncation, never a silent splice. Transcripts routinely exceed the
+  bounded read cap, and tool_result lines are 56-80% of tail bytes in the wild,
+  so timeline pages are budgeted by substantive events, not raw bytes. Every
+  cut is a visible element: "~N earlier events not shown · load older" (the
+  count is a density estimate, marked ~) loads the next bounded chunk backward
+  on demand, and a timeline that verifiably reaches the beginning ends with
+  "start of session".
+- Incremental appends for the watched session only. Transcripts are
+  append-only, so the main process keeps a per-file cursor (inode, size,
+  line-aligned byte offset) for the ONE session open in the dossier and, on its
+  fs events, reads only the bytes appended since the last read, pushing parsed
+  events straight to the renderer. Measured end to end (fs append to renderer
+  push): 125-160ms. The dossier header shows "live · updated Ns ago", driven by
+  real event times. Claude custom-title lines and Codex turn markers are picked
+  up from appended bytes; the session's state is re-derived through the same
+  needs-you v3 classifier the list uses. Rotation or truncation (inode change,
+  size shrink) is never papered over: the cursor resets and the timeline
+  re-reads a full page. Background sessions keep the debounced list refresh;
+  only the selected session gets the hot path.
+
+The incremental parser and cursor math (rotation, partial-line flushes,
+multibyte alignment, probe filtering) are covered by `npm run reader:selftest`.
+
 ## How it is built
 
 No build step, no bundler. The renderer is plain HTML and JS.
@@ -163,8 +193,13 @@ No build step, no bundler. The renderer is plain HTML and JS.
 - `lib/sessions.js` is the reader. It scans `~/.codex/sessions` and
   `~/.claude/projects`, reads each transcript by bounded slices, and returns
   metadata, a per-session context map (`readBlocks`), and real token usage
-  (`readUsage`, cached by mtime). It never writes and never makes a network
-  call. It is a plain Node module, so it runs and tests on its own.
+  (`readUsage`, cached by mtime). Bounded reads past the 12MB cap are
+  tail-anchored (the newest bytes, never the head) and say what they skipped
+  (`truncated`, `skippedHeadBytes`). `readTimelinePage` serves the dossier
+  timeline in substantive-event-budgeted backward pages; `readAppended` reads
+  only appended bytes through a line-aligned per-file cursor
+  (`primeTailCursor`). It never writes and never makes a network call. It is a
+  plain Node module, so it runs and tests on its own.
 - `electron/pricing.js` holds approximate public token prices, used only for a
   local spend estimate (always labeled "est"). Update it as vendor pricing
   changes; it is the single place to do so.
@@ -172,12 +207,13 @@ No build step, no bundler. The renderer is plain HTML and JS.
   files, skills used, reasoning effort, and ultracode flag (Claude logs these;
   Codex exposes effort/quota, not skills, and we never fake the gap).
 - `electron/main.js` owns the window, watches the session dirs (fs.watch) to push
-  live updates, exposes read-only IPC (`sessions:list/read`, `status:get`,
-  `skills:aggregate`, `*:reveal/open`), persists local UI state (mode, theme,
-  temperature, pins, summary engine, selection, cached AI summaries) under
-  userData, and runs the opt-in `session:summarize` (local `claude` or `codex`
-  CLI, cached by engine and file mtime). It also sets the app icon from
-  `electron/assets/`.
+  live updates (debounced for the list, immediate cursor-fed appends for the
+  hot session), exposes read-only IPC (`sessions:list/read/timeline`,
+  `status:get`, `session:hot`, `skills:aggregate`, `*:reveal/open`), persists
+  local UI state (mode, theme, temperature, pins, summary engine, selection,
+  cached AI summaries) under userData, and runs the opt-in `session:summarize`
+  (local `claude` or `codex` CLI, cached by engine and file mtime). It also
+  sets the app icon from `electron/assets/`.
 - `electron/preload.js` is the locked bridge: a small, explicit set of calls,
   no direct fs, no network.
 - `electron/renderer/` is the UI: the conductor home with Focus / Triage / Wall

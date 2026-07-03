@@ -15,7 +15,7 @@ try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
-const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
+const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readTimelinePage, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
 
 let win = null;
 
@@ -62,8 +62,48 @@ function createWindow() {
 }
 
 // ---- realtime: watch the session dirs, debounce, tell the renderer to refresh ----
+// Two speeds. LIST refreshes stay behind the 2.5s trailing debounce (a fleet of
+// active agents writes constantly; the scan is mtime-cached but not free). The
+// HOT session, the one open in the dossier, skips the debounce: its fs events
+// run a cursor-based incremental read of only the appended bytes and push the
+// new events straight to the renderer, so a message landing in the watched
+// transcript appears in the open dossier in well under 2 seconds.
 let watchTimer = null;
 const watchers = [];
+let hotPath = null, hotHarness = null, hotTimer = null;
+const HOT_COALESCE_MS = 120;
+
+function pumpHot() {
+  hotTimer = null;
+  if (!hotPath || !win || win.isDestroyed()) return;
+  const t0 = Date.now();
+  let res;
+  try { res = readAppended(hotPath, { harness: hotHarness }); } catch { return; }
+  if (res.reset) {
+    // rotation / truncation / oversized gap: tell the renderer to re-read a
+    // full page rather than splicing across a rewrite.
+    win.webContents.send('session:append', { path: hotPath, reset: true, reason: res.reason });
+    return;
+  }
+  if (!res.events.length && !res.meta) return;
+  // Re-derive the state through the existing needs-you v3 logic (bounded tail
+  // read, keyed by mtime+size, so this is the same classifier the list uses).
+  let need = null;
+  try {
+    const st = fs.statSync(hotPath);
+    need = deriveNeedState(readNeedSignals(hotPath, hotHarness, st), st, Date.now());
+  } catch { /* advisory; the debounced list refresh will still catch up */ }
+  // epoch stamp makes append-to-render latency measurable from stdout
+  console.log(`humanctl: hot append ${res.events.length} events (read ${Date.now() - t0}ms) at ${Date.now()}`);
+  win.webContents.send('session:append', {
+    path: hotPath, events: res.events, meta: res.meta, need, end: res.end, size: res.size, at: Date.now(),
+  });
+}
+function scheduleHot() {
+  if (hotTimer) return;
+  hotTimer = setTimeout(pumpHot, HOT_COALESCE_MS);
+}
+
 function watchSessions() {
   // Trailing debounce: active agents write constantly, so coalesce a burst of
   // fs events into one refresh. 2.5s keeps the UI live without pinning the main
@@ -74,7 +114,15 @@ function watchSessions() {
   const dirs = [...HARNESSES.map((h) => h.dir), path.join(os.homedir(), '.humanctl')];
   for (const dir of dirs) {
     try {
-      const w = fs.watch(dir, { recursive: true }, ping);
+      // macOS recursive fs.watch (FSEvents) reports files in subdirectories
+      // created after the watch attached (verified: fresh Codex date dirs
+      // surface as "2026/07/04/rollout-x.jsonl"), so both roots stay covered
+      // without re-attaching. filename can be null on some platforms; treat
+      // that as "maybe the hot file" (the pump stat-guards for free).
+      const w = fs.watch(dir, { recursive: true }, (_ev, fn) => {
+        ping();
+        if (hotPath && (!fn || path.join(dir, String(fn)) === hotPath)) scheduleHot();
+      });
       w.on('error', () => {}); // a watched dir vanishing must not crash the process
       watchers.push(w);
     } catch { /* dir may not exist; ignore */ }
@@ -106,6 +154,32 @@ ipcMain.handle('sessions:read', (_e, arg) => {
     if (!arg || !arg.path) return { ok: false, error: 'no path' };
     const detail = readDetail ? readDetail(arg.path, arg.harness) : null;
     return { ok: true, data: readBlocks(arg.path, { harness: arg.harness }), usage: readUsage(arg.path, arg.harness), detail };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Timeline pages: substantive-event-budgeted backward slices of the transcript
+// with explicit [start, end) coverage. `before` (a previous page's `start`)
+// walks further back; the renderer renders every cut as a visible element.
+ipcMain.handle('sessions:timeline', (_e, arg) => {
+  try {
+    if (!arg || !arg.path) return { ok: false, error: 'no path' };
+    const page = readTimelinePage(arg.path, { harness: arg.harness, before: arg.before });
+    return page ? { ok: true, page } : { ok: false, error: 'could not read this session' };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// The renderer names the session open in the dossier; only that file gets the
+// immediate append pump. `from` seeds the cursor at the page's line-aligned
+// end so nothing between the page read and this call is lost.
+ipcMain.handle('session:hot', (_e, arg) => {
+  try {
+    hotPath = arg && arg.path ? String(arg.path) : null;
+    hotHarness = (arg && arg.harness) || null;
+    if (hotPath) {
+      primeTailCursor(hotPath, arg && typeof arg.from === 'number' ? arg.from : undefined);
+      // pump once right away: on reselection this catches up anything appended
+      // while the session was not hot, without waiting for its next fs event.
+      scheduleHot();
+    }
+    return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
 // A Dock/Finder-launched app inherits a minimal PATH (/usr/bin:/bin:...), not the

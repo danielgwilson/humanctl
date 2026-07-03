@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.11.0",
+  "version": "0.12.0",
   "description": "A control plane for the human bottleneck.",
   "main": "electron/main.js",
   "bin": {
@@ -22,6 +22,7 @@
     "cli:init": "node ./bin/humanctl.js init .",
     "cli:status": "node ./bin/humanctl.js status .",
     "pulse:selftest": "node lib/pulse.selftest.js",
+    "reader:selftest": "node lib/reader.selftest.js",
     "desktop": "electron electron/main.js",
     "renderer": "python3 -m http.server 4173 --directory electron/renderer",
     "desktop:sessions": "node lib/sessions.js",
