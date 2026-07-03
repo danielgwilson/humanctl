@@ -49,9 +49,10 @@ selftest (no network, no real data):
     npm run pulse:selftest        # reconcile unit tests against synthetic fixtures
 
 The live-timeline readers (backward pages + the incremental append cursor)
-have their own fixture-driven selftest (synthetic transcripts in a temp dir):
+and the usage accumulator share a fixture-driven selftest (synthetic
+transcripts in a temp dir):
 
-    npm run reader:selftest       # timeline paging + cursor math incl. rotation
+    npm run reader:selftest       # paging, append + usage cursors, rotation
 
 ## Hygiene
 

@@ -195,7 +195,11 @@ No build step, no bundler. The renderer is plain HTML and JS.
   metadata, a per-session context map (`readBlocks`), and real token usage
   (`readUsage`, cached by mtime). Bounded reads past the 12MB cap are
   tail-anchored (the newest bytes, never the head) and say what they skipped
-  (`truncated`, `skippedHeadBytes`). `readTimelinePage` serves the dossier
+  (`truncated`, `skippedHeadBytes`). Claude token totals and the spend
+  estimate are exempt from the cap: they accumulate through a line-aligned
+  per-file cursor that reads each byte once, so totals cover the whole
+  transcript at any size and appends cost only the appended bytes.
+  `readTimelinePage` serves the dossier
   timeline in substantive-event-budgeted backward pages; `readAppended` reads
   only appended bytes through a line-aligned per-file cursor
   (`primeTailCursor`). It never writes and never makes a network call. It is a
