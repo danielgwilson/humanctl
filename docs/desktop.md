@@ -6,10 +6,15 @@ list: which harness, which repo, the opening prompt, who the turn is waiting on,
 and how long ago it moved.
 
 It is read-only and offline by default. It never writes to your transcripts and
-never sends anything off the machine, with one explicit, opt-in exception: the
+never sends anything off the machine, with two explicit, opt-in exceptions,
+both running through your own local CLI auth when you ask for them: the
 AI-summary action sends a session's recent messages to a model through your
-local `claude` or `codex` CLI (you pick the engine in settings) when you ask
-for it.
+local `claude` or `codex` CLI (you pick the engine in settings), and the
+ask-the-session action injects a one-turn question into a session through that
+session's own harness CLI. Claude asks leave no trace in the session; Codex
+asks write the marked question into the thread itself and are disclosed and
+acknowledged before the first one runs (see
+[ask-session.md](./ask-session.md)).
 
 The surface is exception-first: sessions that need you (the agent's turn is done,
 the ball is with you) lead; everything healthy recedes. Three modes (Focus /
@@ -245,6 +250,34 @@ click time, the error is surfaced in the toast. Both deep links were verified
 end to end on macOS with the current Claude and Codex desktop apps; the schemes
 are read from each app's `Info.plist` (`CFBundleURLTypes`) and are not a public
 documented API, so a future app release could change them.
+
+## Ask the session
+
+The watched-agent dossier carries an "Ask the session" block under the AI
+summary: three quick prompts (Status? / What do you need from me? / Summarize
+this thread) plus a freeform input. The answer comes from the session itself,
+resumed headlessly through its own harness CLI, so it is grounded in the
+session's full context rather than the transcript tail. Question and answer
+pairs render as a compact thread with engine and age, persist across restarts
+like summaries (capped), and every question carries the `[humanctl btw]`
+sentinel prefix.
+
+The footprint differs per harness and the block says which one applies:
+
+- Claude Code sessions: `claude -p --resume <id> --no-session-persistence`,
+  which writes nothing to disk (verified byte-identical). Available by
+  default, safe even while the session is open in a terminal.
+- Codex sessions: `codex exec resume <id>` always appends the question and
+  answer into the real thread (there is no headless fork), pinned to
+  `sandbox_mode=read-only` because resume otherwise runs full-access
+  regardless of the thread's original sandbox. The first Codex ask shows a
+  one-line disclosure with a confirm, the acknowledgement persists, and asks
+  are refused while the session is actively working. The reader treats
+  persisted probe turns as non-substantive so they can never flip a session's
+  state, refresh its age, or mask a real ask.
+
+Mechanics, verification, and the cost notes live in
+[ask-session.md](./ask-session.md).
 
 ## Status
 

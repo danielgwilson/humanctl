@@ -2,7 +2,10 @@
 
 // humanctl desktop (Electron) main process.
 // Local-first, read-only over agent session transcripts. No network egress.
-// The only thing it writes is local UI state (pins, theme) under userData.
+// It writes local UI state (pins, theme) under userData; the one deliberate
+// exception to transcript read-only is the opt-in Codex "ask the session"
+// path, which appends a sentinel-marked question into the thread through the
+// user's own codex CLI (disclosed in the UI, acknowledged once, persisted).
 
 const { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
@@ -12,7 +15,7 @@ try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
-const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, HARNESSES } = require('../lib/sessions');
+const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
 
 let win = null;
 
@@ -196,6 +199,114 @@ ipcMain.handle('session:summarize', async (_e, arg) => {
     return { ok: true, summary, engine };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+// Ask the session: inject one sentinel-marked question into an existing session
+// through the harness's own CLI and return the answer. The mechanics are
+// empirically verified (docs/ask-session.md):
+//   Claude Code  `claude -p --resume <id> --no-session-persistence` answers from
+//                the session's full context and writes NOTHING: the original
+//                transcript stays byte-identical and no new file appears, so it
+//                is safe by default, even while the session is open elsewhere.
+//   Codex        `codex exec resume <id>` ALWAYS appends the question and answer
+//                into the real rollout (there is no headless fork), so it runs
+//                only after the user's persisted acknowledgement, refuses while
+//                the session is actively working, and must pin
+//                sandbox_mode=read-only: resume otherwise runs with
+//                danger-full-access regardless of the original thread's sandbox.
+const ASK_TIMEOUT_MS = 90000;
+const ASK_MAX_Q = 2000;
+const AUTH_FAIL_RE = /\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated|failed to authenticate)\b/i;
+ipcMain.handle('session:ask', async (_e, arg) => {
+  try {
+    if (!arg || !arg.id || !arg.path) return { ok: false, error: 'no session' };
+    const question = String(arg.question || '').trim().slice(0, ASK_MAX_Q);
+    if (!question) return { ok: false, error: 'no question' };
+    const codex = arg.harness === 'codex';
+    const engine = codex ? 'codex' : 'claude';
+    const bin = resolveCli(engine);
+    if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
+    const prompt = `${BTW_SENTINEL} ${question}`;
+    const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+    // A probe spawned from inside another Claude session would inherit these
+    // markers and stamp the injected turn differently; scrub for a clean SDK run.
+    delete env.CLAUDE_CODE_ENTRYPOINT;
+    delete env.CLAUDECODE;
+    // Claude resolves --resume <id> against the CURRENT project (cwd), so the
+    // probe must run in the session's own working directory (verified: an
+    // unrelated cwd fails with "No conversation found"). Codex resumes by uuid
+    // from anywhere, but the same cwd keeps its appended environment_context
+    // faithful to the thread.
+    const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
+    let out = '';
+    if (codex) {
+      // Codex asks write into the real thread. Two honest gates before spawning:
+      // the user acknowledged that once (persisted in state.json by the
+      // renderer's disclosure flow), and the session is not actively working
+      // (appending into a live turn is unsupported territory).
+      if (readState().askCodexAck !== true) {
+        return { ok: false, needsAck: true, engine, error: 'Codex questions are written into the thread itself; confirm the disclosure first.' };
+      }
+      let st = null; try { st = fs.statSync(arg.path); } catch { /* stat is advisory */ }
+      const need = deriveNeedState(readNeedSignals(arg.path, arg.harness, st || undefined), st, Date.now());
+      if (need.state === 'work') {
+        return { ok: false, engine, error: 'this session is working right now; a Codex ask would append into the live thread. Try again once it settles.' };
+      }
+      const m = String(arg.id).match(UUID_RE);
+      if (!m) return { ok: false, engine, error: 'no thread uuid in this session id' };
+      // -o writes the clean final agent message; read that, never the stdout stream.
+      const outFile = path.join(os.tmpdir(), `humanctl-ask-${Date.now()}-${process.pid}.txt`);
+      out = await new Promise((res, rej) => {
+        const cp = execFile(bin, ['exec', 'resume', m[1], '--skip-git-repo-check',
+          '-c', 'sandbox_mode=read-only', '-c', 'model_reasoning_effort=low',
+          '-o', outFile, prompt],
+          { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
+          (err, stdout, stderr) => {
+            let msg = '';
+            try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
+            try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+            if (msg) return res(msg);
+            if (err) return rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300)));
+            return res(String(stdout).trim());
+          });
+        try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
+      });
+    } else {
+      const runClaude = () => new Promise((res, rej) => {
+        const cp = execFile(bin, ['-p', '--resume', String(arg.id), '--no-session-persistence', '--model', 'haiku', '--output-format', 'json', prompt],
+          { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
+          (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300))) : res(String(stdout)));
+        try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
+      });
+      // The API can reject valid OAuth credentials in short transient bursts and
+      // a one-shot -p run dies on its first request with exit 0 and the error on
+      // stdout (same failure the summarize path guards). One spaced retry.
+      let raw = await runClaude();
+      let parsed = null;
+      try { parsed = JSON.parse(raw.trim()); } catch { /* non-JSON output handled below */ }
+      const authFail = (!parsed && /failed to authenticate/i.test(raw))
+        || (parsed && parsed.is_error && AUTH_FAIL_RE.test(String(parsed.result || '')));
+      if (authFail) {
+        await new Promise((r) => setTimeout(r, 2500));
+        raw = await runClaude();
+        parsed = null;
+        try { parsed = JSON.parse(raw.trim()); } catch { /* shape-checked below */ }
+      }
+      // Shape-validate: a result object with a string .result, not is_error.
+      if (!parsed || typeof parsed.result !== 'string') {
+        return { ok: false, engine, error: `unexpected claude output: ${raw.trim().replace(/\s+/g, ' ').slice(0, 160) || 'empty'}` };
+      }
+      if (parsed.is_error) return { ok: false, engine, error: String(parsed.result).replace(/\s+/g, ' ').slice(0, 300) };
+      out = parsed.result.trim();
+    }
+    const answer = String(out).trim().slice(0, 4000);
+    if (!answer) return { ok: false, engine, error: `the ${engine} CLI returned no output` };
+    // Both CLIs print auth failures to stdout and exit 0; never surface one as an answer.
+    if (AUTH_FAIL_RE.test(answer.slice(0, 200))) {
+      return { ok: false, engine, error: `${engine} CLI is not authenticated: ${answer.slice(0, 140)}` };
+    }
+    return { ok: true, answer, engine, at: Date.now() };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+
 // Agent inbox: notes posted by `humanctl note`.
 ipcMain.handle('notes:get', (_e, opts) => {
   try { return { ok: true, notes: readNotes(opts || {}) }; }
