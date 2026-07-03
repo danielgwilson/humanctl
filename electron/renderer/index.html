@@ -256,6 +256,55 @@ body.light .setpop .seg2 button.on{ color:#fff; }
 @keyframes sumpulse{ 0%,100%{ opacity:1 } 50%{ opacity:.45 } }
 @keyframes sumland{ 0%{ background:color-mix(in srgb, var(--iris) 16%, var(--panel)); } 100%{ background:var(--panel); } }
 
+/* Ask-the-session block: quick prompts + freeform input under the AI summary,
+   with a compact question/answer thread. Accented with the assistant hue; the
+   header meta line carries the honest per-harness footprint. */
+.askblock{ margin-top:var(--s3); padding:var(--s3) var(--s4); border:1px solid var(--rule); border-left:2px solid var(--s-done);
+  border-radius:var(--r2); background:var(--panel); }
+.askblock .lh{ display:flex; align-items:center; gap:var(--s3); }
+.askblock .lh .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--s-done); font-weight:600; }
+.askblock .lh .meta{ font-family:var(--mono); font-size:10px; color:var(--ink4); margin-left:auto; }
+.ask-thread{ display:flex; flex-direction:column; gap:var(--s3); margin-top:var(--s3); }
+.ask-x{ display:grid; gap:var(--s1); }
+.ask-x .tag{ font-family:var(--mono); font-size:8.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink4);
+  flex:0 0 44px; padding-top:2px; }
+.ask-x .q, .ask-x .a{ display:flex; align-items:flex-start; gap:var(--s2); }
+.ask-x .q .txt{ font-size:12.5px; color:var(--ink2); line-height:1.45; }
+.ask-x .a{ flex-wrap:wrap; padding-left:var(--s2); border-left:2px solid var(--rule2); }
+.ask-x .a .txt{ font-size:13px; color:var(--ink); line-height:1.5; white-space:pre-wrap; flex:1 1 0; min-width:0; overflow-wrap:anywhere; }
+.ask-x .a .meta{ font-family:var(--mono); font-size:9px; color:var(--ink4); flex-basis:100%; padding-left:52px; }
+.ask-x .a.load .txt{ font-family:var(--mono); font-size:11px; color:var(--ink3); animation:sumpulse 1.6s ease-in-out infinite; }
+.ask-x .a.err{ border-left-color:var(--s-block); }
+.ask-x .a.err .tag{ color:var(--s-block); }
+.ask-x .a.err .txt{ color:var(--ink2); font-size:12px; }
+.ask-ctl{ display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s3); }
+.ask-qp{ font-family:var(--mono); font-size:10px; letter-spacing:.02em; color:var(--ink2); background:transparent;
+  border:1px solid var(--rule2); border-radius:999px; padding:4px 11px; cursor:pointer; transition:.12s; }
+.ask-qp:hover{ color:var(--ink); border-color:var(--ink4); }
+.ask-qp:disabled{ opacity:.4; cursor:default; }
+.ask-in{ display:flex; gap:var(--s2); margin-top:var(--s2); }
+.ask-in input{ flex:1 1 auto; min-width:0; font-family:var(--disp); font-size:12.5px; color:var(--ink);
+  background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:7px 10px; outline:none; }
+.ask-in input:focus{ border-color:var(--s-done); }
+.ask-in input::placeholder{ color:var(--ink4); }
+.ask-in input:disabled{ opacity:.5; }
+.ask-in button{ font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--s-done); background:transparent;
+  border:1px solid color-mix(in srgb, var(--s-done) 45%, transparent); border-radius:var(--r1); padding:7px 14px; cursor:pointer; transition:.12s; }
+.ask-in button:hover{ background:color-mix(in srgb, var(--s-done) 12%, transparent); }
+.ask-in button:disabled{ opacity:.4; cursor:default; }
+/* one-line codex append disclosure with its confirm (first use only) */
+.ask-ack{ display:flex; align-items:center; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s3);
+  padding:var(--s2) var(--s3); border:1px solid color-mix(in srgb, var(--s-need) 35%, transparent); border-radius:var(--r1);
+  background:color-mix(in srgb, var(--s-need) 7%, transparent); }
+.ask-ack .txt{ font-size:11.5px; color:var(--ink2); line-height:1.45; flex:1 1 240px; }
+.ask-ack button{ font-family:var(--mono); font-size:10px; letter-spacing:.03em; color:var(--ink2); background:transparent;
+  border:1px solid var(--rule2); border-radius:var(--r1); padding:5px 11px; cursor:pointer; transition:.12s; }
+.ask-ack button:hover{ color:var(--ink); border-color:var(--ink4); }
+.ask-ack button.ok{ color:var(--s-need); border-color:color-mix(in srgb, var(--s-need) 45%, transparent); }
+.ask-ack button.ok:hover{ background:color-mix(in srgb, var(--s-need) 12%, transparent); }
+/* honest refusal note while a codex session is actively working */
+.ask-off{ font-family:var(--mono); font-size:10.5px; color:var(--ink3); margin-top:var(--s3); line-height:1.5; }
+
 /* facet tabs (Timeline / Map) */
 .facets{ display:flex; align-items:center; gap:var(--s1); margin:var(--s4) 0 var(--s2); }
 .facet-tab{ font-family:var(--mono); font-size:9.5px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink3);
@@ -610,7 +659,7 @@ body.light .pk-act button.primary{ color:#fff; }
     <button data-eng="claude">Claude Code</button>
     <button data-eng="codex">Codex</button>
   </div>
-  <p class="note">Only the "AI summary" action sends data off-device (recent messages to the selected model). Nothing else leaves your machine.</p>
+  <p class="note">Only the "AI summary" and "Ask the session" actions send data off-device, through your own CLI auth. Asks always use the session's own harness CLI: Claude asks leave no trace in the session; Codex asks write the marked question into the thread itself. Nothing else leaves your machine.</p>
   <div class="sect">
     <h4>Resume sessions in</h4>
     <p class="sub">Where the resume action takes you, per harness.</p>

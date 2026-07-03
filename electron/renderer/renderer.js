@@ -336,6 +336,40 @@ function agoTxt(at) {
   return Math.round(m / 1440) + 'd ago';
 }
 
+// Ask the session: one-turn questions injected into the session through its
+// own harness CLI (main process `session:ask`). Exchanges persist via setState
+// like summaries, capped per session and across sessions. Codex asks are
+// append-mode (the question is written into the real thread), so the first use
+// shows a one-line disclosure whose acknowledgement persists as askCodexAck.
+const asks = new Map();      // id -> [{q, a, engine, at}] oldest first
+const askState = new Map();  // id -> {q, phase:'loading'} | {q, error} (transient)
+const askDraft = new Map();  // id -> freeform input text, survives repaints
+const askPending = new Map();// id -> question parked behind the codex disclosure
+const askRuns = new Map();   // id -> run token, so a stale response never lands
+let askAck = false;          // codex append disclosure acknowledged (persisted)
+const ASK_XCAP = 20;         // exchanges kept per session
+const ASK_SCAP = 40;         // sessions kept
+const ASK_QUICK = ['Status?', 'What do you need from me?', 'Summarize this thread'];
+function rememberAsk(id, entry) {
+  const list = asks.get(id) || [];
+  list.push({ q: String(entry.q).slice(0, 500), a: String(entry.a).slice(0, 2000), engine: entry.engine, at: entry.at });
+  while (list.length > ASK_XCAP) list.shift();
+  asks.delete(id); asks.set(id, list);
+  while (asks.size > ASK_SCAP) asks.delete(asks.keys().next().value);
+  if (window.humanctl) window.humanctl.setState({ asks: Object.fromEntries(asks) });
+}
+function hydrateAsks(obj) {
+  if (!obj || typeof obj !== 'object') return;
+  for (const [id, list] of Object.entries(obj)) {
+    if (!Array.isArray(list)) continue;
+    const clean = list
+      .filter((x) => x && typeof x.q === 'string' && x.q && typeof x.a === 'string' && x.a)
+      .map((x) => ({ q: x.q, a: x.a, engine: x.engine === 'codex' ? 'codex' : 'claude', at: +x.at || 0 }))
+      .slice(-ASK_XCAP);
+    if (clean.length) asks.set(id, clean);
+  }
+}
+
 // ============================================================
 // SYNTHETIC FIXTURE (OSS-safe; used only when window.humanctl is absent).
 // Clean, non-real ids + generic repos. Never real data. Every content shape
@@ -617,6 +651,7 @@ function renderWatch() {
       <div class="narr">${esc(a.promptNarr)}</div>
     </div>
     ${summaryBlockHtml(a)}
+    ${askBlockHtml(a)}
     <div class="facets" id="facets">
       <button class="facet-tab ${facet === 'timeline' ? 'on' : ''}" data-facet="timeline">Timeline</button>
       <button class="facet-tab ${facet === 'map' ? 'on' : ''}" data-facet="map">Map</button>
@@ -626,6 +661,7 @@ function renderWatch() {
   el('facets').querySelectorAll('.facet-tab').forEach((b) => b.addEventListener('click', () => {
     facet = b.dataset.facet; renderWatch(); ensureWatchDetail();
   }));
+  wireAsk(a);
   renderDock(a, h);
 }
 
@@ -652,6 +688,129 @@ function summaryBlockHtml(a) {
     <div class="lh"><span class="lbl">AI summary</span><span class="meta">via ${esc(engineLabel(s.engine))}${s.at ? ' · ' + esc(agoTxt(s.at)) : ''}</span></div>
     <div class="txt">${esc(s.text)}</div>
   </div>`;
+}
+
+// Ask the session: the dossier's question box, directly under the AI summary.
+// Three quick prompts plus a freeform input; answers land in a compact thread
+// of question/answer pairs with engine + age, persisted like summaries. The
+// header carries the honest per-harness footprint: a Claude ask leaves no
+// trace in the session (--no-session-persistence, verified byte-identical);
+// a Codex ask writes a marked question into the thread itself, so its first
+// use shows a one-line disclosure and the acknowledgement persists.
+function askExchangeHtml(x) {
+  return `<div class="ask-x">
+    <div class="q"><span class="tag">you</span><span class="txt">${esc(x.q)}</span></div>
+    <div class="a"><span class="tag">session</span><span class="txt">${esc(x.a)}</span>
+      <div class="meta">via ${esc(engineLabel(x.engine))}${x.at ? ' · ' + esc(agoTxt(x.at)) : ''}</div></div>
+  </div>`;
+}
+function askBlockHtml(a) {
+  const codex = a.harness === 'codex';
+  const list = asks.get(a.id) || [];
+  const st = askState.get(a.id);
+  const busy = !!(st && st.phase === 'loading');
+  let thread = list.map(askExchangeHtml).join('');
+  if (busy) {
+    thread += `<div class="ask-x">
+      <div class="q"><span class="tag">you</span><span class="txt">${esc(st.q)}</span></div>
+      <div class="a load"><span class="tag">session</span><span class="txt">asking the session...</span></div>
+    </div>`;
+  } else if (st && st.error) {
+    thread += `<div class="ask-x">
+      <div class="q"><span class="tag">you</span><span class="txt">${esc(st.q)}</span></div>
+      <div class="a err"><span class="tag">failed</span><span class="txt">${esc(st.error)}</span></div>
+    </div>`;
+  }
+  const note = codex ? 'writes a marked question into the thread' : 'leaves no trace in the session';
+  let controls;
+  if (askPending.has(a.id)) {
+    controls = `<div class="ask-ack">
+      <span class="txt">Codex questions are written into the thread itself; Claude questions leave no trace.</span>
+      <button class="ok" data-ask-ack="yes">Ask anyway</button>
+      <button data-ask-ack="no">Cancel</button>
+    </div>`;
+  } else if (codex && a.state === 'work') {
+    // The main process refuses this too; say so up front instead of offering
+    // a button that cannot work while the thread is live.
+    controls = `<div class="ask-off">session is working; a Codex ask would append into the live thread. Try again once it settles.</div>`;
+  } else {
+    const qps = ASK_QUICK.map((q) => `<button class="ask-qp" data-ask-q="${esc(q)}" ${busy ? 'disabled' : ''}>${esc(q)}</button>`).join('');
+    controls = `<div class="ask-ctl">${qps}</div>
+    <div class="ask-in">
+      <input id="askInput" type="text" maxlength="500" placeholder="Ask this session anything..." value="${esc(askDraft.get(a.id) || '')}" ${busy ? 'disabled' : ''} />
+      <button id="askSend" ${busy ? 'disabled' : ''}>Ask</button>
+    </div>`;
+  }
+  return `<div class="askblock" id="askBlock">
+    <div class="lh"><span class="lbl">Ask the session</span><span class="meta">${esc(note)}</span></div>
+    ${thread ? `<div class="ask-thread">${thread}</div>` : ''}
+    ${controls}
+  </div>`;
+}
+function wireAsk(a) {
+  const blk = el('askBlock');
+  if (!blk) return;
+  blk.querySelectorAll('[data-ask-q]').forEach((b) => b.addEventListener('click', () => runAsk(a, b.dataset.askQ)));
+  const input = el('askInput');
+  if (input) {
+    input.addEventListener('input', () => askDraft.set(a.id, input.value));
+    input.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); runAsk(a, input.value); } });
+  }
+  const send = el('askSend');
+  if (send) send.addEventListener('click', () => runAsk(a, input ? input.value : ''));
+  blk.querySelectorAll('[data-ask-ack]').forEach((b) => b.addEventListener('click', () => {
+    const q = askPending.get(a.id);
+    askPending.delete(a.id);
+    if (b.dataset.askAck === 'yes' && q) {
+      askAck = true;
+      if (window.humanctl) window.humanctl.setState({ askCodexAck: true });
+      sendAsk(a, q);
+    } else repaintAsk(a.id);
+  }));
+}
+function runAsk(a, q) {
+  q = String(q || '').trim();
+  if (!q) return;
+  const st = askState.get(a.id);
+  if (st && st.phase === 'loading') return;
+  // Codex append disclosure: park the question until the one-time confirm.
+  if (a.harness === 'codex' && !askAck) { askPending.set(a.id, q); repaintAsk(a.id); return; }
+  sendAsk(a, q);
+}
+async function sendAsk(a, q) {
+  const engine = a.harness === 'codex' ? 'codex' : 'claude';
+  askState.set(a.id, { q, phase: 'loading' });
+  askDraft.delete(a.id);
+  repaintAsk(a.id);
+  const run = (askRuns.get(a.id) || 0) + 1;
+  askRuns.set(a.id, run);
+  const settle = (entry, err) => {
+    if (askRuns.get(a.id) !== run) return;
+    if (entry) { askState.delete(a.id); rememberAsk(a.id, entry); }
+    else askState.set(a.id, { q, error: err || 'could not ask this session.' });
+    repaintAsk(a.id);
+  };
+  if (!window.humanctl) {
+    // demo: land a fixture answer after a beat so the loading state is visible
+    setTimeout(() => settle({ q, a: fixtureAnswer(a, q), engine, at: Date.now() }), 1100);
+    return;
+  }
+  try {
+    const r = await window.humanctl.askSession({ id: a.id, harness: a.harness, path: a.path, cwd: a.cwd, question: q });
+    if (r && r.ok && r.answer) settle({ q, a: r.answer, engine: r.engine || engine, at: r.at || Date.now() });
+    else if (r && r.needsAck) { askState.delete(a.id); askAck = false; askPending.set(a.id, q); repaintAsk(a.id); }
+    else settle(null, r && r.error);
+  } catch (e) { settle(null, String((e && e.message) || e)); }
+}
+// demo-mode answers, clearly synthetic (fixture fleet only; never real data)
+function fixtureAnswer(a, q) {
+  if (/^status/i.test(q)) return 'Mid-flight on the ' + (a.repo || 'demo') + ' work: the last verified step landed cleanly and the next one is queued.';
+  if (/need from me/i.test(q)) return 'One decision is open (see the latest prompt above); everything else is proceeding without you.';
+  if (/^summarize/i.test(q)) return 'This thread set up the task, verified the approach against fixtures, and is now closing out the remaining edge cases.';
+  return 'Synthetic demo answer: in the real app this comes from the session itself, through your local ' + engineLabel(a.harness === 'codex' ? 'codex' : 'claude') + ' CLI.';
+}
+function repaintAsk(id) {
+  if (mode === 'focus' && selId === id) { renderWatch(); ensureWatchDetail(); }
 }
 
 function renderDock(a, h) {
@@ -1371,6 +1530,8 @@ async function load() {
     const op = st.state.openPref || {};
     openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
     hydrateSummaries(st.state.summaries);
+    hydrateAsks(st.state.asks);
+    askAck = st.state.askCodexAck === true;
     if (st.state.selectedId) selId = st.state.selectedId;
   }
   applyTheme(); applyTemp();
