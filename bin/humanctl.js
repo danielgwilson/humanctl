@@ -11,442 +11,65 @@ const { URL } = require("url");
 
 // Global cross-repo inbox: agents post short aside/BTW messages to the human
 // here; the desktop app surfaces them. One file across all repos on purpose.
+// The write itself is the registered note.post command (lib/commands.js), so
+// `humanctl note` is sugar over the same registry the app uses, and every
+// note lands in the event log too.
 function globalDir() {
   return path.join(os.homedir(), ".humanctl");
 }
 const NOTE_LEVELS = new Set(["fyi", "review", "blocked", "done"]);
-function appendNote(message, flags) {
-  const dir = globalDir();
-  ensureDir(dir);
+async function appendNote(message, flags) {
+  const { createRegistry } = require("../lib/commands");
+  // Preserve the historical lenience: an unknown --level degrades to fyi
+  // instead of tripping the registry's enum validation.
   let level = String(flagValue(flags, "level", "fyi") || "fyi").toLowerCase();
   if (!NOTE_LEVELS.has(level)) level = "fyi";
-  const note = {
-    id: `note_${randomUUID().slice(0, 8)}`,
-    ts: nowIso(),
-    level,
+  const result = await createRegistry().invoke("note.post", {
     message,
+    level,
+    repo: flagValue(flags, "repo", "") || undefined,
+    session: flagValue(flags, "session", "") || flagValue(flags, "id", "") || undefined,
+    agent: flagValue(flags, "agent", "") || process.env.HUMANCTL_AGENT || undefined,
     cwd: process.cwd(),
-    repo: flagValue(flags, "repo", "") || path.basename(process.cwd()),
-    session: flagValue(flags, "session", "") || flagValue(flags, "id", "") || "",
-    agent: flagValue(flags, "agent", "") || process.env.HUMANCTL_AGENT || "",
-  };
-  fs.appendFileSync(path.join(dir, "notes.jsonl"), `${JSON.stringify(note)}\n`, "utf8");
-  if (hasFlag(flags, "json")) console.log(JSON.stringify(note));
-  else console.log(`noted (${level}): ${message}`);
+  }, { source: "cli-direct" });
+  if (!result.ok) {
+    console.error(`humanctl note failed: ${result.error}`);
+    process.exitCode = 1;
+    return;
+  }
+  if (hasFlag(flags, "json")) console.log(JSON.stringify(result.note));
+  else console.log(`noted (${result.note.level}): ${result.note.message}`);
 }
 
-// Span of control: how many agent sessions one human actually touched in a
-// day, plus the human-side signals (notes, merged PRs) for the same day. All
-// counts are for one local calendar day. Missing sources report null instead
-// of a fabricated zero; see docs/span.md.
-function localDateString(date) {
-  const year = date.getFullYear();
-  const month = String(date.getMonth() + 1).padStart(2, "0");
-  const day = String(date.getDate()).padStart(2, "0");
-  return `${year}-${month}-${day}`;
-}
-
-function parseLocalDate(value) {
-  const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
-  if (!match) {
-    return null;
-  }
-
-  const year = Number(match[1]);
-  const month = Number(match[2]);
-  const day = Number(match[3]);
-  const date = new Date(year, month - 1, day);
-
-  if (date.getFullYear() !== year || date.getMonth() !== month - 1 || date.getDate() !== day) {
-    return null;
-  }
-
-  return date;
-}
-
-function mtimeInWindow(filePath, dayStartMs, dayEndMs) {
-  try {
-    const stat = fs.statSync(filePath);
-    return stat.mtimeMs >= dayStartMs && stat.mtimeMs < dayEndMs;
-  } catch {
-    return false;
-  }
-}
-
-// Bounded first-line read. Codex writes session_meta as the first JSON line of
-// every rollout file, but that line embeds the base instructions and runs tens
-// of kilobytes (max observed locally: ~42KB), so the bound is 96KB, not a few
-// KB. Never reads the rest of the file. Returns null on any read failure.
-const CODEX_META_HEAD_BYTES = 96 * 1024;
-function readFirstLine(filePath, maxBytes) {
-  let fd;
-  try {
-    fd = fs.openSync(filePath, "r");
-  } catch {
-    return null;
-  }
-
-  try {
-    const buffer = Buffer.alloc(maxBytes);
-    const bytesRead = fs.readSync(fd, buffer, 0, maxBytes, 0);
-    const chunk = buffer.toString("utf8", 0, bytesRead);
-    const newline = chunk.indexOf("\n");
-    return newline === -1 ? chunk : chunk.slice(0, newline);
-  } catch {
-    return null;
-  } finally {
-    fs.closeSync(fd);
-  }
-}
-
-// Classify one Codex rollout file as "interactive", "automation", or
-// "unknown" from its session_meta first line. Same semantics as
-// isCodexAutomation in electron/sessions.js: subagent threads, codex exec
-// runs, and scheduled automation runs are automation; sessions a human drove
-// (Codex Desktop, VS Code, the interactive CLI) are interactive. The desktop
-// app additionally detects scheduled runs by prompt shape; here the
-// thread_source field ("user" / "subagent" / "automation", stamped by newer
-// Codex versions) covers that case without reading past the first line.
-// Anything unparseable or missing recognizable meta is "unknown", never
-// guessed.
-function classifyCodexRollout(filePath) {
-  const line = readFirstLine(filePath, CODEX_META_HEAD_BYTES);
-  if (!line) {
-    return "unknown";
-  }
-
-  let record;
-  try {
-    record = JSON.parse(line);
-  } catch {
-    return "unknown";
-  }
-
-  const meta = record && typeof record === "object" ? record.payload || record : null;
-  if (!meta || typeof meta !== "object") {
-    return "unknown";
-  }
-  if (!meta.originator && !meta.source && !meta.thread_source && !meta.parent_thread_id && !meta.cli_version) {
-    return "unknown";
-  }
-
-  if (meta.parent_thread_id) return "automation";
-  if (meta.agent_role || meta.agent_nickname) return "automation";
-  if (meta.source && typeof meta.source === "object" && meta.source.subagent) return "automation";
-  if (meta.originator === "codex_exec" || meta.source === "exec") return "automation";
-  if (meta.thread_source === "subagent" || meta.thread_source === "automation") return "automation";
-  return "interactive";
-}
-
-// Codex writes one rollout-*.jsonl per session under
-// ~/.codex/sessions/YYYY/MM/DD/. Sessions resumed later keep their original
-// date directory, so scan date dirs within 7 days of the target instead of the
-// whole tree. Every rollout file touched that day counts toward the total;
-// each is also classified interactive vs automation from its session_meta
-// first line (see classifyCodexRollout). Null if ~/.codex/sessions is missing.
-function countCodexSessionsTouched(dayStart, dayEnd) {
-  const sessionsRoot = path.join(os.homedir(), ".codex", "sessions");
-
-  if (!fs.existsSync(sessionsRoot)) {
-    return null;
-  }
-
-  const dayStartMs = dayStart.getTime();
-  const dayEndMs = dayEnd.getTime();
-  const counts = { total: 0, interactive: 0, automation: 0, unknown: 0 };
-
-  for (let offset = -7; offset <= 7; offset += 1) {
-    const scanDay = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + offset);
-    const dayDir = path.join(
-      sessionsRoot,
-      String(scanDay.getFullYear()),
-      String(scanDay.getMonth() + 1).padStart(2, "0"),
-      String(scanDay.getDate()).padStart(2, "0")
-    );
-
-    let entries;
-    try {
-      entries = fs.readdirSync(dayDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isFile() || !/^rollout-.*\.jsonl$/.test(entry.name)) {
-        continue;
-      }
-      const filePath = path.join(dayDir, entry.name);
-      if (!mtimeInWindow(filePath, dayStartMs, dayEndMs)) {
-        continue;
-      }
-      counts.total += 1;
-      counts[classifyCodexRollout(filePath)] += 1;
-    }
-  }
-
-  return counts;
-}
-
-// The one Claude-side automation humanctl itself generates: the desktop app
-// summarizes sessions via headless `claude -p` one-shots, and each of those
-// leaves a session file. Same prompt-shape check as electron/sessions.js. The
-// prompt sits at the top of the transcript (as a queue-operation line or the
-// first user message), so an 8KB head read is enough; anything else counts as
-// interactive. Other people's `claude -p` automations are not detectable this
-// cheaply and are not guessed at.
-const CLAUDE_HEAD_BYTES = 8 * 1024;
-const HUMANCTL_SUMMARY_PROMPT_RE = /^Summarize the recent tail of an autonomous coding-agent session/i;
-function isHumanctlSummaryOneShot(filePath) {
-  let fd;
-  let head = "";
-  try {
-    fd = fs.openSync(filePath, "r");
-    const buffer = Buffer.alloc(CLAUDE_HEAD_BYTES);
-    const bytesRead = fs.readSync(fd, buffer, 0, CLAUDE_HEAD_BYTES, 0);
-    head = buffer.toString("utf8", 0, bytesRead);
-  } catch {
-    return false;
-  } finally {
-    if (fd !== undefined) fs.closeSync(fd);
-  }
-
-  for (const line of head.split("\n")) {
-    let record;
-    try {
-      record = JSON.parse(line);
-    } catch {
-      continue;
-    }
-    if (!record || typeof record !== "object") {
-      continue;
-    }
-
-    const texts = [];
-    if (record.type === "queue-operation" && typeof record.content === "string") {
-      texts.push(record.content);
-    }
-    const message = record.message;
-    if (message && message.role === "user") {
-      if (typeof message.content === "string") {
-        texts.push(message.content);
-      } else if (Array.isArray(message.content)) {
-        for (const item of message.content) {
-          if (item && item.type === "text" && typeof item.text === "string") {
-            texts.push(item.text);
-          }
-        }
-      }
-    }
-
-    for (const text of texts) {
-      if (HUMANCTL_SUMMARY_PROMPT_RE.test(text.trim())) {
-        return true;
-      }
-    }
-  }
-
-  return false;
-}
-
-// Claude Code writes one *.jsonl per session directly inside each
-// ~/.claude/projects/<project>/ dir. Subdirectories (subagents etc.) are
-// intentionally not counted. Every file touched that day counts toward the
-// total; humanctl's own summarize one-shots are split out so interactive
-// reflects sessions a human actually drove. Null if ~/.claude/projects is
-// missing.
-function countClaudeSessionsTouched(dayStart, dayEnd) {
-  const projectsRoot = path.join(os.homedir(), ".claude", "projects");
-
-  if (!fs.existsSync(projectsRoot)) {
-    return null;
-  }
-
-  const dayStartMs = dayStart.getTime();
-  const dayEndMs = dayEnd.getTime();
-  const counts = { total: 0, interactive: 0 };
-  let projects;
-
-  try {
-    projects = fs.readdirSync(projectsRoot, { withFileTypes: true });
-  } catch {
-    return null;
-  }
-
-  for (const project of projects) {
-    if (!project.isDirectory()) {
-      continue;
-    }
-
-    const projectDir = path.join(projectsRoot, project.name);
-    let entries;
-    try {
-      entries = fs.readdirSync(projectDir, { withFileTypes: true });
-    } catch {
-      continue;
-    }
-
-    for (const entry of entries) {
-      if (!entry.isFile() || !entry.name.endsWith(".jsonl")) {
-        continue;
-      }
-      const filePath = path.join(projectDir, entry.name);
-      if (!mtimeInWindow(filePath, dayStartMs, dayEndMs)) {
-        continue;
-      }
-      counts.total += 1;
-      if (!isHumanctlSummaryOneShot(filePath)) {
-        counts.interactive += 1;
-      }
-    }
-  }
-
-  return counts;
-}
-
-function countNotesForDay(dayStart, dayEnd) {
-  const notesPath = path.join(globalDir(), "notes.jsonl");
-
-  if (!fs.existsSync(notesPath)) {
-    return null;
-  }
-
-  const dayStartMs = dayStart.getTime();
-  const dayEndMs = dayEnd.getTime();
-  const counts = { fyi: 0, review: 0, blocked: 0, done: 0 };
-
-  for (const line of safeReadFile(notesPath).split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    let note;
-    try {
-      note = JSON.parse(line);
-    } catch {
-      continue;
-    }
-
-    const tsMs = Date.parse(note?.ts);
-    if (!Number.isFinite(tsMs) || tsMs < dayStartMs || tsMs >= dayEndMs) {
-      continue;
-    }
-
-    if (NOTE_LEVELS.has(note.level)) {
-      counts[note.level] += 1;
-    }
-  }
-
-  return counts;
-}
-
-// Real signal or null, never a guess: any gh failure (missing binary, offline,
-// auth, rate limit) reports null rather than zero.
-function countPrsMergedByMe(dateString) {
-  try {
-    const stdout = childProcess.execFileSync(
-      "gh",
-      [
-        "search",
-        "prs",
-        "--author=@me",
-        "--merged",
-        `--merged-at=${dateString}`,
-        "--json",
-        "number",
-        "--limit",
-        "100"
-      ],
-      { encoding: "utf8", timeout: 10000, stdio: ["ignore", "pipe", "ignore"] }
-    );
-    const parsed = JSON.parse(stdout);
-    return Array.isArray(parsed) ? parsed.length : null;
-  } catch {
-    return null;
-  }
-}
-
-// Upsert by date: one line per local day in ~/.humanctl/span.jsonl, so
-// re-running --record refreshes that day instead of appending duplicates.
-function upsertSpanRecord(record) {
-  const dir = globalDir();
-  ensureDir(dir);
-  const spanPath = path.join(dir, "span.jsonl");
-  const kept = [];
-  let replaced = false;
-
-  for (const line of safeReadFile(spanPath).split("\n")) {
-    if (!line.trim()) {
-      continue;
-    }
-
-    let existing;
-    try {
-      existing = JSON.parse(line);
-    } catch {
-      kept.push(line);
-      continue;
-    }
-
-    if (existing?.date === record.date) {
-      if (!replaced) {
-        kept.push(JSON.stringify(record));
-        replaced = true;
-      }
-      continue;
-    }
-
-    kept.push(line);
-  }
-
-  if (!replaced) {
-    kept.push(JSON.stringify(record));
-  }
-
-  const tempPath = `${spanPath}.${process.pid}.tmp`;
-  fs.writeFileSync(tempPath, `${kept.join("\n")}\n`, "utf8");
-  fs.renameSync(tempPath, spanPath);
-  return spanPath;
-}
+// Span of control: the computation lives in lib/span.js (shared with the
+// span.run registered command in lib/commands.js); this file only owns the
+// flags and the human-readable rendering. See docs/span.md.
 
 function formatSpanCount(value) {
   return value === null ? "unavailable" : String(value);
 }
 
-function spanCommand(flags) {
+async function spanCommand(flags) {
+  const { createRegistry } = require("../lib/commands");
   const dateFlag = flagValue(flags, "date");
-  let dayStart;
-
-  if (dateFlag === undefined) {
-    const now = new Date();
-    dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-  } else {
-    dayStart = dateFlag === true ? null : parseLocalDate(dateFlag);
-    if (!dayStart) {
+  const params = { record: booleanFlag(flags, "record", false) };
+  if (dateFlag !== undefined) {
+    if (dateFlag === true) {
       console.error("humanctl span requires --date in YYYY-MM-DD form.");
       process.exit(1);
     }
+    params.date = String(dateFlag);
   }
 
-  const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
-  const date = localDateString(dayStart);
+  const result = await createRegistry().invoke("span.run", params, { source: "cli-direct" });
+  if (!result.ok) {
+    console.error(`humanctl span failed: ${result.error}`);
+    process.exitCode = 1;
+    return;
+  }
 
-  const codex = countCodexSessionsTouched(dayStart, dayEnd);
-  const claude = countClaudeSessionsTouched(dayStart, dayEnd);
-
-  const record = {
-    date,
-    codexSessionsTouched: codex === null ? null : codex.total,
-    codexInteractiveTouched: codex === null ? null : codex.interactive,
-    codexAutomationTouched: codex === null ? null : codex.automation,
-    codexUnknown: codex === null ? null : codex.unknown,
-    claudeSessionsTouched: claude === null ? null : claude.total,
-    claudeInteractiveTouched: claude === null ? null : claude.interactive,
-    notes: countNotesForDay(dayStart, dayEnd),
-    prsMergedByMe: countPrsMergedByMe(date),
-    generatedAt: nowIso()
-  };
-
-  const recordedTo = booleanFlag(flags, "record", false) ? upsertSpanRecord(record) : undefined;
+  const record = result.span;
+  const recordedTo = result.recordedTo;
 
   outputResult(recordedTo ? { ...record, recordedTo } : record, flags, (value) => {
     console.log(`Span for ${value.date} (local day)`);
@@ -517,6 +140,19 @@ Usage:
   humanctl watch delete <id> [--workspace dir] [--json]
 
   humanctl app [dir] [--port 3000] [--open] [--path /app]
+    legacy source-checkout workspace UI; see docs/desktop.md for the real app
+
+  humanctl app list-commands [--json]
+    list every command the desktop app registers (see docs/commands.md)
+  humanctl app invoke <name> [--json '{"...":"..."}']
+    invoke a registered command against the running desktop app
+  humanctl app <name> [--param value ...]
+    sugar: flags become params, coerced by the command's declared types
+    (e.g. humanctl app session.pin --id abc123)
+    observations backed by lib/ alone (sessions.list, pulse.run, span.run, ...)
+    still answer from disk when the app is not running (source cli-direct);
+    actions need the running app.
+
   humanctl serve [dir] [--port 4173]
 `);
 }
@@ -1639,6 +1275,127 @@ function launchApp(baseDir, flags) {
   process.on("SIGTERM", () => child.kill("SIGTERM"));
 }
 
+// ---- desktop-app bridge: drive the running app through its command registry ----
+// `humanctl app list-commands`                 every registered command
+// `humanctl app invoke <name> [--json '{}']`   invoke with raw JSON params
+// `humanctl app <name> [--param value ...]`    sugar: flags become params,
+//                                              coerced by the declared types
+// Talks to the unix socket at ~/.humanctl/app.sock (see docs/commands.md).
+// Commands marked direct (pure lib/ observations, plus note.post) fall back to
+// in-process execution when the app is not running (source "cli-direct").
+function coerceParamsFromFlags(name, flags) {
+  const { COMMANDS } = require("../lib/commands");
+  const decl = COMMANDS.find((c) => c.name === name);
+  const schema = (decl && decl.params) || {};
+  const params = {};
+  for (const [key, value] of Object.entries(flags)) {
+    if (key === "json" && !schema.json) continue; // output flag, not a param
+    const spec = schema[key];
+    const raw = Array.isArray(value) ? value[value.length - 1] : value;
+    if (!spec) {
+      // Pass unknown flags through as-is; the registry rejects them honestly.
+      params[key] = raw === true ? true : String(raw);
+      continue;
+    }
+    if (spec.type === "boolean") {
+      params[key] = raw === true ? true : ["1", "true", "yes", "on"].includes(String(raw).toLowerCase());
+    } else if (spec.type === "number") {
+      const n = Number(raw);
+      if (!Number.isFinite(n)) {
+        console.error(`humanctl app ${name}: --${key} must be a number`);
+        return null;
+      }
+      params[key] = n;
+    } else if (spec.type === "object") {
+      try {
+        params[key] = JSON.parse(String(raw));
+      } catch {
+        console.error(`humanctl app ${name}: --${key} must be valid JSON`);
+        return null;
+      }
+    } else {
+      params[key] = raw === true ? "" : String(raw);
+    }
+  }
+  return params;
+}
+
+async function invokeAppCommand(name, params) {
+  const commands = require("../lib/commands");
+  const res = await commands.socketRequest(name, params);
+  if (!res || res.transport !== "unavailable") return { result: res, via: "app" };
+  // Nothing is listening on the socket. Direct-capable commands still answer
+  // from disk; everything else needs the app and says so.
+  const decl = commands.COMMANDS.find((c) => c.name === name);
+  if (decl && decl.direct) {
+    const result = await commands.createRegistry().invoke(name, params, { source: "cli-direct" });
+    return { result, via: "cli-direct" };
+  }
+  return {
+    result: { ok: false, error: "humanctl desktop app is not running (start it with `npm run desktop` or open the installed app)" },
+    via: "none",
+  };
+}
+
+async function runAppBridge(argv) {
+  const commands = require("../lib/commands");
+  const sub = argv[0];
+
+  if (sub === "list-commands") {
+    const { flags } = parseFlags(argv.slice(1));
+    // Ask the running app first (its list is the live truth); fall back to the
+    // local declarations, which are the same table by construction.
+    const res = await commands.socketRequest("app.commands", {});
+    const viaApp = !!(res && res.ok && Array.isArray(res.commands));
+    const list = viaApp ? res.commands : commands.listCommands();
+    if (booleanFlag(flags, "json", false)) {
+      console.log(JSON.stringify({ ok: true, app: viaApp, commands: list }, null, 2));
+      return;
+    }
+    console.log(viaApp ? "registered commands (from the running app):" : "registered commands (app not running; local declarations):");
+    for (const c of list) {
+      const params = Object.entries(c.params || {}).map(([k, s]) => (s.required ? `${k}*` : k)).join(", ");
+      console.log(`  ${c.kind === "action" ? "act" : "obs"}  ${c.name.padEnd(18)} ${c.direct ? "      " : "(app) "} ${c.desc}${params ? ` [${params}]` : ""}`);
+    }
+    return;
+  }
+
+  let name;
+  let params = {};
+  if (sub === "invoke") {
+    name = argv[1];
+    if (!name) {
+      console.error("humanctl app invoke requires a command name (see humanctl app list-commands)");
+      process.exitCode = 1;
+      return;
+    }
+    const { flags } = parseFlags(argv.slice(2));
+    const raw = flagValue(flags, "json");
+    if (raw !== undefined && raw !== true) {
+      try {
+        params = JSON.parse(String(raw));
+      } catch {
+        console.error("humanctl app invoke: --json must be valid JSON");
+        process.exitCode = 1;
+        return;
+      }
+    }
+  } else {
+    name = sub;
+    const { flags } = parseFlags(argv.slice(1));
+    params = coerceParamsFromFlags(name, flags);
+    if (params === null) {
+      process.exitCode = 1;
+      return;
+    }
+  }
+
+  const { result, via } = await invokeAppCommand(name, params);
+  if (via === "cli-direct") console.error("note: app not running; answered directly from disk (source cli-direct)");
+  console.log(JSON.stringify(result, null, 2));
+  process.exitCode = result && result.ok !== false ? 0 : 1;
+}
+
 const args = process.argv.slice(2);
 const command = args[0];
 
@@ -1659,14 +1416,16 @@ if (command === "note" || command === "btw") {
     console.error('humanctl note requires a message, e.g. humanctl note --level review "PRs up, need a merge in ~5m"');
     process.exit(1);
   }
+  // async: the note routes through the command registry; no hard exit here.
   appendNote(message, flags);
-  process.exit(0);
+  return;
 }
 
 if (command === "span") {
   const { flags } = parseFlags(args.slice(1));
+  // async: span routes through the command registry; no hard exit here.
   spanCommand(flags);
-  process.exit(0);
+  return;
 }
 
 if (command === "pulse") {
@@ -1849,6 +1608,19 @@ if (command === "watch") {
 }
 
 if (command === "app") {
+  // `humanctl app` predates the command registry and still launches the
+  // legacy source-checkout workspace UI (see launchApp). The registry bridge
+  // (`list-commands`, `invoke`, and direct command-name sugar) is layered onto
+  // the same verb rather than a new one, per the brief; dispatch by whether
+  // the first argument names a bridge verb or a registered command, and fall
+  // through to the legacy launcher for anything else (including no args, so
+  // `humanctl app` and `humanctl app <workspace-dir>` behave exactly as before).
+  const { COMMANDS } = require("../lib/commands");
+  const sub = args[1];
+  if (sub === "list-commands" || sub === "invoke" || COMMANDS.some((c) => c.name === sub)) {
+    runAppBridge(args.slice(1));
+    return;
+  }
   const { positionals, flags } = parseFlags(args.slice(1));
   launchApp(positionals[0] || flagValue(flags, "workspace", "."), flags);
   return;

@@ -6,6 +6,11 @@
 // exception to transcript read-only is the opt-in Codex "ask the session"
 // path, which appends a sentinel-marked question into the thread through the
 // user's own codex CLI (disclosed in the UI, acknowledged once, persisted).
+//
+// Everything the app can do is a registered command (lib/commands.js): the
+// renderer's IPC channels and the ~/.humanctl/app.sock control socket both
+// route through one registry, and every invoke is logged to
+// ~/.humanctl/events.jsonl. See docs/commands.md.
 
 const { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } = require('electron');
 const path = require('path');
@@ -15,7 +20,8 @@ try { APP_VERSION = require('../package.json').version; } catch {}
 const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
-const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readTimelinePage, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
+const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
+const { createRegistry, createEventLog, createControlServer, resolveSessionRow } = require('../lib/commands');
 
 let win = null;
 
@@ -129,11 +135,6 @@ function watchSessions() {
   }
 }
 
-// ---- read-only IPC ----
-ipcMain.handle('sessions:list', (_e, opts) => {
-  try { return { ok: true, rows: listRecent(opts || {}) }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
 // Honest capability probe: ask the OS which app (if any) handles each harness
 // deep link scheme. The renderer only offers "open in app" when a real handler
 // is registered, so the button can never be a fictional action.
@@ -145,30 +146,12 @@ function deepLinkApps() {
     };
   } catch { return { claude: false, codex: false }; }
 }
-ipcMain.handle('status:get', (_e, opts) => {
-  try { return { ok: true, status: Object.assign(accountStatus(opts || {}), { version: APP_VERSION, apps: deepLinkApps() }) }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-ipcMain.handle('sessions:read', (_e, arg) => {
-  try {
-    if (!arg || !arg.path) return { ok: false, error: 'no path' };
-    const detail = readDetail ? readDetail(arg.path, arg.harness) : null;
-    return { ok: true, data: readBlocks(arg.path, { harness: arg.harness }), usage: readUsage(arg.path, arg.harness), detail };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-// Timeline pages: substantive-event-budgeted backward slices of the transcript
-// with explicit [start, end) coverage. `before` (a previous page's `start`)
-// walks further back; the renderer renders every cut as a visible element.
-ipcMain.handle('sessions:timeline', (_e, arg) => {
-  try {
-    if (!arg || !arg.path) return { ok: false, error: 'no path' };
-    const page = readTimelinePage(arg.path, { harness: arg.harness, before: arg.before });
-    return page ? { ok: true, page } : { ok: false, error: 'could not read this session' };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
 // The renderer names the session open in the dossier; only that file gets the
 // immediate append pump. `from` seeds the cursor at the page's line-aligned
-// end so nothing between the page read and this call is lost.
+// end so nothing between the page read and this call is lost. Purely an
+// in-memory watch pointer (which file the hot-append pump follows): it
+// mutates no durable state and spawns nothing, so it stays outside the
+// command registry as renderer-adjacent ephemera, same as scroll position.
 ipcMain.handle('session:hot', (_e, arg) => {
   try {
     hotPath = arg && arg.path ? String(arg.path) : null;
@@ -182,6 +165,7 @@ ipcMain.handle('session:hot', (_e, arg) => {
     return { ok: true };
   } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
 });
+
 // A Dock/Finder-launched app inherits a minimal PATH (/usr/bin:/bin:...), not the
 // user's shell PATH, so bare `claude` / `codex` are not found. Resolve the real
 // absolute path via the login shell (which sources the user's rc), cached, with a
@@ -205,74 +189,114 @@ function resolveCli(name) {
   return bin;
 }
 
+// The renderer always passes a full target ({id, path, harness, cwd}); the
+// control socket and CLI may pass only an id (or a unique id fragment).
+// Resolve once, here, so every action shares the same rule. `need` names the
+// keys the handler cannot work without; when they are all present the params
+// pass through untouched (the renderer fast path, zero behavior change).
+function resolveTarget(p, need) {
+  const have = (k) => p[k] !== undefined && p[k] !== null && p[k] !== '';
+  if (need.every(have)) return { ok: true, target: p };
+  if (!have('id') && !have('path')) return { ok: false, error: 'no session id or path' };
+  const r = resolveSessionRow(p.id || p.path);
+  if (!r.ok) return r;
+  return { ok: true, target: Object.assign({}, p, { id: r.row.id, path: r.row.path, harness: r.row.harness, cwd: p.cwd || r.row.cwd }) };
+}
+
+// ---- state mutations ----
+// Mutations arriving from outside the renderer (socket/CLI) are pushed back so
+// the open window reflects them immediately; ipc-sourced mutations came FROM
+// the renderer, which already knows.
+function pushStateToRenderer(ctx) {
+  if (ctx && ctx.source === 'ipc') return;
+  if (win && !win.isDestroyed()) win.webContents.send('state:changed', readState());
+}
+function applyStatePatch(patch, ctx) {
+  const next = Object.assign(readState(), patch || {});
+  if (!writeState(next)) return { ok: false, error: 'could not write state.json' };
+  pushStateToRenderer(ctx);
+  return { ok: true, state: next };
+}
+function pinSession(id, on, ctx) {
+  const r = resolveSessionRow(id);
+  if (!r.ok) return r; // pinning an id that matches nothing would be a silent no-op lie
+  const s = readState();
+  const pins = new Set(Array.isArray(s.pins) ? s.pins : []);
+  if (on) pins.add(r.row.id); else pins.delete(r.row.id);
+  const res = applyStatePatch({ pins: [...pins] }, ctx);
+  if (!res.ok) return res;
+  return { ok: true, id: r.row.id, pinned: on, pins: res.state.pins };
+}
+
 // Opt-in only: summarize a session's recent activity via the user's chosen local
 // CLI (Claude Code `claude -p`, or Codex `codex exec`). This is the one action
 // that sends data off the machine (to the model, through the user's own CLI auth),
 // so the renderer labels it explicitly. Cached by engine + mtime.
 const summaryCache = new Map();
 const SUMMARIZE_PROMPT = (ex, tail) => `Summarize the recent tail of an autonomous coding-agent session for an operator dashboard. In 1-2 plain sentences say what the agent is currently working on and its immediate next step. Be concrete and terse, no preamble. Respond directly with the summary only; do not use any tools.\n\nLatest user instruction: ${ex.lastUser || '(none)'}\n\nRecent blocks:\n${tail}`;
-ipcMain.handle('session:summarize', async (_e, arg) => {
-  try {
-    if (!arg || !arg.path) return { ok: false, error: 'no path' };
-    const engine = arg.engine === 'codex' ? 'codex' : 'claude';
-    const st = fs.statSync(arg.path);
-    const key = `${engine}:${arg.path}:${st.mtimeMs}`;
-    if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true, engine };
-    const bin = resolveCli(engine);
-    if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
-    const d = readDetail(arg.path, arg.harness) || {};
-    const ex = d.lastExchange || {};
-    const tail = (readBlocks(arg.path, { harness: arg.harness }).blocks || []).slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
-    const prompt = SUMMARIZE_PROMPT(ex, tail);
-    const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
-    let out;
-    if (engine === 'codex') {
-      // `codex exec` is an agent; keep it read-only, out-of-repo, and ephemeral so
-      // it does no work and leaves no session file, and read the clean final
-      // message from --output-last-message rather than parsing the event stream.
-      const outFile = path.join(os.tmpdir(), `humanctl-sum-${Date.now()}-${Math.round(st.mtimeMs)}.txt`);
-      out = await new Promise((res, rej) => {
-        const cp = execFile(bin, ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '-C', os.tmpdir(), '-o', outFile, '-'],
-          { timeout: 90000, maxBuffer: 4 << 20, env },
-          (err, stdout, stderr) => {
-            let msg = '';
-            try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
-            try { fs.unlinkSync(outFile); } catch { /* best effort */ }
-            if (msg) return res(msg);
-            if (err) return rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300)));
-            return res(String(stdout).trim());
-          });
-        try { cp.stdin.end(prompt); } catch (e) { rej(e); }
-      });
-    } else {
-      const runClaude = () => new Promise((res, rej) => {
-        const cp = execFile(bin, ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 60000, maxBuffer: 1 << 20, env },
-          (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300))) : res(String(stdout).trim()));
-        try { cp.stdin.end(prompt); } catch (e) { rej(e); }
-      });
+async function sessionSummarize(p) {
+  const t = resolveTarget(p, ['path']);
+  if (!t.ok) return t;
+  const arg = t.target;
+  const engine = arg.engine === 'codex' ? 'codex' : 'claude';
+  const st = fs.statSync(arg.path);
+  const key = `${engine}:${arg.path}:${st.mtimeMs}`;
+  if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true, engine };
+  const bin = resolveCli(engine);
+  if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
+  const d = readDetail(arg.path, arg.harness) || {};
+  const ex = d.lastExchange || {};
+  const tail = (readBlocks(arg.path, { harness: arg.harness }).blocks || []).slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
+  const prompt = SUMMARIZE_PROMPT(ex, tail);
+  const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+  let out;
+  if (engine === 'codex') {
+    // `codex exec` is an agent; keep it read-only, out-of-repo, and ephemeral so
+    // it does no work and leaves no session file, and read the clean final
+    // message from --output-last-message rather than parsing the event stream.
+    const outFile = path.join(os.tmpdir(), `humanctl-sum-${Date.now()}-${Math.round(st.mtimeMs)}.txt`);
+    out = await new Promise((res, rej) => {
+      const cp = execFile(bin, ['exec', '--ephemeral', '--skip-git-repo-check', '-s', 'read-only', '-C', os.tmpdir(), '-o', outFile, '-'],
+        { timeout: 90000, maxBuffer: 4 << 20, env },
+        (err, stdout, stderr) => {
+          let msg = '';
+          try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
+          try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+          if (msg) return res(msg);
+          if (err) return rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300)));
+          return res(String(stdout).trim());
+        });
+      try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+    });
+  } else {
+    const runClaude = () => new Promise((res, rej) => {
+      const cp = execFile(bin, ['-p', '--model', 'claude-haiku-4-5', '--allowed-tools', ''], { timeout: 60000, maxBuffer: 1 << 20, env },
+        (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'summarize failed').slice(0, 300))) : res(String(stdout).trim()));
+      try { cp.stdin.end(prompt); } catch (e) { rej(e); }
+    });
+    out = await runClaude();
+    // The API can reject valid OAuth credentials in short transient bursts
+    // (401s and successes interleave within the same minute). Interactive
+    // Claude Code rides those out with automatic retries, but a one-shot -p
+    // run dies on its first request and prints "Failed to authenticate." to
+    // stdout, so give it one spaced retry before surfacing the failure.
+    if (/^failed to authenticate\b/i.test(out)) {
+      await new Promise((r) => setTimeout(r, 2500));
       out = await runClaude();
-      // The API can reject valid OAuth credentials in short transient bursts
-      // (401s and successes interleave within the same minute). Interactive
-      // Claude Code rides those out with automatic retries, but a one-shot -p
-      // run dies on its first request and prints "Failed to authenticate." to
-      // stdout, so give it one spaced retry before surfacing the failure.
-      if (/^failed to authenticate\b/i.test(out)) {
-        await new Promise((r) => setTimeout(r, 2500));
-        out = await runClaude();
-      }
     }
-    const summary = out.slice(0, 600);
-    if (!summary) return { ok: false, error: `the ${engine} CLI returned no output`, engine };
-    // Both CLIs print auth failures to stdout and exit 0, so guard against
-    // surfacing "Not logged in" as if it were a real summary.
-    if (/\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated)\b/i.test(summary)) {
-      return { ok: false, error: `${engine} CLI is not authenticated: ${summary.slice(0, 140)}`, engine };
-    }
-    summaryCache.set(key, summary);
-    if (summaryCache.size > 200) summaryCache.clear();
-    return { ok: true, summary, engine };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+  }
+  const summary = out.slice(0, 600);
+  if (!summary) return { ok: false, error: `the ${engine} CLI returned no output`, engine };
+  // Both CLIs print auth failures to stdout and exit 0, so guard against
+  // surfacing "Not logged in" as if it were a real summary.
+  if (/\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated)\b/i.test(summary)) {
+    return { ok: false, error: `${engine} CLI is not authenticated: ${summary.slice(0, 140)}`, engine };
+  }
+  summaryCache.set(key, summary);
+  if (summaryCache.size > 200) summaryCache.clear();
+  return { ok: true, summary, engine };
+}
+
 // Ask the session: inject one sentinel-marked question into an existing session
 // through the harness's own CLI and return the answer. The mechanics are
 // empirically verified (docs/ask-session.md):
@@ -287,135 +311,130 @@ ipcMain.handle('session:summarize', async (_e, arg) => {
 //                sandbox_mode=read-only: resume otherwise runs with
 //                danger-full-access regardless of the original thread's sandbox.
 const ASK_TIMEOUT_MS = 90000;
-const ASK_MAX_Q = 2000;
 const AUTH_FAIL_RE = /\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated|failed to authenticate)\b/i;
-ipcMain.handle('session:ask', async (_e, arg) => {
-  try {
-    if (!arg || !arg.id || !arg.path) return { ok: false, error: 'no session' };
-    const question = String(arg.question || '').trim().slice(0, ASK_MAX_Q);
-    if (!question) return { ok: false, error: 'no question' };
-    const codex = arg.harness === 'codex';
-    const engine = codex ? 'codex' : 'claude';
-    const bin = resolveCli(engine);
-    if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
-    const prompt = `${BTW_SENTINEL} ${question}`;
-    const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
-    // A probe spawned from inside another Claude session would inherit these
-    // markers and stamp the injected turn differently; scrub for a clean SDK run.
-    delete env.CLAUDE_CODE_ENTRYPOINT;
-    delete env.CLAUDECODE;
-    // Claude resolves --resume <id> against the CURRENT project (cwd), so the
-    // probe must run in the session's own working directory (verified: an
-    // unrelated cwd fails with "No conversation found"). Codex resumes by uuid
-    // from anywhere, but the same cwd keeps its appended environment_context
-    // faithful to the thread.
-    const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
-    let out = '';
-    if (codex) {
-      // Codex asks write into the real thread. Two honest gates before spawning:
-      // the user acknowledged that once (persisted in state.json by the
-      // renderer's disclosure flow), and the session is not actively working
-      // (appending into a live turn is unsupported territory).
-      if (readState().askCodexAck !== true) {
-        return { ok: false, needsAck: true, engine, error: 'Codex questions are written into the thread itself; confirm the disclosure first.' };
-      }
-      let st = null; try { st = fs.statSync(arg.path); } catch { /* stat is advisory */ }
-      const need = deriveNeedState(readNeedSignals(arg.path, arg.harness, st || undefined), st, Date.now());
-      if (need.state === 'work') {
-        return { ok: false, engine, error: 'this session is working right now; a Codex ask would append into the live thread. Try again once it settles.' };
-      }
-      const m = String(arg.id).match(UUID_RE);
-      if (!m) return { ok: false, engine, error: 'no thread uuid in this session id' };
-      // -o writes the clean final agent message; read that, never the stdout stream.
-      const outFile = path.join(os.tmpdir(), `humanctl-ask-${Date.now()}-${process.pid}.txt`);
-      out = await new Promise((res, rej) => {
-        const cp = execFile(bin, ['exec', 'resume', m[1], '--skip-git-repo-check',
-          '-c', 'sandbox_mode=read-only', '-c', 'model_reasoning_effort=low',
-          '-o', outFile, prompt],
-          { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
-          (err, stdout, stderr) => {
-            let msg = '';
-            try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
-            try { fs.unlinkSync(outFile); } catch { /* best effort */ }
-            if (msg) return res(msg);
-            if (err) return rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300)));
-            return res(String(stdout).trim());
-          });
-        try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
-      });
-    } else {
-      const runClaude = () => new Promise((res, rej) => {
-        const cp = execFile(bin, ['-p', '--resume', String(arg.id), '--no-session-persistence', '--model', 'haiku', '--output-format', 'json', prompt],
-          { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
-          (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300))) : res(String(stdout)));
-        try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
-      });
-      // The API can reject valid OAuth credentials in short transient bursts and
-      // a one-shot -p run dies on its first request with exit 0 and the error on
-      // stdout (same failure the summarize path guards). One spaced retry.
-      let raw = await runClaude();
-      let parsed = null;
-      try { parsed = JSON.parse(raw.trim()); } catch { /* non-JSON output handled below */ }
-      const authFail = (!parsed && /failed to authenticate/i.test(raw))
-        || (parsed && parsed.is_error && AUTH_FAIL_RE.test(String(parsed.result || '')));
-      if (authFail) {
-        await new Promise((r) => setTimeout(r, 2500));
-        raw = await runClaude();
-        parsed = null;
-        try { parsed = JSON.parse(raw.trim()); } catch { /* shape-checked below */ }
-      }
-      // Shape-validate: a result object with a string .result, not is_error.
-      if (!parsed || typeof parsed.result !== 'string') {
-        return { ok: false, engine, error: `unexpected claude output: ${raw.trim().replace(/\s+/g, ' ').slice(0, 160) || 'empty'}` };
-      }
-      if (parsed.is_error) return { ok: false, engine, error: String(parsed.result).replace(/\s+/g, ' ').slice(0, 300) };
-      out = parsed.result.trim();
+async function sessionAsk(p) {
+  const t = resolveTarget(p, ['id', 'path']);
+  if (!t.ok) return t;
+  const arg = t.target;
+  const question = String(arg.question || '').trim();
+  if (!question) return { ok: false, error: 'no question' };
+  const codex = arg.harness === 'codex';
+  const engine = codex ? 'codex' : 'claude';
+  const bin = resolveCli(engine);
+  if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
+  const prompt = `${BTW_SENTINEL} ${question}`;
+  const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+  // A probe spawned from inside another Claude session would inherit these
+  // markers and stamp the injected turn differently; scrub for a clean SDK run.
+  delete env.CLAUDE_CODE_ENTRYPOINT;
+  delete env.CLAUDECODE;
+  // Claude resolves --resume <id> against the CURRENT project (cwd), so the
+  // probe must run in the session's own working directory (verified: an
+  // unrelated cwd fails with "No conversation found"). Codex resumes by uuid
+  // from anywhere, but the same cwd keeps its appended environment_context
+  // faithful to the thread.
+  const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
+  let out = '';
+  if (codex) {
+    // Codex asks write into the real thread. Two honest gates before spawning:
+    // the user acknowledged that once (persisted in state.json by the
+    // renderer's disclosure flow), and the session is not actively working
+    // (appending into a live turn is unsupported territory).
+    if (readState().askCodexAck !== true) {
+      return { ok: false, needsAck: true, engine, error: 'Codex questions are written into the thread itself; confirm the disclosure first.' };
     }
-    const answer = String(out).trim().slice(0, 4000);
-    if (!answer) return { ok: false, engine, error: `the ${engine} CLI returned no output` };
-    // Both CLIs print auth failures to stdout and exit 0; never surface one as an answer.
-    if (AUTH_FAIL_RE.test(answer.slice(0, 200))) {
-      return { ok: false, engine, error: `${engine} CLI is not authenticated: ${answer.slice(0, 140)}` };
+    let st = null; try { st = fs.statSync(arg.path); } catch { /* stat is advisory */ }
+    const need = deriveNeedState(readNeedSignals(arg.path, arg.harness, st || undefined), st, Date.now());
+    if (need.state === 'work') {
+      return { ok: false, engine, error: 'this session is working right now; a Codex ask would append into the live thread. Try again once it settles.' };
     }
-    return { ok: true, answer, engine, at: Date.now() };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-
-// Agent inbox: notes posted by `humanctl note`.
-ipcMain.handle('notes:get', (_e, opts) => {
-  try { return { ok: true, notes: readNotes(opts || {}) }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+    const m = String(arg.id).match(UUID_RE);
+    if (!m) return { ok: false, engine, error: 'no thread uuid in this session id' };
+    // -o writes the clean final agent message; read that, never the stdout stream.
+    const outFile = path.join(os.tmpdir(), `humanctl-ask-${Date.now()}-${process.pid}.txt`);
+    out = await new Promise((res, rej) => {
+      const cp = execFile(bin, ['exec', 'resume', m[1], '--skip-git-repo-check',
+        '-c', 'sandbox_mode=read-only', '-c', 'model_reasoning_effort=low',
+        '-o', outFile, prompt],
+        { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
+        (err, stdout, stderr) => {
+          let msg = '';
+          try { msg = fs.readFileSync(outFile, 'utf8').trim(); } catch { /* no file */ }
+          try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+          if (msg) return res(msg);
+          if (err) return rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300)));
+          return res(String(stdout).trim());
+        });
+      try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
+    });
+  } else {
+    const runClaude = () => new Promise((res, rej) => {
+      const cp = execFile(bin, ['-p', '--resume', String(arg.id), '--no-session-persistence', '--model', 'haiku', '--output-format', 'json', prompt],
+        { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
+        (err, stdout, stderr) => err ? rej(new Error(String(stderr || err.message || 'ask failed').slice(0, 300))) : res(String(stdout)));
+      try { cp.stdin.end(); } catch { /* prompt is argv, not stdin */ }
+    });
+    // The API can reject valid OAuth credentials in short transient bursts and
+    // a one-shot -p run dies on its first request with exit 0 and the error on
+    // stdout (same failure the summarize path guards). One spaced retry.
+    let raw = await runClaude();
+    let parsed = null;
+    try { parsed = JSON.parse(raw.trim()); } catch { /* non-JSON output handled below */ }
+    const authFail = (!parsed && /failed to authenticate/i.test(raw))
+      || (parsed && parsed.is_error && AUTH_FAIL_RE.test(String(parsed.result || '')));
+    if (authFail) {
+      await new Promise((r) => setTimeout(r, 2500));
+      raw = await runClaude();
+      parsed = null;
+      try { parsed = JSON.parse(raw.trim()); } catch { /* shape-checked below */ }
+    }
+    // Shape-validate: a result object with a string .result, not is_error.
+    if (!parsed || typeof parsed.result !== 'string') {
+      return { ok: false, engine, error: `unexpected claude output: ${raw.trim().replace(/\s+/g, ' ').slice(0, 160) || 'empty'}` };
+    }
+    if (parsed.is_error) return { ok: false, engine, error: String(parsed.result).replace(/\s+/g, ' ').slice(0, 300) };
+    out = parsed.result.trim();
+  }
+  const answer = String(out).trim().slice(0, 4000);
+  if (!answer) return { ok: false, engine, error: `the ${engine} CLI returned no output` };
+  // Both CLIs print auth failures to stdout and exit 0; never surface one as an answer.
+  if (AUTH_FAIL_RE.test(answer.slice(0, 200))) {
+    return { ok: false, engine, error: `${engine} CLI is not authenticated: ${answer.slice(0, 140)}` };
+  }
+  return { ok: true, answer, engine, at: Date.now() };
+}
 
 // Open/resume the actual session in a Terminal window (hands it back to the human).
-ipcMain.handle('session:resume', (_e, arg) => {
-  try {
-    if (!arg || !arg.id) return { ok: false, error: 'no id' };
-    const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
-    const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
-    let id = arg.id, cmd;
-    if (arg.harness === 'codex') {
-      const m = String(arg.id).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
-      id = m ? m[1] : arg.id;
-      cmd = `codex resume ${shq(id)}`;
-    } else {
-      cmd = `claude --resume ${shq(id)}`;
-    }
-    const file = path.join(os.tmpdir(), `humanctl-resume-${Date.now()}.command`);
-    fs.writeFileSync(file, `#!/bin/bash\ncd ${shq(cwd)} && exec ${cmd}\n`, { mode: 0o755 });
-    execFile('open', [file], () => { setTimeout(() => fs.unlink(file, () => {}), 8000); });
-    return { ok: true, cmd };
-  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+function sessionResume(p) {
+  const t = resolveTarget(p, ['id', 'harness', 'cwd']);
+  if (!t.ok) return t;
+  const arg = t.target;
+  const shq = (s) => `'${String(s).replace(/'/g, "'\\''")}'`;
+  const cwd = arg.cwd && fs.existsSync(arg.cwd) ? arg.cwd : os.homedir();
+  let id = arg.id, cmd;
+  if (arg.harness === 'codex') {
+    const m = String(arg.id).match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i);
+    id = m ? m[1] : arg.id;
+    cmd = `codex resume ${shq(id)}`;
+  } else {
+    cmd = `claude --resume ${shq(id)}`;
+  }
+  const file = path.join(os.tmpdir(), `humanctl-resume-${Date.now()}.command`);
+  fs.writeFileSync(file, `#!/bin/bash\ncd ${shq(cwd)} && exec ${cmd}\n`, { mode: 0o755 });
+  execFile('open', [file], () => { setTimeout(() => fs.unlink(file, () => {}), 8000); });
+  return { ok: true, cmd };
+}
 
 // Open the session in the harness's own desktop app via its registered deep
 // link (the same links the apps use themselves; both verified end to end):
 //   Claude desktop  claude://resume?session=<uuid>   imports + opens the CLI session
 //   Codex desktop   codex://threads/<thread-uuid>    opens that thread in the app
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-ipcMain.handle('session:open-app', async (_e, arg) => {
+async function sessionOpenApp(p) {
+  const t = resolveTarget(p, ['id', 'harness']);
+  if (!t.ok) return t;
+  const arg = t.target;
   try {
-    if (!arg || !arg.id) return { ok: false, error: 'no id' };
     const m = String(arg.id).match(UUID_RE);
     if (!m) return { ok: false, error: 'no session uuid in this id' };
     const codex = arg.harness === 'codex';
@@ -425,40 +444,103 @@ ipcMain.handle('session:open-app', async (_e, arg) => {
     await shell.openExternal(url);
     return { ok: true, url };
   } catch (err) {
-    const appName = arg && arg.harness === 'codex' ? 'Codex' : 'Claude';
+    const appName = arg.harness === 'codex' ? 'Codex' : 'Claude';
     return { ok: false, error: `could not open the ${appName} desktop app: ${String((err && err.message) || err)}` };
   }
+}
+
+function sessionReveal(p) {
+  const t = resolveTarget(p, ['path']);
+  if (!t.ok) return t;
+  shell.showItemInFolder(t.target.path);
+  return { ok: true, path: t.target.path };
+}
+
+// ---- the registry: every IPC channel and the control socket route through it ----
+// Observations implemented purely over lib/ (sessions.list, notes.list,
+// pulse.run, ...) come from the registry's built-in direct handlers; only the
+// Electron-specific implementations are injected here.
+const eventLog = createEventLog();
+const registry = createRegistry({
+  log: eventLog,
+  handlers: {
+    'app.status': (p) => ({ ok: true, status: Object.assign(accountStatus(p || {}), { version: APP_VERSION, apps: deepLinkApps() }) }),
+    'session.detail': (p) => {
+      // Same result shape the renderer has always consumed from sessions:read.
+      const t = resolveTarget(p, ['path']);
+      if (!t.ok) return t;
+      const detail = readDetail ? readDetail(t.target.path, t.target.harness) : null;
+      return { ok: true, data: readBlocks(t.target.path, { harness: t.target.harness }), usage: readUsage(t.target.path, t.target.harness), detail };
+    },
+    'skills.aggregate': (p) => ({ ok: true, agg: aggregateSkills(p || {}) }),
+    'session.summarize': (p) => sessionSummarize(p),
+    'session.ask': (p) => sessionAsk(p),
+    'session.resume': (p) => sessionResume(p),
+    'session.open-app': (p) => sessionOpenApp(p),
+    'session.reveal': (p) => sessionReveal(p),
+    'session.pin': (p, ctx) => pinSession(p.id, true, ctx),
+    'session.unpin': (p, ctx) => pinSession(p.id, false, ctx),
+    'app.open-external': (p) => {
+      if (/^https?:\/\/|^linear:\/\//.test(p.url)) { shell.openExternal(p.url); return { ok: true }; }
+      return { ok: false, error: 'blocked url' };
+    },
+    'app.open-path': (p) => { shell.openPath(p.path); return { ok: true }; },
+    'app.state': () => ({ ok: true, state: readState() }),
+    'app.set-state': (p, ctx) => applyStatePatch(p.patch, ctx),
+    'app.set-mode': (p, ctx) => applyStatePatch({ mode: p.mode }, ctx),
+    'app.set-theme': (p, ctx) => applyStatePatch({ theme: p.theme }, ctx),
+    'app.set-engine': (p, ctx) => applyStatePatch({ summarizer: p.engine }, ctx),
+    // Honest stub: stores the read watermark, and docs/commands.md says the
+    // inbox UI does not consume it yet. Registered now so the surface exists
+    // before the feature, per the registry invariant.
+    'app.mark-read': (_p, ctx) => applyStatePatch({ notesReadAt: Date.now() }, ctx),
+  },
 });
 
-ipcMain.handle('skills:aggregate', (_e, opts) => {
-  try { return { ok: true, agg: aggregateSkills(opts || {}) }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-ipcMain.handle('sessions:reveal', (_e, filePath) => {
-  try { if (typeof filePath === 'string' && filePath) shell.showItemInFolder(filePath); return { ok: true }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+// IPC choke point: every channel is a thin adapter onto a registered command.
+// The legacy channels that passed bare strings are wrapped into params objects
+// here so the renderer needs no changes.
+const IPC_ROUTES = [
+  ['sessions:list', 'sessions.list'],
+  ['status:get', 'app.status'],
+  ['sessions:read', 'session.detail'],
+  ['sessions:timeline', 'session.timeline'],
+  ['session:summarize', 'session.summarize'],
+  ['session:ask', 'session.ask'],
+  ['notes:get', 'notes.list'],
+  ['session:resume', 'session.resume'],
+  ['session:open-app', 'session.open-app'],
+  ['skills:aggregate', 'skills.aggregate'],
+  ['sessions:reveal', 'session.reveal', (arg) => ({ path: typeof arg === 'string' ? arg : (arg && arg.path) || '' })],
+  ['open:external', 'app.open-external', (arg) => ({ url: typeof arg === 'string' ? arg : '' })],
+  ['open:path', 'app.open-path', (arg) => ({ path: typeof arg === 'string' ? arg : '' })],
+  ['state:get', 'app.state', () => ({})],
+  ['state:set', 'app.set-state', (arg) => ({ patch: arg && typeof arg === 'object' ? arg : {} })],
+];
+for (const [channel, name, map] of IPC_ROUTES) {
+  ipcMain.handle(channel, (_e, arg) => registry.invoke(name, map ? map(arg) : (arg || {}), { source: 'ipc' }));
+}
 
-// Open a URL (Linear, etc.) externally, or a local file (html rollup) in its app.
-ipcMain.handle('open:external', (_e, url) => {
-  try { if (typeof url === 'string' && /^https?:\/\/|^linear:\/\//.test(url)) { shell.openExternal(url); return { ok: true }; } return { ok: false, error: 'blocked url' }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-ipcMain.handle('open:path', (_e, p) => {
-  try { if (typeof p === 'string' && p) { shell.openPath(p); return { ok: true }; } return { ok: false, error: 'no path' }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
-
-// Local UI state (pins, theme).
-ipcMain.handle('state:get', () => { try { return { ok: true, state: readState() }; } catch (err) { return { ok: false, error: String(err) }; } });
-ipcMain.handle('state:set', (_e, patch) => {
-  try { const next = Object.assign(readState(), patch || {}); writeState(next); return { ok: true, state: next }; }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
-});
+// ---- control socket: the same registry, drivable from the CLI ----
+// Local-trust model (docs/commands.md): a 0600 unix socket under $HOME; any
+// process running as your uid can drive the app. No TCP, no network exposure
+// ever. Skipped under HUMANCTL_SMOKE so a CI-style boot cannot steal (and then
+// delete) a running app's socket.
+let controlServer = null;
+function startControlServer() {
+  if (process.env.HUMANCTL_SMOKE) return;
+  controlServer = createControlServer({
+    registry,
+    onError: (err) => console.error(`humanctl: control socket error: ${String((err && err.message) || err)}`),
+  });
+  controlServer.listen(() => console.log(`humanctl: control socket at ${controlServer.socketPath}`));
+}
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) { try { app.dock.setIcon(nativeImage.createFromPath(ICON_PATH)); } catch {} }
   createWindow();
+  startControlServer();
 });
+app.on('will-quit', () => { if (controlServer) { try { controlServer.close(); } catch {} } });
 app.on('window-all-closed', () => { for (const w of watchers) { try { w.close(); } catch {} } if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
