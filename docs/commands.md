@@ -27,6 +27,7 @@ writing:
 | `session.timeline` | observation | yes | `id, path, harness, before` |
 | `skills.aggregate` | observation | yes | `maxAgeH, limit` |
 | `notes.list` | observation | yes | `limit` |
+| `inbox.threads` | observation | yes | `limit` |
 | `note.post` | action | yes | `message*, level, repo, session, agent, cwd` |
 | `span.run` | observation | yes | `date, record` |
 | `pulse.run` | observation | yes | `repo, lane, fresh` |
@@ -34,10 +35,13 @@ writing:
 | `app.status` | observation | no | `maxAgeH, limit` |
 | `app.state` | observation | no | (none) |
 | `app.set-state` | action | no | `patch*` |
-| `app.set-mode` | action | no | `mode*` (`focus\|triage\|wall`) |
+| `app.set-mode` | action | no | `mode*` (`inbox\|focus\|wall`) |
 | `app.set-theme` | action | no | `theme*` (`light\|dark\|system`) |
 | `app.set-engine` | action | no | `engine*` (`claude\|codex`) |
-| `app.mark-read` | action | no | (none) |
+| `app.set-left-rail` | action | no | `collapsed*` |
+| `app.set-right-rail` | action | no | `collapsed*` |
+| `inbox.mark-read` | action | no | `threadId*, at` |
+| `inbox.mark-all-read` | action | no | (none) |
 | `session.pin` | action | no | `id*` |
 | `session.unpin` | action | no | `id*` |
 | `session.resume` | action | no | `id*, harness, cwd` |
@@ -45,6 +49,7 @@ writing:
 | `session.reveal` | action | no | `id, path` |
 | `session.summarize` | action | no | `id, path, harness, engine` |
 | `session.ask` | action | no | `id, path, harness, cwd, question*` |
+| `atlas.ask` | action | no | `question*, engine` |
 | `app.open-external` | action | no | `url*` |
 | `app.open-path` | action | no | `path*` |
 

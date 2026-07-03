@@ -277,14 +277,15 @@ function nameHtml(a) {
 let agents = [];             // mapped agents (from allRows)
 let byId = new Map();
 let allRows = [], status = null, allNotes = [], demo = false;
-let mode = 'focus';
+let mode = 'inbox';           // 'inbox' (default) | 'focus' | 'wall'
 let selId = null;
-let expId = null;            // triage inline-expand
 let theme = 'dark';         // 'dark' | 'light'
 let temp = 'considered';    // 'considered' | 'loud'
 let pins = new Set();
 let summarizer = 'claude';  // 'claude' | 'codex': which local CLI powers AI summary
 let facet = 'timeline';      // watched-agent detail facet: 'timeline' | 'map'
+let leftRailCollapsed = false;
+let rightRailCollapsed = false;
 // per-harness resume destination: 'terminal' (default, existing behavior) or
 // 'app' (the harness's own desktop app via its deep link). Persisted in state.json.
 let openPref = { 'claude-code': 'terminal', codex: 'terminal' };
@@ -718,30 +719,49 @@ function pickDefaultSelection() {
   const need = desk.find((a) => a.state === 'need' || a.state === 'block');
   selId = need ? need.id : (desk[0] ? desk[0].id : (agents[0] ? agents[0].id : null));
 }
-function select(id, opts) {
+function select(id) {
   if (!byId.has(id)) return;
   selId = id;
   facet = 'timeline';
   if (window.humanctl) window.humanctl.setState({ selectedId: id });
-  if (mode === 'focus') { renderRoster(); renderWatch(); renderConductor(); ensureWatchDetail(); }
-  else if (mode === 'triage') { if (opts && opts.expand) expId = (expId === id ? null : id); applyTriageSelection(); }
+  // The left roster is persistent across every mode; keep its selection ring
+  // in sync no matter which mode's center pane owns the click.
+  renderRoster();
+  if (mode === 'focus') { renderWatch(); ensureWatchDetail(); }
   else if (mode === 'wall') renderWall();
+  if (window.Atlas) window.Atlas.renderPanel();
 }
 
 // ============================================================
 // FOCUS MODE
 // ============================================================
+// cwd BASENAME only (spec: rail v2 line 3), never the full path.
+function cwdBase(cwd) {
+  if (!cwd) return '';
+  const parts = String(cwd).replace(/\/+$/, '').split('/');
+  return parts[parts.length - 1] || cwd;
+}
+// Rail v2 row (spec "Left sidebar rows v2"): three lines, no context bar.
+//   1. title + status dot (tooltip carries the reason)
+//   2. one-line summary: cached AI summary (spark glyph) else last-exchange
+//      snippet (no glyph). Never spends on a summary just to fill this line.
+//   3. cwd basename + harness glyph + relative time
+// Collapsed (icon rail): avatar + status dot only, tooltip carries the name.
 function rosterRow(a) {
   const h2 = hue(STATE[a.state].hue);
-  // per-row metric = REAL contextPct (tiny bar). null -> a faint "n/a" placeholder bar.
-  const meter = a.ctxPct != null ? svgBar(a.ctxPct, h2, 46, 5) : `<span style="font-family:var(--mono);font-size:8px;color:var(--ink4)">n/a</span>`;
   const isPin = pins.has(a.id);
+  const summaryLine = a.summary
+    ? `<span class="ai">&#10022;</span>${esc(a.summary.text)}`
+    : esc((a.promptNarr || '').split('\n')[0]);
+  const hHarness = hue(a.harness === 'codex' ? 'var(--h-codex)' : 'var(--h-claude)');
   return `<div class="arow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h2}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
     <span class="face">${a.face}</span>
-    <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rp">${esc(a.repo)}</span></span>
-    <span class="spk">${meter}</span>
+    <span class="who">
+      <span class="nm"><span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h2};margin-right:6px"></span>${nameHtml(a)}</span>
+      <span class="rp">${summaryLine}</span>
+      <span class="rp3"><span class="hdot" style="background:${hHarness}"></span>${esc(cwdBase(a.cwd) || a.repo)}${a.when ? ' &middot; ' + esc(a.when) : ''}</span>
+    </span>
     <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'}">&#128204;</button>
-    <span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h2}"></span>
   </div>`;
 }
 function renderRoster() {
@@ -759,33 +779,13 @@ function renderRoster() {
     const items = desk.filter((a) => a.state === g.k && !pins.has(a.id));
     if (!items.length) continue;
     const h = hue(STATE[g.k].hue);
-    // The queue in the right rail owns needs-you and blocked. The roster keeps
-    // the inventory honest with a slim count line that jumps to the queue,
-    // instead of repeating the same sessions as full rows on both sides.
-    if (g.k === 'need' || g.k === 'block') {
-      html += `<div class="grp-hd jump" data-jump="${g.k}" title="handled in the queue on the right"><span class="gdot" style="background:${h}"></span>${g.label}<span class="gct">${items.length}</span><span class="gjump">in queue &rarr;</span></div>`;
-      continue;
-    }
     html += `<div class="grp-hd"><span class="gdot" style="background:${h}"></span>${g.label}<span class="gct">${items.length}</span></div>`;
     for (const a of items) html += rosterRow(a);
   }
   box.innerHTML = html || `<div class="watch-empty">no sessions in the last 72h.</div>`;
   box.querySelectorAll('.arow').forEach((r) => r.addEventListener('click', () => select(r.dataset.id)));
   box.querySelectorAll('.pinbtn').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); togglePin(b.dataset.pin); }));
-  box.querySelectorAll('.grp-hd.jump').forEach((hd) => hd.addEventListener('click', () => flashQueue(hd.dataset.jump)));
-}
-// Pull the eye to the right-rail queue (the owner of needs-you) and select the
-// first session of the requested state so the jump lands somewhere concrete.
-function flashQueue(state) {
-  const desk = onDesk();
-  const first = desk.find((a) => a.state === state) || desk.find((a) => a.state === 'need' || a.state === 'block');
-  if (first && first.id !== selId) select(first.id);
-  const pane = document.querySelector('#mode-focus .pane.right');
-  if (!pane) return;
-  pane.classList.remove('flash');
-  void pane.offsetWidth; // restart the animation on repeat clicks
-  pane.classList.add('flash');
-  setTimeout(() => pane.classList.remove('flash'), 1000);
+  if (window.ContextMenu) box.querySelectorAll('.arow').forEach((r) => r.addEventListener('contextmenu', (e) => { e.preventDefault(); window.ContextMenu.open(e, { type: 'session', agent: byId.get(r.dataset.id) }); }));
 }
 function togglePin(id) {
   if (pins.has(id)) pins.delete(id); else pins.add(id);
@@ -1203,187 +1203,10 @@ function bindMap() {
   map.addEventListener('mouseleave', () => tip.classList.remove('on'));
 }
 
-// ---- right rail: the needs-you queue. This surface OWNS needs-you; the left
-// roster only points here. Fleet totals live in the header, not in this rail.
-function renderConductor() {
-  const cond = el('cond');
-  // Hot first; drifting keeps its needs-you shape but renders dimmed at the
-  // bottom of the queue (the reader already sorts tiers; keep that order).
-  const need = onDesk().filter((a) => a.state === 'need' || a.state === 'block');
-  const queue = need.map((a) => {
-    const h = hue(STATE[a.state].hue);
-    return `<div class="qrow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
-      <span class="face">${a.face}</span>
-      <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rz">${esc(a.stateReason || STATE[a.state].label)} · ${esc(a.repo || 'no repo')}</span></span>
-      <span class="chip ${STATE[a.state].cls}"><span class="dt"></span>${esc((a.tier === 'drifting' ? 'drifting · ' : '') + (a.when || ''))}</span>
-    </div>`;
-  }).join('') || `<div class="queue-empty">nothing needs you right now.</div>`;
-
-  cond.innerHTML = `
-    <div>
-      <div class="sec-l">Needs you now <span class="ct">${need.length}</span></div>
-      <div class="queue">${queue}</div>
-    </div>`;
-  cond.querySelectorAll('.qrow').forEach((r2) => r2.addEventListener('click', () => select(r2.dataset.id)));
-}
-
-function renderFocus() { renderRoster(); renderWatch(); renderConductor(); ensureWatchDetail(); }
-
-// ============================================================
-// TRIAGE MODE
-// ============================================================
-const tGroupOpen = { need: true, block: true, work: true, idle: false, done: false };
-function tGroupsBuild() {
-  const sorted = [...onDesk()].sort((a, b) => ORDER[a.state] - ORDER[b.state]);
-  return [
-    { state: 'need', label: 'needs you', items: sorted.filter((a) => a.state === 'need'), clickable: false },
-    { state: 'block', label: 'blocked', items: sorted.filter((a) => a.state === 'block'), clickable: false },
-    { state: 'work', label: 'working', items: sorted.filter((a) => a.state === 'work'), clickable: true },
-    { state: 'idle', label: 'idle', items: sorted.filter((a) => a.state === 'idle'), clickable: true },
-    { state: 'done', label: 'done', items: sorted.filter((a) => a.state === 'done'), clickable: true },
-  ];
-}
-function tItemHTML(a) {
-  const st = STATE[a.state], h = hue(st.hue);
-  const meta = a.ctxPct != null ? `ctx ${a.ctxPct}%` : (a.cost != null ? fmtUSD(a.cost) : (a.model || ''));
-  return `<div class="item ${TIERS[a.tier].cls}" data-id="${esc(a.id)}" style="--c-state:${h}">`
-    + `<div class="row" tabindex="0" title="${esc(stateTip(a))}">`
-    + `<span class="rface"><span class="hb ${a.state === 'work' ? 'beat' : ''}" style="background:${h}"></span><span class="em">${a.face}</span></span>`
-    + `<span class="who2"><span class="nm">${nameHtml(a)}</span><span class="hn">${esc(a.harnessLabel)}</span></span>`
-    + `<span class="rnarr">${a.aiNarr ? '<span class="ai">ai</span>' : ''}${esc(a.narrative)}</span>`
-    + `<span class="chip ${st.cls}"><span class="dt"></span>${st.label}</span>`
-    + `<span class="rmeta"><span class="rdelta">${esc(meta)}</span></span>`
-    + `<span class="rwhen">${esc(a.when || '')}</span>`
-    + `</div>`
-    + `<div class="drawer"><div class="drawer-in" data-drawer="${esc(a.id)}"></div></div>`
-    + `</div>`;
-}
-function tDrawerHTML(a, d) {
-  const h = hue(STATE[a.state].hue);
-  const propItems = [
-    ['why', esc(a.stateReason || STATE[a.state].label) + (a.tier !== 'hot' ? ' · ' + esc(TIERS[a.tier].label) : '')],
-    ['repo', esc(a.repo || 'n/a')],
-    ['harness', `<span class="chip ${a.harnessCls}"><span class="dt"></span>${esc(a.harnessLabel)}</span>`],
-    ['model', esc((a.model || 'n/a') + (a.effort ? ' · ' + a.effort : ''))],
-    ['context', a.ctxPct != null ? `${svgBar(a.ctxPct, h, 44, 5)} ${a.ctxPct}%` : 'n/a'],
-    ['cost', a.cost != null ? esc(fmtUSD(a.cost)) : 'n/a'],
-  ];
-  const props = `<div class="dprops">${propItems.map((p) => `<div class="dprop"><span class="k">${p[0]}</span><span class="v">${p[1]}</span></div>`).join('')}</div>`;
-
-  let tl;
-  if (d === 'loading' || !d) tl = `<div class="dtl"><div class="th">timeline · multi-source</div><div class="ev"><span class="tick"></span><span class="src">...</span><span class="txt">reading transcript...</span></div></div>`;
-  else if (d === 'error') tl = `<div class="dtl"><div class="th">timeline · multi-source</div><div class="ev"><span class="txt">could not read this session.</span></div></div>`;
-  else {
-    const evs = buildTimeline(a, d).slice(0, 6);
-    const rows = evs.length ? evs.map((e, i) => {
-      const clickable = e.url || e.path;
-      const strip = String(e.msg).replace(/<[^>]+>/g, '');
-      return `<div class="ev ${i === 0 ? 'hot' : ''} ${clickable ? 'click' : ''}" ${e.url ? `data-url="${esc(e.url)}"` : ''} ${e.path ? `data-path="${esc(e.path)}"` : ''}>`
-        + `<span class="tick"></span><span class="src">${esc(e.src)}</span>`
-        + `<span class="txt">${esc(strip)}</span><span class="tw">${i === 0 && a.when ? esc(a.when) : ''}</span></div>`;
-    }).join('') : `<div class="ev"><span class="txt">no recorded signals yet.</span></div>`;
-    tl = `<div class="dtl"><div class="th">timeline · multi-source</div>${rows}</div>`;
-  }
-
-  const det = (d && d !== 'loading' && d !== 'error') ? d.detail : null;
-  const hasLinear = det && det.linearRefs && det.linearRefs.length;
-  const ra = resumeActs(a);
-  const primeLabel = a.state === 'done' ? 'Reveal' : ra.primary.label;
-  const primeAct = a.state === 'done' ? 'reveal' : ra.primary.act;
-  const sumLoading = sumState.get(a.id) === 'loading';
-  const sumLabel = sumLoading ? 'Summarizing...' : (summaries.has(a.id) ? 'Refresh AI summary' : 'AI summary');
-  const acts = `<div class="acts">`
-    + `<button class="abtn prime" data-act="${primeAct}">${primeLabel} <kbd>${a.state === 'done' ? 'r' : '↵'}</kbd></button>`
-    + (a.state === 'done' ? `<button class="abtn" data-act="${ra.primary.act}">${ra.primary.label}</button>` : '')
-    + (ra.secondary ? `<button class="abtn" data-act="${ra.secondary.act}">${ra.secondary.label}</button>` : '')
-    + (a.state === 'done' ? '' : `<button class="abtn" data-act="reveal">Reveal</button>`)
-    + `<button class="abtn" data-act="linear" ${hasLinear ? '' : 'disabled'}>Linear</button>`
-    + `<button class="abtn" data-act="summary" ${sumLoading ? 'disabled' : ''} title="replaces this row's line with an AI summary; sends recent messages to your local ${esc(engineLabel(summarizer))} CLI">${sumLabel}</button>`
-    + `<span class="fill"></span>`
-    + `</div>`;
-  return props + tl + acts;
-}
-function renderTriage() {
-  const col = el('col');
-  col.innerHTML = tGroupsBuild().map((g) => {
-    const st = STATE[g.state]; const open = g.clickable ? tGroupOpen[g.state] : true;
-    const sec = `<div class="tsec ${g.clickable ? 'click' : ''} ${open ? 'open' : ''}" data-grp="${g.state}">`
-      + (g.clickable ? `<span class="caret">▸</span>` : '')
-      + `<span class="lab"><span class="hb" style="width:6px;height:6px;background:${hue(st.hue)}"></span>${g.label} <span class="n">(${g.items.length})</span></span>`
-      + `<span class="line"></span>`
-      + (g.clickable ? `<span class="hint">${open ? 'hide' : 'show ' + g.items.length}</span>` : '')
-      + `</div>`;
-    let body = '';
-    if (open) body = `<div class="rows">${g.items.map(tItemHTML).join('')}</div>`;
-    return sec + body;
-  }).join('') || `<div class="tl-empty">no sessions in the last 72h.</div>`;
-  renderGutter();
-  wireTriage();
-  applyTriageSelection();
-}
-function renderGutter() {
-  // keys + recent notes only: fleet totals live in the header for every mode.
-  const g = el('gutter');
-  const recent = allNotes.slice(0, 4).map((n) => {
-    const NLHUE = { blocked: 'var(--s-block)', review: 'var(--s-need)', done: 'var(--s-done)', fyi: 'var(--iris)' };
-    return `<div class="tnote" style="--nl:${NLHUE[n.level] || 'var(--iris)'}"><div class="nl">${esc(n.level)}</div><div class="nm">${esc(n.message)}</div><div class="nmeta">${esc(n.repo || '')}</div></div>`;
-  }).join('');
-  g.innerHTML =
-    `<div class="kbar"><div class="kh">keys</div>`
-    + `<span class="kk"><kbd>j</kbd><kbd>k</kbd> move</span>`
-    + `<span class="kk"><kbd>↵</kbd> open</span>`
-    + `<span class="kk"><kbd>esc</kbd> close</span></div>`
-    + (recent ? `<div class="gh" style="margin-top:8px">recent notes</div>${recent}` : '');
-}
-function applyTriageSelection() {
-  document.querySelectorAll('#col .item').forEach((it) => {
-    const id = it.dataset.id;
-    const row = it.querySelector('.row');
-    row.classList.toggle('sel', id === selId && id !== expId);
-    const open = id === expId;
-    it.classList.toggle('exp', open);
-    const dr = it.querySelector('.drawer');
-    const inner = it.querySelector('.drawer-in');
-    dr.style.transition = RM ? 'none' : 'height .18s ease';
-    if (open) {
-      const a = byId.get(id);
-      // fill drawer with real detail (lazy)
-      const d = detailCache.get(id);
-      inner.innerHTML = tDrawerHTML(a, d || 'loading');
-      wireDrawer(inner, a);
-      if (d == null) loadDetail(a).then(() => { if (expId === id) { inner.innerHTML = tDrawerHTML(a, detailCache.get(id)); wireDrawer(inner, a); dr.style.height = inner.offsetHeight + 'px'; } });
-      dr.style.height = 'auto'; dr.style.height = inner.offsetHeight + 'px';
-    } else { dr.style.height = '0px'; }
-  });
-}
-function wireDrawer(inner, a) {
-  inner.querySelectorAll('[data-act]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); runAction(b.dataset.act, a); }));
-  inner.querySelectorAll('.ev[data-url]').forEach((n) => n.addEventListener('click', () => { const u = n.getAttribute('data-url'); if (u && window.humanctl) window.humanctl.openExternal(u); }));
-  inner.querySelectorAll('.ev[data-path]').forEach((n) => n.addEventListener('click', () => { const p = n.getAttribute('data-path'); if (p && window.humanctl) window.humanctl.openPath(p); }));
-}
-function tVisible() { return [...document.querySelectorAll('#col .item')].map((it) => it.dataset.id); }
-function tSelect(id, expand) {
-  selId = id;
-  if (window.humanctl) window.humanctl.setState({ selectedId: id });
-  if (expand) expId = (expId === id ? null : id);
-  applyTriageSelection();
-  const it = document.querySelector(`#col .item[data-id="${CSS.escape(id)}"]`);
-  if (it) it.scrollIntoView({ block: 'nearest' });
-}
-function tMove(dir) {
-  const list = tVisible(); if (!list.length) return;
-  let i = list.indexOf(selId); i = i < 0 ? 0 : clamp(i + dir, 0, list.length - 1);
-  tSelect(list[i], false);
-}
-function wireTriage() {
-  document.querySelectorAll('#col .item .row').forEach((row) => {
-    const id = row.closest('.item').dataset.id;
-    row.addEventListener('click', () => tSelect(id, true));
-  });
-  document.querySelectorAll('#col .tsec.click').forEach((sec) => {
-    sec.addEventListener('click', () => { const s = sec.dataset.grp; tGroupOpen[s] = !tGroupOpen[s]; renderTriage(); });
-  });
-}
+// The needs-you queue used to be a Focus-only right rail; it is now the top
+// of the persistent Atlas panel (atlas.js renderNeedsYouQueue), shown in every
+// mode. renderFocus only owns the center watch pane.
+function renderFocus() { renderWatch(); ensureWatchDetail(); }
 
 // ============================================================
 // WALL MODE (scrollable tile grid of ALL agents)
@@ -1586,8 +1409,9 @@ async function summarizeAgent(a) {
 // for the watched agent, pull the eye to the block so its home is unmistakable.
 function repaintSummary(id, landed) {
   remapAgents();
+  renderRoster();
   if (mode === 'focus') {
-    renderRoster(); renderWatch(); ensureWatchDetail();
+    renderWatch(); ensureWatchDetail();
     if (landed && selId === id) {
       const blk = el('sumBlock');
       if (blk) {
@@ -1596,8 +1420,7 @@ function repaintSummary(id, landed) {
         setTimeout(() => blk.classList.remove('flash'), 1200);
       }
     }
-  } else if (mode === 'triage') applyTriageSelection();
-  else if (mode === 'wall') renderWall();
+  } else if (mode === 'wall') renderWall();
 }
 
 let toastTimer = null;
@@ -1632,8 +1455,10 @@ function setMode(m) {
   el('mode-' + m).classList.add('on');
   document.querySelectorAll('#seg button').forEach((b) => b.classList.toggle('on', b.dataset.mode === m));
   if (window.humanctl) window.humanctl.setState({ mode: m });
-  if (m === 'focus') renderFocus();
-  else if (m === 'triage') { expId = selId; renderTriage(); }
+  renderRoster();
+  if (window.Atlas) window.Atlas.renderPanel();
+  if (m === 'inbox' && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
+  else if (m === 'focus') renderFocus();
   else if (m === 'wall') { renderWall(); if (selId) loadDetail(byId.get(selId)).then(() => { if (mode === 'wall') renderWall(); }); }
 }
 
@@ -1649,8 +1474,10 @@ function remapAgents() {
 }
 function redrawActive() {
   renderHeader();
-  if (mode === 'focus') renderFocus();
-  else if (mode === 'triage') renderTriage();
+  renderRoster();
+  if (window.Atlas) window.Atlas.renderPanel();
+  if (mode === 'inbox' && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
+  else if (mode === 'focus') renderFocus();
   else if (mode === 'wall') renderWall();
 }
 
@@ -1673,6 +1500,23 @@ el('tTheme').addEventListener('click', () => { theme = theme === 'light' ? 'dark
 el('tTemp').addEventListener('click', () => { temp = temp === 'loud' ? 'considered' : 'loud'; applyTemp(); if (window.humanctl) window.humanctl.setState({ temp }); redrawActive(); });
 document.querySelectorAll('#seg button').forEach((b) => b.addEventListener('click', () => setMode(b.dataset.mode)));
 el('scrim').addEventListener('click', closePeek);
+
+// left/right rail collapse, persisted via the registry (app.set-left-rail /
+// app.set-right-rail) so `humanctl app app.set-left-rail --collapsed true`
+// and the running UI always agree.
+function setLeftRail(collapsed) {
+  leftRailCollapsed = collapsed;
+  document.querySelector('.app').classList.toggle('left-collapsed', collapsed);
+  renderRoster();
+  if (window.humanctl) window.humanctl.setLeftRail(collapsed);
+}
+function setRightRail(collapsed) {
+  rightRailCollapsed = collapsed;
+  document.querySelector('.app').classList.toggle('right-collapsed', collapsed);
+  if (window.humanctl) window.humanctl.setRightRail(collapsed);
+}
+el('leftRailToggle').addEventListener('click', () => setLeftRail(!leftRailCollapsed));
+el('rightRailToggle').addEventListener('click', () => setRightRail(!rightRailCollapsed));
 
 // settings popover: pick the AI-summary engine (Claude Code or Codex), persisted
 function applySummarizerUI() { document.querySelectorAll('#engSeg button').forEach((b) => b.classList.toggle('on', b.dataset.eng === summarizer)); }
@@ -1712,49 +1556,61 @@ document.addEventListener('mousedown', (e) => {
   if (!pop.hidden && !pop.contains(e.target) && e.target.id !== 'btnSettings') toggleSettings(false);
 });
 
-// keyboard
+// keyboard: 1 Inbox (default) / 2 Focus / 3 Wall. j/k now moves the Inbox
+// thread list (Triage's grouped list is gone; j/k has one home).
 document.addEventListener('keydown', (e) => {
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'BUTTON')) {
     if (e.key === 'Escape' && e.target.blur) e.target.blur();
     return;
   }
-  if (e.key === '1') setMode('focus');
-  else if (e.key === '2') setMode('triage');
+  if (e.key === '1') setMode('inbox');
+  else if (e.key === '2') setMode('focus');
   else if (e.key === '3') setMode('wall');
-  else if (mode === 'triage') {
-    if (e.key === 'j') { e.preventDefault(); tMove(1); }
-    else if (e.key === 'k') { e.preventDefault(); tMove(-1); }
-    else if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); if (selId) tSelect(selId, true); }
-    else if (e.key === 'r') { const a = byId.get(selId); if (a) runAction(a.state === 'done' ? 'reveal' : 'resume', a); }
-    else if (e.key === 'Escape') { e.preventDefault(); expId = null; applyTriageSelection(); }
+  else if (mode === 'inbox' && window.Inbox) {
+    if (e.key === 'j') { e.preventDefault(); window.Inbox.move(1); }
+    else if (e.key === 'k') { e.preventDefault(); window.Inbox.move(-1); }
+    else if (e.key === 'Enter') { e.preventDefault(); window.Inbox.toggleFullConversation(); }
   } else if (mode === 'wall' && e.key === 'Escape') closePeek();
 });
 
 // ============================================================
 // load + realtime
 // ============================================================
+let inboxThreads = [];
+let lastReadTs = {};
 async function fetchData() {
-  const [s, l, nt] = await Promise.all([
+  const [s, l, nt, it] = await Promise.all([
     window.humanctl.getStatus({ maxAgeH: 72, limit: 40 }),
     window.humanctl.listSessions({ maxAgeH: 72, limit: 40, withUsage: true }),
     window.humanctl.getNotes({ limit: 100 }),
+    window.humanctl.getInboxThreads({ limit: 200 }),
   ]);
   if (s && s.ok) status = s.status;
   if (l && l.ok) allRows = l.rows || [];
   if (nt && nt.ok) allNotes = nt.notes || [];
+  if (it && it.ok) inboxThreads = it.threads || [];
+}
+function applyRailState(st) {
+  leftRailCollapsed = !!(st && st.leftRailCollapsed);
+  rightRailCollapsed = !!(st && st.rightRailCollapsed);
+  lastReadTs = (st && st.lastReadTs) || {};
+  document.querySelector('.app').classList.toggle('left-collapsed', leftRailCollapsed);
+  document.querySelector('.app').classList.toggle('right-collapsed', rightRailCollapsed);
 }
 async function load() {
   if (!window.humanctl) {
     demo = true;
     allRows = FIXTURE_ROWS; status = fixtureStatus(); allNotes = FIXTURE_NOTES;
-    applyTheme(); applyTemp(); remapAgents(); renderHeader(); setMode('focus');
+    inboxThreads = (window.Inbox && window.Inbox.fixtureThreads) ? window.Inbox.fixtureThreads() : [];
+    applyTheme(); applyTemp(); applyRailState(null); remapAgents(); renderHeader(); setMode('inbox');
+    if (window.Atlas) window.Atlas.hydrateFixture();
     return;
   }
   const st = await window.humanctl.getState();
   if (st && st.ok && st.state) {
     theme = st.state.theme === 'light' ? 'light' : 'dark';
     temp = st.state.temp === 'loud' ? 'loud' : 'considered';
-    mode = ['focus', 'triage', 'wall'].includes(st.state.mode) ? st.state.mode : 'focus';
+    mode = ['inbox', 'focus', 'wall'].includes(st.state.mode) ? st.state.mode : 'inbox';
     pins = new Set(st.state.pins || []);
     summarizer = st.state.summarizer === 'codex' ? 'codex' : 'claude';
     const op = st.state.openPref || {};
@@ -1763,9 +1619,13 @@ async function load() {
     hydrateAsks(st.state.asks);
     askAck = st.state.askCodexAck === true;
     if (st.state.selectedId) selId = st.state.selectedId;
+    applyRailState(st.state);
+  } else {
+    applyRailState(null);
   }
   applyTheme(); applyTemp();
   await fetchData();
+  if (window.Atlas) await window.Atlas.hydrate();
   remapAgents(); renderHeader(); setMode(mode);
 }
 let lastSig = '';
@@ -1778,6 +1638,7 @@ async function _refresh() {
   // archived) even though no file changed.
   const sig = allRows.map((r) => r.id + r.ageMs + r.state + ':' + r.tier + ':' + r.contextPct).join('|')
     + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
+    + '#' + inboxThreads.map((t) => t.sessionId + ':' + t.lastTs + ':' + t.items.length).join('|')
     + '#' + (status ? status.needsYou + ':' + status.working + ':' + status.sessions : '');
   if (sig === lastSig) return; // nothing changed
   lastSig = sig;
@@ -1825,10 +1686,16 @@ function applyExternalState(st) {
   summarizer = st.summarizer === 'codex' ? 'codex' : 'claude';
   const op = st.openPref || {};
   openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
+  applyRailState(st);
   applyTheme(); applyTemp();
-  const m = ['focus', 'triage', 'wall'].includes(st.mode) ? st.mode : mode;
+  const m = ['inbox', 'focus', 'wall'].includes(st.mode) ? st.mode : mode;
   if (m !== mode) setMode(m); else redrawActive();
 }
 if (window.humanctl && window.humanctl.onStateChanged) window.humanctl.onStateChanged(applyExternalState);
 setInterval(() => { if (window.humanctl) scheduleRefresh(); }, 20000);
-load();
+// load() is called from index.html's final inline script, AFTER inbox.js /
+// atlas.js / contextmenu.js have all run: load()'s demo-mode fixture path
+// calls window.Inbox.fixtureThreads() and window.Atlas.hydrateFixture(),
+// which do not exist yet if this file called load() itself (script tags
+// execute top to bottom; this is the last of the four).
+window.bootHumanctl = load;

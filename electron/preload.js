@@ -7,6 +7,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('humanctl', {
+  listCommands: () => ipcRenderer.invoke('app:commands'),
   listSessions: (opts) => ipcRenderer.invoke('sessions:list', opts),
   getStatus: (opts) => ipcRenderer.invoke('status:get', opts),
   readSession: (arg) => ipcRenderer.invoke('sessions:read', arg),
@@ -16,6 +17,13 @@ contextBridge.exposeInMainWorld('humanctl', {
   summarize: (arg) => ipcRenderer.invoke('session:summarize', arg),
   askSession: (arg) => ipcRenderer.invoke('session:ask', arg),
   getNotes: (opts) => ipcRenderer.invoke('notes:get', opts),
+  getInboxThreads: (opts) => ipcRenderer.invoke('inbox:threads', opts),
+  markThreadRead: (arg) => ipcRenderer.invoke('inbox:mark-read', arg),
+  markAllThreadsRead: () => ipcRenderer.invoke('inbox:mark-all-read'),
+  askAtlas: (arg) => ipcRenderer.invoke('atlas:ask', arg),
+  getAtlasLog: () => ipcRenderer.invoke('atlas:get-log'),
+  setLeftRail: (collapsed) => ipcRenderer.invoke('rail:set-left', { collapsed }),
+  setRightRail: (collapsed) => ipcRenderer.invoke('rail:set-right', { collapsed }),
   resumeSession: (arg) => ipcRenderer.invoke('session:resume', arg),
   openInApp: (arg) => ipcRenderer.invoke('session:open-app', arg),
   revealSession: (filePath) => ipcRenderer.invoke('sessions:reveal', filePath),
