@@ -10,6 +10,8 @@ contextBridge.exposeInMainWorld('humanctl', {
   listSessions: (opts) => ipcRenderer.invoke('sessions:list', opts),
   getStatus: (opts) => ipcRenderer.invoke('status:get', opts),
   readSession: (arg) => ipcRenderer.invoke('sessions:read', arg),
+  readTimeline: (arg) => ipcRenderer.invoke('sessions:timeline', arg),
+  setHotSession: (arg) => ipcRenderer.invoke('session:hot', arg),
   aggregateSkills: (opts) => ipcRenderer.invoke('skills:aggregate', opts),
   summarize: (arg) => ipcRenderer.invoke('session:summarize', arg),
   askSession: (arg) => ipcRenderer.invoke('session:ask', arg),
@@ -25,5 +27,10 @@ contextBridge.exposeInMainWorld('humanctl', {
     const handler = () => { try { cb(); } catch {} };
     ipcRenderer.on('sessions:changed', handler);
     return () => ipcRenderer.removeListener('sessions:changed', handler);
+  },
+  onSessionAppend: (cb) => {
+    const handler = (_e, payload) => { try { cb(payload); } catch {} };
+    ipcRenderer.on('session:append', handler);
+    return () => ipcRenderer.removeListener('session:append', handler);
   },
 });

@@ -35,4 +35,5 @@ jobs:
       - run: npm run lint
       - run: node --check lib/sessions.js && node --check lib/pulse.js && node --check bin/humanctl.js
       - run: npm run pulse:selftest
+      - run: npm run reader:selftest
       - run: npm run build

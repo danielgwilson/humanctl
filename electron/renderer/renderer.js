@@ -308,6 +308,160 @@ function resumeActs(a) {
 
 // per-agent readSession detail cache (real signals only)
 const detailCache = new Map();  // id -> {data, usage, detail} | 'loading' | 'error'
+
+// Live timeline for the watched session: a bounded page of substantive events
+// (reader-budgeted, tail-anchored) plus cursor-fed appends pushed by the main
+// process for the ONE hot session. Every truncation is an explicit element
+// ("~N earlier events not shown · load older"); a spliced timeline is never
+// rendered as if complete. Events are stored in file order (oldest first).
+const tlState = new Map(); // id -> {events, start, end, atStart, estEarlier, size, lastAt, live, loading, loadingOlder, capped, error}
+const TL_STATE_CAP = 12;   // sessions kept
+const TL_EVENTS_CAP = 600; // events kept per session before the view is capped
+function tlRemember(id, v) {
+  tlState.delete(id); tlState.set(id, v);
+  while (tlState.size > TL_STATE_CAP) tlState.delete(tlState.keys().next().value);
+}
+function lastEventTs(evs) {
+  for (let i = (evs || []).length - 1; i >= 0; i--) if (evs[i].ts != null) return evs[i].ts;
+  return null;
+}
+async function ensureTimeline(a) {
+  const have = tlState.get(a.id);
+  if (have && (have.events || have.loading)) {
+    // Reselection: re-arm the hot pump from the cached end offset. The main
+    // process primes its cursor there and pumps once immediately, so anything
+    // appended while this session was deselected streams in as a catch-up
+    // batch; nothing is lost and nothing is re-read twice.
+    if (have.events && !have.capped && Number.isFinite(have.end) && window.humanctl) {
+      window.humanctl.setHotSession({ path: a.path, harness: a.harness, from: have.end });
+      have.live = true;
+    }
+    return;
+  }
+  const mark = { loading: true };
+  tlRemember(a.id, mark);
+  const fin = (page, err) => {
+    if (tlState.get(a.id) !== mark) return;
+    if (!page) { tlRemember(a.id, { error: err || 'could not read this session.' }); return; }
+    tlRemember(a.id, {
+      events: page.events || [], start: page.start, end: page.end, atStart: !!page.atStart,
+      estEarlier: page.estEarlier, size: page.size,
+      lastAt: lastEventTs(page.events) || page.mtimeMs || Date.now(),
+      live: false, capped: false,
+    });
+  };
+  if (!window.humanctl) {
+    // demo: synthetic page with the truncation affordance visible, marked
+    // live. Deferred: ensureTimeline is reached from inside timelineHtml, and
+    // a synchronous repaint here would be overwritten by the caller's render.
+    setTimeout(() => {
+      fin(fixtureTimeline(a.row));
+      const tl = tlState.get(a.id);
+      if (tl && tl.events) { tl.live = true; tl.lastAt = Date.now() - 4000; }
+      repaintTimeline(a.id);
+    }, 0);
+    return;
+  }
+  try {
+    const r = await window.humanctl.readTimeline({ path: a.path, harness: a.harness });
+    fin(r && r.ok ? r.page : null, r && r.error);
+    if (r && r.ok && r.page) {
+      // arm the hot pump from this page's line-aligned end: appends from here
+      // on stream in without waiting for the debounced list refresh.
+      await window.humanctl.setHotSession({ path: a.path, harness: a.harness, from: r.page.end });
+      const tl = tlState.get(a.id);
+      if (tl && tl.events) tl.live = true;
+    }
+  } catch (e) { fin(null, String((e && e.message) || e)); }
+  repaintTimeline(a.id);
+}
+async function loadOlderTimeline(a) {
+  const tl = tlState.get(a.id);
+  if (!tl || !tl.events || tl.loadingOlder || tl.atStart) return;
+  if (tl.capped || !Number.isFinite(tl.start)) { tlState.delete(a.id); ensureTimeline(a); return; }
+  tl.loadingOlder = true;
+  repaintTimeline(a.id);
+  const done = (page, err) => {
+    tl.loadingOlder = false;
+    if (page) {
+      const older = page.events || [];
+      // merge a tool run cut at the page boundary
+      if (older.length && tl.events.length && older[older.length - 1].k === 'tools' && tl.events[0].k === 'tools') {
+        tl.events[0].n += older[older.length - 1].n;
+        older.pop();
+      }
+      tl.events = older.concat(tl.events);
+      tl.start = page.start; tl.atStart = !!page.atStart; tl.estEarlier = page.estEarlier;
+    } else if (err) toast('could not load earlier events: ' + err);
+    repaintTimeline(a.id);
+  };
+  if (!window.humanctl) { setTimeout(() => done(fixtureOlderTimeline(a.row)), 350); return; }
+  try {
+    const r = await window.humanctl.readTimeline({ path: a.path, harness: a.harness, before: tl.start });
+    done(r && r.ok ? r.page : null, r && !r.ok ? r.error : null);
+  } catch (e) { done(null, String((e && e.message) || e)); }
+}
+// Appends pushed by the main process for the hot session. Only the watched
+// agent is on this path; everything else keeps the debounced list refresh.
+function onSessionAppend(p) {
+  const a = byId.get(selId);
+  if (!a || !p || p.path !== a.path) return;
+  if (p.reset) { tlState.delete(a.id); ensureTimeline(a); return; }
+  const tl = tlState.get(a.id);
+  if (!tl || !tl.events) return;
+  for (const e of (p.events || [])) {
+    const last = tl.events[tl.events.length - 1];
+    if (e.k === 'tools' && last && last.k === 'tools') { last.n += e.n; if (e.ts != null) last.ts = e.ts; }
+    else tl.events.push(e);
+  }
+  if (tl.events.length > TL_EVENTS_CAP) {
+    // keep the newest; the cut stays explicit (the affordance becomes a reload)
+    tl.events.splice(0, tl.events.length - TL_EVENTS_CAP);
+    tl.capped = true; tl.atStart = false; tl.estEarlier = null;
+  }
+  if (typeof p.end === 'number') tl.end = p.end;
+  if (typeof p.size === 'number') tl.size = p.size;
+  tl.lastAt = p.at || Date.now();
+  tl.live = true;
+  if (p.meta && p.meta.customTitle) a.row.customTitle = p.meta.customTitle;
+  // live state via the reader's own v3 classifier; note overlays still win
+  if (p.need && STATE[p.need.state]) {
+    a.row.state = p.need.state; a.row.stateReason = p.need.reason; a.row.tier = p.need.tier;
+    const d = deriveState(a.row, allNotes, Date.now());
+    a.state = d.state; a.stateReason = d.reason; a.tier = d.tier;
+  }
+  repaintTimeline(a.id);
+}
+// Repaint only the facet body: a streaming session must never clobber the ask
+// input or the rest of the dossier mid-typing.
+function repaintTimeline(id) {
+  if (mode !== 'focus' || selId !== id || facet !== 'timeline') return;
+  const a = byId.get(id);
+  const d = detailCache.get(id);
+  if (a && d && d !== 'loading' && d !== 'error') paintFacet(a, d);
+}
+// "live · updated Ns ago" for the detail header. Real times only: the reader's
+// last event timestamp, advanced by real appends.
+function agoShort(at) {
+  if (!at) return '';
+  const s = Math.max(0, Math.round((Date.now() - at) / 1000));
+  if (s < 60) return s + 's ago';
+  return agoTxt(at);
+}
+function liveIndicatorText(a) {
+  const tl = tlState.get(a.id);
+  if (!tl || !tl.events || !tl.lastAt) return '';
+  return (tl.live ? 'live · ' : '') + 'updated ' + agoShort(tl.lastAt);
+}
+setInterval(() => {
+  const a = byId.get(selId);
+  if (!a || mode !== 'focus') return;
+  const live = liveIndicatorText(a);
+  const sub = el('watch-sub');
+  if (sub) sub.textContent = a.harnessLabel + (live ? ' · ' + live : (a.when ? ' · ' + a.when : ''));
+  const tlv = el('tlLive');
+  if (tlv) tlv.textContent = live;
+}, 1000);
 // Opt-in AI summaries. Each entry is {text, engine, at} so the dossier can say
 // which CLI wrote it and how old it is. Persisted via setState so reopening the
 // app still shows the last summary with its age; capped to stay tiny.
@@ -449,6 +603,36 @@ function fixtureRead(row) {
     reasoningEffort: row.reasoningEffort, model: row.model, ultracode: row.ultracode,
   };
   return { ok: true, data: { blocks, truncated: false }, usage, detail };
+}
+// Synthetic live-timeline pages (demo mode only): cover the shapes the real
+// reader emits, including the explicit truncation affordance (atStart=false)
+// and a load-older page that terminates at the start of the session.
+function fixtureTimeline(row) {
+  const seed = hashU(row.id);
+  const n = 12 + (seed % 5);
+  const events = [];
+  let ts = Date.now() - n * 4 * 6e4;
+  for (let i = 0; i < n; i++) {
+    const pick = (seed + i) % 4;
+    if (pick === 0) events.push({ k: 'user', t: `demo instruction ${i + 1} for ${row.repo || 'the demo repo'}`, ts });
+    else if (pick === 3) events.push({ k: 'assistant', t: `demo progress report ${i + 1}: the step landed cleanly, moving on.`, ts });
+    else events.push({ k: 'tools', n: 2 + ((seed + i) % 6), ts });
+    ts += 4 * 6e4;
+  }
+  return { events, start: 4096, end: 262144, size: 262144, atStart: false, estEarlier: 18 + (seed % 20), mtimeMs: Date.now() - 90000 };
+}
+function fixtureOlderTimeline(row) {
+  const seed = hashU(row.id);
+  const events = [];
+  let ts = Date.now() - 4 * 3.6e6;
+  for (let i = 0; i < 7; i++) {
+    const pick = (seed + i) % 3;
+    if (pick === 0) events.push({ k: 'user', t: `earlier demo instruction ${i + 1}`, ts });
+    else if (pick === 1) events.push({ k: 'assistant', t: `earlier demo report ${i + 1}`, ts });
+    else events.push({ k: 'tools', n: 1 + ((seed + i) % 4), ts });
+    ts += 6e4;
+  }
+  return { events, start: 0, end: 4096, size: 262144, atStart: true, estEarlier: 0 };
 }
 
 // ============================================================
@@ -862,7 +1046,11 @@ function paintFacet(a, d) {
 }
 
 // ---- REAL multi-source timeline (watched agent only) ----
-function buildTimeline(a, d) {
+// `full` mode (triage drawer) keeps the compact one-glance shape: notes, last
+// exchange, refs, and a few recent blocks. The Focus dossier passes
+// full=false and renders the live event timeline below the overlay instead
+// (the real messages supersede the lastExchange summary there).
+function buildTimeline(a, d, full = true) {
   const evs = [];
   const detail = (d && d.detail) || {};
   const blocks = (d && d.data && d.data.blocks) || [];
@@ -874,9 +1062,11 @@ function buildTimeline(a, d) {
     evs.push({ src: 'note · ' + n.level, cvar: NLHUE[n.level] || 'var(--iris)', msg: esc(n.message) });
   }
   // last exchange (you asked / agent)
-  const ex = detail.lastExchange || {};
-  if (ex.lastUser) evs.push({ src: 'you asked', cvar: 'var(--iris)', msg: esc(ex.lastUser) });
-  if (ex.prevAgent) evs.push({ src: 'agent', cvar: 'var(--s-done)', msg: esc(ex.prevAgent) });
+  if (full) {
+    const ex = detail.lastExchange || {};
+    if (ex.lastUser) evs.push({ src: 'you asked', cvar: 'var(--iris)', msg: esc(ex.lastUser) });
+    if (ex.prevAgent) evs.push({ src: 'agent', cvar: 'var(--s-done)', msg: esc(ex.prevAgent) });
+  }
   // linear refs
   for (const l of (detail.linearRefs || [])) {
     evs.push({ src: 'linear', cvar: 'var(--h-claude)', msg: 'linear · ' + esc(l.label || l.url), url: l.url });
@@ -892,32 +1082,65 @@ function buildTimeline(a, d) {
   if (sk.length) {
     evs.push({ src: 'skills', cvar: 'var(--iris)', msg: sk.map((s) => `<code>${esc(s)}</code> x${skills[s]}`).join(' · ') });
   }
-  // recent activity: last few real blocks (kind + preview)
-  const tail = blocks.slice(-4).reverse();
-  for (const b of tail) {
-    evs.push({ src: KIND_LABEL[b.kind] || b.kind, cvar: 'var(--ink3)', msg: esc((b.preview || '').slice(0, 160)) || '(no preview)' });
+  if (full) {
+    // recent activity: last few real blocks (kind + preview)
+    const tail = blocks.slice(-4).reverse();
+    for (const b of tail) {
+      evs.push({ src: KIND_LABEL[b.kind] || b.kind, cvar: 'var(--ink3)', msg: esc((b.preview || '').slice(0, 160)) || '(no preview)' });
+    }
   }
   return evs;
 }
+const TL_KLBL = { user: 'you', assistant: 'agent', interrupt: 'interrupted', tools: 'tools' };
+const TL_KHUE = { user: 'var(--iris)', assistant: 'var(--s-done)', interrupt: 'var(--s-block)', tools: 'var(--ink3)' };
+// The live activity stream: real substantive events, newest first, with real
+// per-event timestamps, an explicit truncation element at the old end, and a
+// terminator when the timeline verifiably reaches the start of the session.
+function liveEventsHtml(a, tl) {
+  let html = '';
+  for (let i = tl.events.length - 1; i >= 0; i--) {
+    const e = tl.events[i];
+    const msg = e.k === 'tools' ? `${e.n} tool event${e.n === 1 ? '' : 's'}` : esc(e.t || '');
+    const ts = e.ts != null ? `<span class="ts">${esc(agoTxt(e.ts))}</span>` : '';
+    html += `<div class="tevt" style="--src:${TL_KHUE[e.k] || 'var(--ink3)'}">
+      <div class="top"><span class="src">${esc(TL_KLBL[e.k] || e.k)}</span>${ts}</div>
+      <div class="msg">${msg || '(no text)'}</div>
+    </div>`;
+  }
+  if (!tl.events.length) html += `<div class="tl-empty">no substantive events in this slice.</div>`;
+  if (tl.atStart) {
+    html += `<div class="tl-start">start of session</div>`;
+  } else {
+    const label = tl.loadingOlder ? 'loading earlier events...'
+      : tl.capped ? 'earlier events trimmed from view · reload timeline'
+        : `${tl.estEarlier != null ? '~' + tl.estEarlier + ' earlier events' : 'earlier events'} not shown · load older`;
+    html += `<div class="tl-more"><button id="tlOlder" ${tl.loadingOlder ? 'disabled' : ''}>${esc(label)}</button></div>`;
+  }
+  return html;
+}
 function timelineHtml(a, d) {
-  const evs = buildTimeline(a, d);
-  if (!evs.length) return `<div class="tl-title" style="font-family:var(--mono);font-size:9.5px;letter-spacing:.12em;text-transform:uppercase;color:var(--ink3);font-weight:600;margin:0 0 8px">Activity</div><div class="tl-empty">no recorded signals yet for this session.</div>`;
-  let html = `<div class="tl">`;
-  evs.forEach((e, i) => {
+  const overlay = buildTimeline(a, d, false);
+  let html = `<div class="tl-head"><span class="lbl">Activity</span><span class="tl-live" id="tlLive">${esc(liveIndicatorText(a))}</span></div>`;
+  html += `<div class="tl">`;
+  overlay.forEach((e) => {
     const clickable = e.url || e.path;
-    // only the latest (first) item may carry a relative time; do not fabricate per-event times.
-    const ts = i === 0 && a.when ? `<span class="ts">${esc(a.when)}</span>` : '';
     html += `<div class="tevt ${clickable ? 'click' : ''}" style="--src:${e.cvar}" ${e.url ? `data-url="${esc(e.url)}"` : ''} ${e.path ? `data-path="${esc(e.path)}"` : ''}>
-      <div class="top"><span class="src">${esc(e.src)}</span>${ts}</div>
+      <div class="top"><span class="src">${esc(e.src)}</span></div>
       <div class="msg">${e.msg}</div>
     </div>`;
   });
+  const tl = tlState.get(a.id);
+  if (!tl || tl.loading) { ensureTimeline(a); html += `<div class="tl-empty">reading timeline...</div>`; }
+  else if (tl.error) html += `<div class="tl-empty">${esc(tl.error)}</div>`;
+  else html += liveEventsHtml(a, tl);
   html += `</div>`;
   return html;
 }
 function bindTimeline(root, a, d) {
   root.querySelectorAll('.tevt[data-url]').forEach((n) => n.addEventListener('click', () => { const u = n.getAttribute('data-url'); if (u && window.humanctl) window.humanctl.openExternal(u); else if (u) toast('would open ' + u); }));
   root.querySelectorAll('.tevt[data-path]').forEach((n) => n.addEventListener('click', () => { const p = n.getAttribute('data-path'); if (p && window.humanctl) window.humanctl.openPath(p); else if (p) toast('would open ' + p); }));
+  const older = root.querySelector('#tlOlder');
+  if (older) older.addEventListener('click', () => loadOlderTimeline(a));
 }
 
 // ---- REAL sparkline: cumulative running sum of block.tokens, downsampled to ~24 ----
@@ -953,10 +1176,17 @@ function mapFacetHtml(d) {
   for (let i = blocks.length - 1; i >= 0 && pacc < 20000; i--) { pacc += (blocks[i].tokens || 0); protSet.add(i); }
   const squares = blocks.map((b, i) => { const tok = b.tokens || 0; return `<div class="sq k-${b.kind} l${levelFor(tok)}${protSet.has(i) ? ' prot' : ''}" data-k="${esc(KIND_LABEL[b.kind] || b.kind)}" data-t="${tok}" data-p="${esc(b.preview || '')}"></div>`; }).join('');
   const legend = KIND_ORDER.filter((k) => totals[k]).map((k) => `<span class="li"><span class="sw k-${k}"></span>${esc(KIND_LABEL[k])} <b>${fmtTok(totals[k])}t</b></span>`).join('');
+  // Honest truncation: the reader is tail-anchored, so a capped map shows the
+  // NEWEST portion and says how much earlier material is not shown.
+  let trunc = '';
+  if (d.data && d.data.truncated) {
+    const mb = d.data.skippedHeadBytes ? (d.data.skippedHeadBytes / 1048576).toFixed(1) : null;
+    trunc = `<div class="trunc">large session: latest portion shown${mb ? ` (~${mb}MB earlier not shown)` : ''}.</div>`;
+  }
   return `<div class="map-hint">one square per block · shade = token weight · outlined = live tail</div>
     <div class="cmap">${squares}</div>
     <div class="legend">${legend}</div>
-    ${d.data && d.data.truncated ? '<div class="trunc">large session: first portion shown.</div>' : ''}`;
+    ${trunc}`;
 }
 function bindMap() {
   const tip = el('ctip');
@@ -1582,5 +1812,7 @@ function scheduleRefresh() {
   refreshTimer = setTimeout(runRefresh, wait);
 }
 if (window.humanctl && window.humanctl.onSessionsChanged) window.humanctl.onSessionsChanged(scheduleRefresh);
+// Hot-session appends: near-immediate, for the watched session only.
+if (window.humanctl && window.humanctl.onSessionAppend) window.humanctl.onSessionAppend(onSessionAppend);
 setInterval(() => { if (window.humanctl) scheduleRefresh(); }, 20000);
 load();
