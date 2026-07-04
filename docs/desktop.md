@@ -1,146 +1,372 @@
-# Desktop App
+# Desktop app
 
 `humanctl` desktop is a local-first control room for agent sessions. It reads
-recent Codex and Claude Code transcripts on this machine and shows them in one
-list: which harness, which repo, the opening prompt, who the turn is waiting on,
-and how long ago it moved.
+recent Codex and Claude Code transcripts on this machine and routes one scarce
+human to the next bounded decision across many running sessions: which harness,
+which repo, who the turn is waiting on, and how long ago it moved.
 
 It is read-only and offline by default. It never writes to your transcripts and
 never sends anything off the machine, with explicit, opt-in exceptions, all
 running through your own local CLI auth when you ask for them: the AI-summary
-action sends a session's recent messages to a model through your local
-`claude` or `codex` CLI (you pick the engine in settings); the ask-the-session
-action injects a one-turn question into a session through that session's own
-harness CLI (Claude asks leave no trace in the session; Codex asks write the
-marked question into the thread itself and are disclosed and acknowledged
-before the first one runs, see [ask-session.md](./ask-session.md)); and Atlas
-(below) sends a fleet-level prompt (pulse summary, recent notes, top session
-states) through the same local CLI, advisory only, never executing anything.
+action sends a session's recent messages to a model through your local `claude`
+or `codex` CLI (you pick the engine in Settings); the ask-the-session action
+injects a one-turn question into a session through that session's own harness
+CLI (Claude asks leave no trace in the session; Codex asks write the marked
+question into the thread itself and are disclosed and acknowledged before the
+first one runs, see [ask-session.md](./ask-session.md)); and Atlas (below)
+sends a fleet-level prompt through the same local CLI, advisory only, never
+executing anything.
 
-The surface is exception-first: sessions that need you (the agent's turn is done,
-the ball is with you) lead; everything healthy recedes. Three modes (Inbox /
-Focus / Wall, keys 1/2/3) sit under one persistent conductor header, alongside
-a persistent left roster and right Atlas panel that stay on screen in every
-mode (both collapsible, both persisted). Inbox is message-centric and is the
-default on launch; Focus and Wall stay session-centric for deep work and
-ambient overview.
+## The shell (one rule: one owner per signal)
 
-## Inbox (default mode)
+The shell is deliberately subtracted. There is no persistent left roster and no
+persistent right rail. Instead there is a hidden nav rail, one active view at a
+time, a full-width session detail, and a summonable Atlas drawer. Every piece of
+information has exactly one home per screen; the design contract is
+[DESIGN.md](../DESIGN.md) at the repo root, and its signal-ownership table is
+the acceptance checklist for any UI change.
 
-Inbox groups agent communication into one thread per session, sorted by
-newest item first: `humanctl note` posts, detected needs-you asks (the v3
-reader's state transitions, with their `stateReason`), and persisted
-ask-the-session Q&A. The thread list row shows the agent, a one-line preview
-of the newest item, a level chip (blocked / review / done / fyi, the same
-semantic colors as everywhere else), relative time, and an unread dot. Unread
-means any item newer than that thread's last-read watermark
-(`inbox.mark-read` / `inbox.mark-all-read`, persisted in `state.json` as
-`lastReadTs`); opening a thread marks it read.
+- **Header** (always present, the frameless window's drag region). Owns the
+  fleet digest sentence ("N need you, M moving, ..."), the header's ONE home for
+  fleet counts including the needs-you number (there is deliberately no ring or
+  hero count beside it: that would be a second home for a count the digest
+  already owns), plus the Atlas summon button and the theme toggle. It renders
+  the codex quota chip ONLY when quota exceeds 80 percent; below that the chip
+  is silent and Metrics / Atlas own the number. Fleet spend and token totals do
+  NOT live in the header either; their owner is the Metrics view, summarized in
+  the Atlas drawer.
+- **Nav rail** (hidden by default). A left hover hot-edge, 8px wide, whose
+  vertical range starts BELOW the header so it never fights the window drag
+  region. A hover of at least 150ms reveals the rail as an overlay; mouse-out
+  hides it. `Cmd+\` pins it as a fixed column that pushes content over.
+  Contents top to bottom: Inbox (with an unread badge), Metrics, Fleet,
+  Sessions, a divider, Settings. Keys `1`/`2`/`3`/`4` switch Inbox / Metrics /
+  Fleet / Sessions. Every switch is the registered `app.set-view` command;
+  pinning is `app.set-nav`.
+- **Views**: Inbox (default), Metrics, Fleet, Sessions, Settings.
+- **Session detail**: opening any session from any view shows the full-width
+  detail with a back breadcrumb; `Esc` returns to the calling view.
+- **Atlas drawer**: a summonable right-side overlay (key `a` or the header
+  button), never a permanent column. `Esc` or a scrim click closes it.
 
-The detail pane renders the humanctl-updates stream by default (notes,
-detected asks, and Q&A as calm timeline entries); "Show full conversation"
-expands the same dossier timeline component Focus uses (not a fork) inline,
-for when the stream alone is not enough context. The thread header offers
-Reply (the same ask-the-session composer as Focus, against that session),
-Resume, and Open in Linear when a ref exists.
+Vocabulary is fixed (DESIGN.md): session states are `running`, `needs input`,
+`needs approval`, `blocked`, `stalled`, `stale`, `finished`, `archived`. Note
+levels (`fyi`, `review`, `blocked`, `done`) appear only as chips on note items,
+never as session states. Colors are semantic per axis; harness identity is
+conveyed by a neutral built-in glyph shape, never by color.
+
+## Inbox (default view)
+
+Inbox is message-centric: one thread per session, assembled from `humanctl
+note` posts, detected needs-you asks (the v3 reader's state transitions with
+their `stateReason`), and persisted ask-the-session Q&A. Two panes only: the
+thread list and the thread detail. Selecting a thread renders the FULL
+session-detail component into the second pane (the same component family as
+the full-width detail below, never a fork): the notes stream prominent at the
+top, then the AI summary block, the conversation tail, the quick responses +
+composer, the touched chips, and the session-details disclosure.
+
+Row anatomy is exactly three lines (DESIGN.md "Row anatomy"):
+
+- Line 1: the neutral harness glyph, the custom session title, and the relative
+  time ladder (`now`, `Nm`, `Nh`, weekday for this week, `M/D` beyond). An
+  unread dot sits on the left edge. Unread means any thread item newer than that
+  thread's last-read watermark (`inbox.mark-read` / `inbox.mark-all-read`,
+  persisted in `state.json` as `lastReadTs`); opening a thread marks it read.
+- Line 2: the state chip plus the message to the human, first sentence only, in
+  priority order: the newest unresolved detected-ask excerpt, else the newest
+  note message, else the newest completion line.
+- Line 3: the working-directory basename.
+
+A compact toolbar sits above the list: a fuzzy search over title + dir +
+preview, a state filter, a harness filter, and a sort (recent | needs-first |
+alpha). This search/filter/sort state is renderer ephemera, exempt from the
+command registry by the AGENTS.md invariant's exemption clause (it is transient
+UI state like scroll position, and touches no disk, process, or other session).
+
+`Enter` (or the context menu's open) promotes the selected thread to the
+full-width session detail, entered from Inbox; `Esc` returns. A thread whose
+session has aged out of the recent scan cannot offer resume or reply (those need
+the live row); its pane shows the stream with an honest note instead.
 
 The empty state is honest: "No agent updates yet. Agents post here via
-`humanctl note`," with the CLI one-liner shown, never a fake zero-state
-graphic.
+`humanctl note`," with the CLI one-liner shown, never a fake zero-state graphic.
 
-## Atlas panel (right rail, all modes)
+## Session detail (full width)
 
-The right rail is Atlas in every mode: a digest line, the needs-you queue
-(unchanged behavior from the old Focus-only right rail, now shared), and an
-advisory chat. Atlas answers are grounded in `pulse --json`'s lane summary,
-recent notes, and the top-N session states with their reasons; the prompt
-requires citing which sessions or lanes an answer refers to and saying "I
-don't see that" rather than guessing. Atlas is advisory only: it answers and
-recommends, it never invokes a registry command itself. Every exchange is
-logged as an `atlas.ask` observation and persisted to `~/.humanctl/atlas.jsonl`,
-restored on launch so the thread survives a restart.
+The session detail is one component family, reused (not forked) by both Inbox
+and Sessions. Top to bottom:
+
+- Header: the harness glyph, the title, the state chip with its reason, and the
+  time. A back breadcrumb returns to the calling view; `Esc` does the same. A
+  pin/unpin control lives here (and in the context menu). Top-right is a
+  split-button "Resume in <Harness>" using the per-harness destination
+  preference already stored in state; its dropdown offers the other destination,
+  Reveal transcript, and Copy session id.
+- Notes stream: the humanctl-updates timeline (notes with level chips, detected
+  asks, and btw Q&A) as calm entries.
+- Cached AI summary block: a manual-trigger summary (unchanged mechanics),
+  labeled with its engine and age.
+- Conversation: the live dossier timeline, built from real substantive events
+  read tail-first, wired to upward infinite scroll. Every truncation is an
+  explicit element ("~N earlier events not shown · load older"); a timeline that
+  verifiably reaches the beginning ends with "start of session"; a live
+  indicator ("live · updated Ns ago") tracks real event times while the watched
+  session updates.
+- Ask the session: the persisted quick-response + composer block (the same
+  component the Inbox reply uses, not a fork).
+- Touched chips: repos and issue keys, sourced only from the session reader's
+  own extracted refs (`extractIssueKeys` and the transcript-mentioned
+  repo/working-directory paths, via `readDetail`'s `linearRefs`), never from
+  `lib/pulse.js`. They fill in asynchronously after the first paint.
+- Session details disclosure: cwd, ids, context %, tokens, engine.
+
+## Sessions view (the complete fleet)
+
+Sessions replaces the old Wall: the complete-fleet list, denser rows than Inbox
+but the same three-line anatomy. Sort by recent | state | created | title; the
+same search / state / harness filters as the Inbox toolbar (also renderer
+ephemera). Pinned sessions float to the top. Pin/unpin from the context menu or
+the detail header. There is no kanban and no peek overlay in 0.15.x (both were
+deliberately cut).
+
+## Metrics and Fleet (placeholder views)
+
+Metrics (0.16) and Fleet (0.17) are quiet placeholders in this release: they
+state which release brings them and, in Metrics' case, point at the Atlas drawer
+for the current numbers in the meantime. Neither shows fabricated data. Metrics
+will be the one owner of spend / tokens / quota over time; Fleet will add the
+shape of the fleet (a graph), not a second session list.
+
+## Atlas drawer (summonable)
+
+Atlas is a summonable right-side overlay drawer (key `a` or the header button),
+a behavioral change from the old persistent rail. Its contents:
+
+- Fleet digest: the exact same digest component the header renders (one owner,
+  reused, never a second digest).
+- Needs-you-now queue: the ranked list of sessions whose turn is yours; click a
+  row to open its full detail.
+- Resources: the spend estimate, tokens, and codex quota with reset time. This
+  is the drawer summarizing the numbers Metrics will own; the header still shows
+  quota only above 80 percent.
+- Ask Atlas: an advisory-only chat grounded in `pulse --json`'s lane summary,
+  recent notes, and the top-N session states with their reasons. The prompt
+  requires citing which sessions or lanes an answer refers to and saying "I
+  don't see that" rather than guessing. Atlas never invokes a registry command
+  itself. Every exchange is logged as an `atlas.ask` observation and persisted
+  to `~/.humanctl/atlas.jsonl`, restored on launch so the thread survives a
+  restart.
 
 ## Custom right-click context menu
 
-Every session row, inbox thread, and the empty background area has a custom
-HTML context menu (not the native OS menu, so it can match the app's design
-language and show consistent entries). Menu entries are exactly the
-applicable REGISTERED commands for that target (a session row offers resume,
-open-in-app, reveal, summarize, ask, pin/unpin, and mark-read when it has an
-inbox thread; a thread offers open, mark-read, reply, resume; the background
-offers mode and rail/theme toggles). No entry bypasses the registry. Keyboard
-navigable (arrow keys, Enter, Escape); dismisses on Escape or a click outside
-the menu.
+Every session row, inbox thread, and the empty background has a custom HTML
+context menu (not the native OS menu, so it matches the app's design language
+and shows reasons and shortcuts consistently). Menu entries are exactly the
+applicable REGISTERED commands for that target: a session row offers resume /
+open-in-app, reveal, copy id, summarize, and pin/unpin; a thread offers open,
+mark-read, resume, and pin; the background offers the view switches, the Atlas
+summon, the nav-pin toggle, and the theme toggle. No entry bypasses the
+registry. Keyboard navigable (arrows, Enter, Escape); dismisses on Escape or a
+click outside.
 
 ## State model (who the ball is with)
 
 A session's state is derived from real signals, never fabricated. Since v3 the
-state axis reads the CONTENT of the transcript tail, not just who spoke last:
-a 2026-07 ground-truth audit of 60 real sessions graded the old
+state axis reads the CONTENT of the transcript tail, not just who spoke last: a
+2026-07 ground-truth audit of 60 real sessions graded the old
 lastRole-plus-decay heuristic at 36% precision, and the failure modes it found
 drive the rules below. The reader (`lib/sessions.js`) classifies every row and
-attaches `state`, `stateReason`, and `tier`; the renderer overlays notes on
-top and owns no classification logic or time constants of its own.
+attaches `state`, `stateReason`, and `tier`; the renderer overlays notes on top
+and owns no classification logic or time constants of its own.
 
 - blocked: the session has a `blocked` note.
-- needs you, when the tail actually asks for you:
+- needs input, when the tail actually asks for you:
   - the final substantive assistant message is question-shaped (ends on a
     question aimed at you) or decision-shaped (handoff phrases like "say the
     word", "your call", "only you can", "ready for your review",
-    "reviewDecision REVIEW_REQUIRED"), with a future-tense guard so "I'll
-    report when it's ready for your merge" does not count;
+    "reviewDecision REVIEW_REQUIRED"), with a future-tense guard so "I'll report
+    when it's ready for your merge" does not count;
   - or you interrupted the turn (`[Request interrupted by user]`, Codex
     `turn_aborted`) and no assistant turn followed: only you can resume;
   - or your last reply was a question or directive the agent never picked up;
   - or the session has a `review` note.
-- done: the session has a `done` note that is its newest signal (a done note
+- finished: the session has a `done` note that is its newest signal (a done note
   clears needs-you immediately; activity after the note reopens it), or the
-  final assistant message is completion-shaped ("merged", "shipped",
-  "killed", "complete") with no trailing ask.
-- working: tool activity is in flight, or the tail is a fresh progress report,
+  final assistant message is completion-shaped ("merged", "shipped", "killed",
+  "complete") with no trailing ask.
+- running: tool activity is in flight, or the tail is a fresh progress report,
   or your own turn was just picked up (fresh means within the last 30 minutes).
-- idle: everything else, including progress-shaped tails that went stale
+- stalled: everything else, including progress-shaped tails that went stale
   without asking anything.
 
 Every state carries an honest reason ("asks you a question", "awaiting your
-go-ahead", "note: blocked"), surfaced in the queue rows, the dossier subline,
-tooltips, and the Inbox thread stream.
+go-ahead", "note: blocked"), surfaced in the row line 2, the detail header, the
+Atlas queue, and tooltips.
 
 Substantive events only: trailing local commands (`/model`, `/effort`) and
-metadata appends (pr-link, mode, custom-title, last-prompt lines) neither
-change the state nor refresh the session's age. A dead thread whose file was
-touched by a footer rewrite stays dead; a pending ask behind a stray `/model`
-stays a pending ask. Headless one-shot sessions (humanctl's own summarizer
-probes, other `claude -p` runs) are filtered from the interactive list
-entirely, mirroring the Codex-side automation filter.
+metadata appends (pr-link, mode, custom-title, last-prompt lines) neither change
+the state nor refresh the session's age. A dead thread whose file was touched by
+a footer rewrite stays dead; a pending ask behind a stray `/model` stays a
+pending ask. Headless one-shot sessions (humanctl's own summarizer probes, other
+`claude -p` runs) are filtered from the interactive list entirely, mirroring the
+Codex-side automation filter.
 
 ## Attention tiers (how long a session stays on your desk)
 
-The old single 18h needs-you cliff is replaced by three tiers, aged by the
-last substantive event's own timestamp (never file mtime) and validated by
+The old single 18h needs-you cliff is replaced by three tiers, aged by the last
+substantive event's own timestamp (never file mtime) and validated by
 resume-pattern mining over the full local session history:
 
 - hot (under 24h idle): full-strength display.
-- drifting (24h to 7 days): still listed, needs-you shape retained, rendered
+- drifting (24h to 7 days): still listed, needs-input shape retained, rendered
   visually secondary. About 1 in 3 day-old sessions is eventually picked back
   up, but few within the next day; drifting keeps them reachable without
   stealing attention.
-- archived (over 7 days): drops from Focus and Inbox and from all counts; the
-  Wall keeps it, dimmed. Past 7 idle days only ~6% of sessions ever resume.
+- archived (over 7 days): drops from Inbox and from all counts; the Sessions
+  view keeps it, dimmed. Past 7 idle days only ~6% of sessions ever resume.
 
 Within tiers the reader sorts needs-you first, then session depth (message
-count), then recency, following the mining's odds ratios (depth 2.23, age
-1.82, question-tail 1.46). `TIER_HOT_MS` and `TIER_DRIFT_MS` live in
-`lib/sessions.js` and are the single source; `NEED_DECAY_MS` remains as an
-alias equal to the hot tier for `lib/pulse.js` consumers. Explicit notes
-(`blocked`, `review`) do not decay.
+count), then recency, following the mining's odds ratios (depth 2.23, age 1.82,
+question-tail 1.46). `TIER_HOT_MS` and `TIER_DRIFT_MS` live in `lib/sessions.js`
+and are the single source; `NEED_DECAY_MS` remains as an alias equal to the hot
+tier for `lib/pulse.js` consumers. Explicit notes (`blocked`, `review`) do not
+decay.
 
-The persistent right rail's needs-you queue (part of the Atlas panel, above)
-owns needs-you and blocked in every mode: it is the priority queue you work
-down. The left roster is the full inventory, every state as full rows (rail
-v2: title, one-line summary, cwd basename + harness + time; no context bar).
-Fleet totals (claude spend, codex API-equivalent, tokens, codex quota) live in
-the Atlas panel and the header, for every mode.
+## Live dossier timeline (honest truncation + sub-2s appends)
+
+The watched-agent conversation timeline is built from real substantive events
+(your messages, the agent's messages, interrupts, tool activity collapsed into
+counted runs) read TAIL-FIRST from the transcript, so it always matches the
+latest messages. Two rules keep it honest and live:
+
+- Explicit truncation, never a silent splice. Transcripts routinely exceed the
+  bounded read cap, and tool_result lines are 56-80% of tail bytes in the wild,
+  so timeline pages are budgeted by substantive events, not raw bytes. Every cut
+  is a visible element: "~N earlier events not shown · load older" (the count is
+  a density estimate, marked ~) loads the next bounded chunk backward on demand
+  (also driven by upward infinite scroll), and a timeline that verifiably
+  reaches the beginning ends with "start of session".
+- Incremental appends for the watched session only. Transcripts are append-only,
+  so the main process keeps a per-file cursor (inode, size, line-aligned byte
+  offset) for the ONE session open in the detail and, on its fs events, reads
+  only the bytes appended since the last read, pushing parsed events straight to
+  the renderer. Measured end to end (fs append to renderer push): 125-160ms. The
+  detail shows "live · updated Ns ago", driven by real event times. Claude
+  custom-title lines and Codex turn markers are picked up from appended bytes;
+  the session's state is re-derived through the same needs-you v3 classifier the
+  list uses. Rotation or truncation (inode change, size shrink) is never papered
+  over: the cursor resets and the timeline re-reads a full page. Background
+  sessions keep the debounced list refresh; only the selected session gets the
+  hot path.
+
+The incremental parser and cursor math (rotation, partial-line flushes,
+multibyte alignment, probe filtering) are covered by `npm run reader:selftest`.
+
+## Actions (resume destinations)
+
+Every session offers two resume destinations; a per-harness preference in
+Settings picks which one is the primary button, and the other stays one click
+away in the detail header's split-button dropdown. The preference persists in
+local `state.json`.
+
+- Terminal: writes a temp `.command` file that opens a Terminal window in the
+  session's working directory running `claude --resume <id>` or
+  `codex resume <id>`. This is the original path and works with the CLIs alone.
+- Desktop app: opens the harness's own app through its registered deep link.
+  What each link actually does differs, and the labels say so:
+  - Claude Code: `claude://resume?session=<uuid>`. The Claude desktop app
+    imports the CLI session's transcript and opens it as a resumable desktop
+    session. Labeled "Resume in Claude app".
+  - Codex: `codex://threads/<thread-uuid>`. The Codex desktop app opens that
+    thread; you can continue it there. Labeled "Open in Codex app".
+
+Honest signals: the desktop-app option only appears when the OS reports a real
+handler for that harness's scheme (`app.getApplicationNameForProtocol`), so the
+button never exists on a machine where it could not work. If the link fails at
+click time, the error is surfaced in the toast. Both deep links were verified
+end to end on macOS with the current Claude and Codex desktop apps; the schemes
+are read from each app's `Info.plist` (`CFBundleURLTypes`) and are not a public
+documented API, so a future app release could change them.
+
+## Ask the session
+
+The session detail carries an "Ask the session" block under the AI summary:
+three quick prompts (Status? / What do you need from me? / Summarize this
+thread) plus a freeform input. The answer comes from the session itself, resumed
+headlessly through its own harness CLI, so it is grounded in the session's full
+context rather than the transcript tail. Question and answer pairs render as a
+compact thread with engine and age, persist across restarts like summaries
+(capped), and every question carries the `[humanctl btw]` sentinel prefix. The
+same block is the Inbox reply (one composer, not a fork).
+
+The footprint differs per harness and the block says which one applies:
+
+- Claude Code sessions: `claude -p --resume <id> --no-session-persistence`,
+  which writes nothing to disk (verified byte-identical). Available by default,
+  safe even while the session is open in a terminal.
+- Codex sessions: `codex exec resume <id>` always appends the question and
+  answer into the real thread (there is no headless fork), pinned to
+  `sandbox_mode=read-only` because resume otherwise runs full-access regardless
+  of the thread's original sandbox. The first Codex ask shows a one-line
+  disclosure with a confirm, the acknowledgement persists, and asks are refused
+  while the session is actively working. The reader treats persisted probe turns
+  as non-substantive so they can never flip a session's state, refresh its age,
+  or mask a real ask.
+
+Mechanics, verification, and the cost notes live in
+[ask-session.md](./ask-session.md).
+
+## Token and quota data (real)
+
+Both harnesses record real token usage, so the fleet numbers are real, not
+estimated:
+
+- Claude logs `message.usage` (input / output / cache) plus the model per
+  assistant turn, so spend is computed from `pricing.js` and shown as an
+  API-equivalent value (both harnesses are usually plan-billed, so it is framed
+  as "what this would cost at API rates", not a literal bill).
+- Codex logs `token_count` events carrying cumulative usage and live rate
+  limits, so the app shows the real Codex quota: 5h and weekly windows with
+  used-percent and reset time, plus plan type.
+
+Spend, tokens, and quota surface in the Atlas drawer's Resources block (and, in
+0.16, the Metrics view). The header shows the quota chip only above 80 percent.
+
+## Command registry
+
+Everything the app can do that mutates durable state, spawns a process, or
+observes another session is a registered command (`lib/commands.js`), invocable
+from the UI (IPC), from the CLI against the running app (a control socket), and
+logged as one event line in `~/.humanctl/events.jsonl`. The view switch
+(`app.set-view`), the nav pin (`app.set-nav`), theme, engine, pins, mark-read,
+resume, reveal, summarize, ask, and Atlas ask all route through it. Renderer
+ephemera (hover, selection, scroll position, and the Inbox/Sessions search /
+filter / sort) are exempt. See [commands.md](./commands.md).
+
+## Performance posture
+
+The shell honors the DESIGN.md SLOs as constraints: DOM rebuilds are
+signature-gated so unchanged data does not rebuild; touched chips fill
+asynchronously after the first paint; there are no timers beyond the existing
+20s list poll, the one hover-intent timer for the nav rail, and a 1s cosmetic
+live-indicator ticker that fetches nothing; and at idle the app does zero
+self-triggered refresh (the poll returns early on an unchanged signature, and
+the `~/.humanctl` watcher ignores its own event-log writes via
+`isInboxRelevantChange`).
+
+## Privacy posture (born clean)
+
+This repo is public. The rules that keep it safe:
+
+- The code reads transcripts but never copies them into the repo.
+- Screenshots and demos use the synthetic fixture in `renderer.js` / `inbox.js`,
+  never real sessions. See [repo-hygiene.md](./repo-hygiene.md).
+- Harness identity uses neutral built-in glyphs; no vendor brand asset is ever
+  committed (runtime icon extraction with a glyph fallback arrives in a later
+  release and still commits nothing).
+- `scripts/secret-scan.sh` fails the build if anything that looks like a
+  credential is tracked.
 
 ## Run it
 
@@ -149,6 +375,27 @@ From source (live, for development):
 ```bash
 npm install
 npm run desktop
+```
+
+The renderer is static HTML/CSS/JS with no build step. When the
+`window.humanctl` IPC bridge is absent (the page opened in a plain browser), it
+falls back to synthetic fixtures, so the whole UI renders and is driveable
+without launching Electron:
+
+```bash
+npm run renderer     # serves electron/renderer/ at http://localhost:4173
+```
+
+This is the default fast loop for interface work. Use the real Electron app only
+for what the browser cannot show: real session data, the `window.humanctl` IPC
+surface, native window chrome (frameless drag, the macOS traffic lights), or
+real-session performance.
+
+Quick checks without the GUI:
+
+```bash
+npm run desktop:sessions          # print the recent-session table to stdout
+HUMANCTL_SMOKE=1 npm run desktop  # boot the window, print a marker, quit (CI-safe)
 ```
 
 ## Install it (/Applications)
@@ -161,16 +408,14 @@ npm run app:install     # builds with electron-builder, installs to /Application
 open /Applications/humanctl.app
 ```
 
-The installer (`scripts/install-app.sh`) targets `/Applications`; if that is
-not writable it falls back to `~/Applications` and says so. It removes any
-existing copy at both locations first, so there is never a duplicate for
-Spotlight to get confused by.
-
-`npm run app:build` alone produces `dist/mac-arm64/humanctl.app`; `npm run
-app:dmg` produces a shareable `.dmg`. These are unsigned (no Apple Developer
-cert needed); a locally built app opens without a Gatekeeper prompt. If you ever
-move a downloaded copy and macOS blocks it, right-click the app and choose Open
-once, or run `xattr -dr com.apple.quarantine /Applications/humanctl.app`.
+The installer (`scripts/install-app.sh`) targets `/Applications`; if that is not
+writable it falls back to `~/Applications` and says so. It removes any existing
+copy at both locations first, so there is never a duplicate for Spotlight to get
+confused by. `npm run app:build` alone produces `dist/mac-arm64/humanctl.app`;
+`npm run app:dmg` produces a shareable `.dmg`. These are unsigned; a locally
+built app opens without a Gatekeeper prompt. If macOS blocks a moved copy,
+right-click the app and choose Open once, or run
+`xattr -dr com.apple.quarantine /Applications/humanctl.app`.
 
 ## Signed + notarized release (to share with other Macs)
 
@@ -200,43 +445,6 @@ runtime, and notarizes via Apple's notary service. Without a cert installed,
 `app:release` will stop with a clear error; the unsigned `app:build` /
 `app:install` path keeps working regardless.
 
-Quick checks without the GUI:
-
-```bash
-npm run desktop:sessions          # print the recent-session table to stdout
-HUMANCTL_SMOKE=1 npm run desktop  # boot the window, print a marker, quit (CI-safe)
-```
-
-## Live dossier timeline (honest truncation + sub-2s appends)
-
-The watched-agent timeline is built from real substantive events (your
-messages, the agent's messages, interrupts, tool activity collapsed into
-counted runs) read TAIL-FIRST from the transcript, so it always matches the
-latest messages. Two rules keep it honest and live:
-
-- Explicit truncation, never a silent splice. Transcripts routinely exceed the
-  bounded read cap, and tool_result lines are 56-80% of tail bytes in the wild,
-  so timeline pages are budgeted by substantive events, not raw bytes. Every
-  cut is a visible element: "~N earlier events not shown · load older" (the
-  count is a density estimate, marked ~) loads the next bounded chunk backward
-  on demand, and a timeline that verifiably reaches the beginning ends with
-  "start of session".
-- Incremental appends for the watched session only. Transcripts are
-  append-only, so the main process keeps a per-file cursor (inode, size,
-  line-aligned byte offset) for the ONE session open in the dossier and, on its
-  fs events, reads only the bytes appended since the last read, pushing parsed
-  events straight to the renderer. Measured end to end (fs append to renderer
-  push): 125-160ms. The dossier header shows "live · updated Ns ago", driven by
-  real event times. Claude custom-title lines and Codex turn markers are picked
-  up from appended bytes; the session's state is re-derived through the same
-  needs-you v3 classifier the list uses. Rotation or truncation (inode change,
-  size shrink) is never papered over: the cursor resets and the timeline
-  re-reads a full page. Background sessions keep the debounced list refresh;
-  only the selected session gets the hot path.
-
-The incremental parser and cursor math (rotation, partial-line flushes,
-multibyte alignment, probe filtering) are covered by `npm run reader:selftest`.
-
 ## How it is built
 
 No build step, no bundler. The renderer is plain HTML and JS.
@@ -246,36 +454,35 @@ No build step, no bundler. The renderer is plain HTML and JS.
   metadata, a per-session context map (`readBlocks`), and real token usage
   (`readUsage`, cached by mtime). Bounded reads past the 12MB cap are
   tail-anchored (the newest bytes, never the head) and say what they skipped
-  (`truncated`, `skippedHeadBytes`). `readTimelinePage` serves the dossier
+  (`truncated`, `skippedHeadBytes`). `readTimelinePage` serves the detail
   timeline in substantive-event-budgeted backward pages; `readAppended` reads
   only appended bytes through a line-aligned per-file cursor
-  (`primeTailCursor`). It never writes and never makes a network call. It is a
-  plain Node module, so it runs and tests on its own.
-- `electron/pricing.js` holds approximate public token prices, used only for a
-  local spend estimate (always labeled "est"). Update it as vendor pricing
-  changes; it is the single place to do so.
-  `readDetail` adds the per-session last-exchange, Linear refs, generated HTML
-  files, skills used, reasoning effort, and ultracode flag (Claude logs these;
-  Codex exposes effort/quota, not skills, and we never fake the gap).
-- `electron/main.js` owns the window, watches the session dirs (fs.watch) to push
-  live updates (debounced for the list, immediate cursor-fed appends for the
-  hot session), exposes read-only IPC (`sessions:list/read/timeline`,
-  `status:get`, `session:hot`, `skills:aggregate`, `*:reveal/open`), persists
-  local UI state (mode, theme, temperature, pins, summary engine, selection,
-  cached AI summaries) under userData, and runs the opt-in `session:summarize`
-  (local `claude` or `codex` CLI, cached by engine and file mtime). It also
-  sets the app icon from `electron/assets/`.
-- `electron/preload.js` is the locked bridge: a small, explicit set of calls,
-  no direct fs, no network.
-- `electron/renderer/` is the UI: the conductor home with Inbox / Focus / Wall
-  modes, a per-session timeline and context map, light/dark themes. With no
-  bridge (a plain browser, for a screenshot) it falls back to synthetic
-  fixtures, so demos never contain real session content.
+  (`primeTailCursor`). `readDetail` adds the per-session last-exchange, Linear /
+  issue refs, generated HTML files, skills used, reasoning effort, and ultracode
+  flag (Claude logs these; Codex exposes effort/quota, not skills, and we never
+  fake the gap). It never writes and never makes a network call.
+- `lib/pricing.js` holds approximate public token prices, used only for a local
+  spend estimate (always labeled "est"). It is the single place to update.
+- `electron/main.js` owns the window, watches the session dirs (fs.watch) to
+  push live updates (debounced for the list, immediate cursor-fed appends for
+  the hot session), exposes read-only IPC, persists local UI state (view, nav
+  pin, theme, pins, summary engine, selection, cached AI summaries, lastReadTs)
+  under userData, migrates any legacy `mode` key forward to the new `view` key
+  on read, and runs the opt-in `session:summarize` and `session:ask` through the
+  user's own CLIs.
+- `electron/preload.js` is the locked bridge: a small, explicit set of calls, no
+  direct fs, no network.
+- `electron/renderer/` is the UI: `renderer.js` owns shared state/utils, the
+  nav rail, the views, and the session detail; `atlas.js` the summonable drawer;
+  `inbox.js` the Inbox v2 view; `contextmenu.js` the custom right-click menu;
+  `boot.js` calls the boot function last. With no bridge (a plain browser, for a
+  screenshot) it falls back to synthetic fixtures, so demos never contain real
+  session content.
 
 ## Agent inbox (the point of humanctl)
 
 Agents post short aside / BTW messages to you with the CLI; the desktop surfaces
-them as an inbox at the top of the control room:
+them in the Inbox:
 
 ```bash
 humanctl note --level review "PRs are up, need a review + merge in ~5m"
@@ -286,120 +493,8 @@ humanctl note "FYI refactor is going well, no action needed"
 `--level` is one of `fyi | review | blocked | done`. Notes append to
 `~/.humanctl/notes.jsonl` (one global inbox across every repo; the cwd and repo
 are captured automatically). Pass `--session <id>` to link a note to a session
-so the inbox can open it. This is the core loop: agents avoid silently blocking
+so the Inbox can open it. This is the core loop: agents avoid silently blocking
 on you by leaving a small, durable note instead.
-
-## Privacy posture (born clean)
-
-This repo is public. The rules that keep it safe:
-
-- The code reads transcripts but never copies them into the repo.
-- Screenshots and demos use the synthetic fixture in `renderer.js`, never real
-  sessions. See [repo-hygiene.md](./repo-hygiene.md).
-- `scripts/secret-scan.sh` fails the build if anything that looks like a
-  credential is tracked.
-
-## Token and quota data (real)
-
-Both harnesses record real token usage, so the fleet numbers are real, not
-estimated:
-
-- Claude logs `message.usage` (input / output / cache) plus the model per
-  assistant turn, so spend is computed from `pricing.js` and shown as an
-  API-equivalent value (both harnesses are usually plan-billed, so it is framed
-  as "what this would cost at API rates", not a literal bill).
-- Codex logs `token_count` events carrying cumulative usage and live rate
-  limits, so the app shows the real Codex quota: 5h and weekly windows with
-  used-percent and reset time, plus plan type.
-
-## Actions (resume destinations)
-
-Every session offers two resume destinations; a per-harness preference in the
-settings popover picks which one is the primary button, and the other stays one
-click away. The preference persists in local `state.json`.
-
-- Terminal: writes a temp `.command` file that opens a Terminal window in the
-  session's working directory running `claude --resume <id>` or
-  `codex resume <id>`. This is the original path and works with the CLIs alone.
-- Desktop app: opens the harness's own app through its registered deep link.
-  What each link actually does differs, and the labels say so:
-  - Claude Code: `claude://resume?session=<uuid>`. The Claude desktop app
-    imports the CLI session's transcript and opens it as a resumable desktop
-    session. Labeled "Resume in Claude app".
-  - Codex: `codex://threads/<thread-uuid>`. The Codex desktop app opens that
-    thread (the same link the app itself uses for "Open in app"); you can
-    continue it there. Labeled "Open in Codex app".
-
-Honest signals: the desktop-app option only appears when the OS reports a real
-handler for that harness's scheme (`app.getApplicationNameForProtocol`), so the
-button never exists on a machine where it could not work. If the link fails at
-click time, the error is surfaced in the toast. Both deep links were verified
-end to end on macOS with the current Claude and Codex desktop apps; the schemes
-are read from each app's `Info.plist` (`CFBundleURLTypes`) and are not a public
-documented API, so a future app release could change them.
-
-## Ask the session
-
-The watched-agent dossier carries an "Ask the session" block under the AI
-summary: three quick prompts (Status? / What do you need from me? / Summarize
-this thread) plus a freeform input. The answer comes from the session itself,
-resumed headlessly through its own harness CLI, so it is grounded in the
-session's full context rather than the transcript tail. Question and answer
-pairs render as a compact thread with engine and age, persist across restarts
-like summaries (capped), and every question carries the `[humanctl btw]`
-sentinel prefix.
-
-The footprint differs per harness and the block says which one applies:
-
-- Claude Code sessions: `claude -p --resume <id> --no-session-persistence`,
-  which writes nothing to disk (verified byte-identical). Available by
-  default, safe even while the session is open in a terminal.
-- Codex sessions: `codex exec resume <id>` always appends the question and
-  answer into the real thread (there is no headless fork), pinned to
-  `sandbox_mode=read-only` because resume otherwise runs full-access
-  regardless of the thread's original sandbox. The first Codex ask shows a
-  one-line disclosure with a confirm, the acknowledgement persists, and asks
-  are refused while the session is actively working. The reader treats
-  persisted probe turns as non-substantive so they can never flip a session's
-  state, refresh its age, or mask a real ask.
-
-Mechanics, verification, and the cost notes live in
-[ask-session.md](./ask-session.md).
-
-## Status
-
-- Shipped (0.14.0, the inbox + shell redesign): Inbox replaces Triage as the
-  keys-1 default, message-centric rather than session-centric (see "Inbox
-  (default mode)" above). The left roster and the Atlas right rail (digest,
-  needs-you queue, advisory chat) are now persistent across every mode,
-  collapsible and persisted (`app.set-left-rail`, `app.set-right-rail`). Rail
-  v2 rows drop the per-row context bar (context % moved to the Focus dossier
-  only) in favor of title + status, a one-line summary (cached AI summary or
-  last-exchange snippet), and cwd basename + harness + time. A custom
-  registry-driven right-click context menu replaces any native menu. btw
-  (ask-the-session) threads now persist to `~/.humanctl/asks/<sessionId>.jsonl`
-  and survive a restart; a probe still in flight when the window closes is
-  recorded as interrupted, never silently lost.
-- Shipped (the 0.6.x conductor home): Atlas chief-of-staff header (a digest
-  sentence naming who is waiting on you, plus a needs-you hero count). Focus
-  is the roster (the full inventory: pinned / working / idle / done rows)
-  plus a watched-agent panel with timeline and context-map facets and a
-  cumulative-token sparkline. Wall is a tile grid of the whole fleet with a
-  peek overlay. Agents get deterministic nicknames and faces from the session
-  id; a session renamed in Claude Code shows its real title instead. Pins
-  persist. Rows show real signals only: last prompt (or the AI summary when
-  one was made, marked "ai"), context %, cost or API-equivalent, model,
-  reasoning effort, ultracode, Linear refs, generated HTML files, skills.
-  Codex 5h + weekly quota and fleet spend totals; resume in the harness
-  desktop app or in a Terminal window (see Actions below), reveal transcript,
-  open in Linear; opt-in AI summaries with a summary engine picker (Claude
-  Code or Codex CLI) that land in a labeled block in the watched-agent
-  dossier, with engine + age, and persist across restarts; light/dark themes
-  and a considered/loud temperature toggle; live fs.watch updates. The
-  pre-0.6 tabs, back/forward nav, filter chips, search, and spot-check were
-  replaced by the three (then Focus/Triage/Wall, now Inbox/Focus/Wall) modes.
-- Next: per-repo grouping, and optional wake/ping actions (these cross from
-  read-only into control, so they ship behind an explicit opt-in).
 
 ## Notch
 
