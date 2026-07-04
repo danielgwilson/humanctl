@@ -21,7 +21,7 @@ const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
-const { createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads, appendAskLog } = require('../lib/commands');
+const { createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads, appendAskLog, isInboxRelevantChange } = require('../lib/commands');
 
 let win = null;
 
@@ -156,7 +156,21 @@ function watchSessions() {
     // (inbox.threads) is itself mtime-cached (lib/sessions.js's baseScan has
     // a 1.5s TTL), so firing this more often than the list debounce does not
     // add a second full session scan on every keystroke of a note.
-    const w = fs.watch(inboxDir, { recursive: true }, () => { ping(); scheduleInbox(); });
+    //
+    // ~/.humanctl also holds the registry's OWN outputs (events.jsonl and its
+    // events.1.jsonl rotation today, more over time). Without a filter, every
+    // registered command's event-log append is itself a write inside this
+    // watched dir, which re-fires this callback, which schedules the very
+    // inbox refresh that just invoked more commands -- a closed, self-
+    // sustaining loop with no natural damping beyond the coalesce window.
+    // isInboxRelevantChange allowlists the two inputs the Inbox actually
+    // reads (notes.jsonl, asks/*.jsonl) so anything else under ~/.humanctl,
+    // present today or added later, is ignored here by construction.
+    const w = fs.watch(inboxDir, { recursive: true }, (_ev, fn) => {
+      if (!isInboxRelevantChange(fn)) return;
+      ping();
+      scheduleInbox();
+    });
     w.on('error', () => {});
     watchers.push(w);
   } catch { /* dir may not exist; ignore */ }
