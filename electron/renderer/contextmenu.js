@@ -62,9 +62,10 @@
       { label: 'Fleet', k: '3', run: () => setView('fleet') },
       { label: 'Sessions', k: '4', run: () => setView('sessions') },
       { sep: true },
-      { label: 'Atlas', k: 'a', run: () => window.Atlas && window.Atlas.open() },
-      { label: navPinned ? 'Unpin nav rail' : 'Pin nav rail', k: '⌘\\', run: () => toggleNavPinned() },
-      { label: theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme', run: () => el('tTheme').click() },
+      { label: 'Chief of staff', k: 'a', run: () => toggleRightRail() },
+      { label: navPinned ? 'Unpin nav strip' : 'Pin nav strip', k: '⌘\\', run: () => toggleNavPinned() },
+      { label: theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme', run: () => setThemePref(theme === 'light' ? 'dark' : 'light') },
+      { label: 'Settings', run: () => setView('settings') },
     ];
   }
 

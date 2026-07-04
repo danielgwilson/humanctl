@@ -46,7 +46,7 @@ function migrateState(raw) {
 }
 function readState() {
   let raw;
-  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'system', view: 'inbox' }; }
+  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'system', view: 'inbox', navPinned: false, rightRailOpen: false }; }
   const migrated = migrateState(raw);
   if (migrated.__migrated) {
     delete migrated.__migrated;
@@ -792,6 +792,7 @@ const registry = createRegistry({
     'app.set-state': (p, ctx) => applyStatePatch(p.patch, ctx),
     'app.set-view': (p, ctx) => applyStatePatch({ view: p.view }, ctx),
     'app.set-nav': (p, ctx) => applyStatePatch({ navPinned: !!p.pinned }, ctx),
+    'app.set-cos-drawer': (p, ctx) => applyStatePatch({ rightRailOpen: !!p.open }, ctx),
     'app.set-theme': (p, ctx) => applyStatePatch({ theme: p.theme }, ctx),
     'app.set-engine': (p, ctx) => applyStatePatch({ summarizer: p.engine }, ctx),
     'inbox.mark-read': (p, ctx) => markThreadRead(p.threadId, p.at, ctx),
@@ -830,6 +831,7 @@ const IPC_ROUTES = [
   ['state:set', 'app.set-state', (arg) => ({ patch: arg && typeof arg === 'object' ? arg : {} })],
   ['view:set', 'app.set-view', (arg) => ({ view: (arg && arg.view) || '' })],
   ['nav:set', 'app.set-nav', (arg) => ({ pinned: !!(arg && arg.pinned) })],
+  ['cos-drawer:set', 'app.set-cos-drawer', (arg) => ({ open: !!(arg && arg.open) })],
 ];
 for (const [channel, name, map] of IPC_ROUTES) {
   ipcMain.handle(channel, (_e, arg) => registry.invoke(name, map ? map(arg) : (arg || {}), { source: 'ipc' }));
