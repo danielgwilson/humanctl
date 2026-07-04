@@ -27,11 +27,40 @@ let win = null;
 
 // ---- local UI state (pins + theme), persisted under userData, never the repo ----
 function statePath() { return path.join(app.getPath('userData'), 'state.json'); }
+// Shell v2 migration: the legacy `mode` key (focus/wall/inbox) is replaced by
+// the new `view` key (inbox/metrics/fleet/sessions/settings). Map any legacy
+// mode forward once, on read, and drop the old key. This runs on every read so
+// a state.json written by a pre-0.15 build boots straight into the mapped view
+// and never leaves a dangling `mode`; it must never throw or blank-screen, so a
+// missing/corrupt file falls back to a clean default object.
+const LEGACY_MODE_TO_VIEW = { focus: 'inbox', wall: 'sessions', inbox: 'inbox' };
+function migrateState(raw) {
+  const s = raw && typeof raw === 'object' && !Array.isArray(raw) ? raw : {};
+  if (s.mode !== undefined) {
+    if (s.view === undefined) s.view = LEGACY_MODE_TO_VIEW[s.mode] || 'inbox';
+    delete s.mode;
+    s.__migrated = true; // signals writeState to persist the rewrite (see readState)
+  }
+  return s;
+}
 function readState() {
-  try { return JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'system' }; }
+  let raw;
+  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'system', view: 'inbox' }; }
+  const migrated = migrateState(raw);
+  if (migrated.__migrated) {
+    delete migrated.__migrated;
+    // Rewrite once so the legacy `mode` key is gone from disk, not just from
+    // this read. Best-effort: if the write fails, the in-memory value is still
+    // correct and the next boot retries the same migration.
+    try { fs.writeFileSync(statePath(), JSON.stringify(migrated, null, 2)); } catch { /* retried next boot */ }
+  }
+  return migrated;
 }
 function writeState(next) {
-  try { fs.writeFileSync(statePath(), JSON.stringify(next, null, 2)); return true; } catch { return false; }
+  const clean = Object.assign({}, next);
+  delete clean.mode;         // never re-introduce the legacy key
+  delete clean.__migrated;   // internal migration flag, never persisted
+  try { fs.writeFileSync(statePath(), JSON.stringify(clean, null, 2)); return true; } catch { return false; }
 }
 
 function createWindow() {
@@ -683,11 +712,10 @@ const registry = createRegistry({
     'app.open-path': (p) => { shell.openPath(p.path); return { ok: true }; },
     'app.state': () => ({ ok: true, state: readState() }),
     'app.set-state': (p, ctx) => applyStatePatch(p.patch, ctx),
-    'app.set-mode': (p, ctx) => applyStatePatch({ mode: p.mode }, ctx),
+    'app.set-view': (p, ctx) => applyStatePatch({ view: p.view }, ctx),
+    'app.set-nav': (p, ctx) => applyStatePatch({ navPinned: !!p.pinned }, ctx),
     'app.set-theme': (p, ctx) => applyStatePatch({ theme: p.theme }, ctx),
     'app.set-engine': (p, ctx) => applyStatePatch({ summarizer: p.engine }, ctx),
-    'app.set-left-rail': (p, ctx) => applyStatePatch({ leftRailCollapsed: !!p.collapsed }, ctx),
-    'app.set-right-rail': (p, ctx) => applyStatePatch({ rightRailCollapsed: !!p.collapsed }, ctx),
     'inbox.mark-read': (p, ctx) => markThreadRead(p.threadId, p.at, ctx),
     'inbox.mark-all-read': (_p, ctx) => markAllThreadsRead(ctx),
     'session.ask': (p) => sessionAskPersisted(p),
@@ -719,8 +747,8 @@ const IPC_ROUTES = [
   ['open:path', 'app.open-path', (arg) => ({ path: typeof arg === 'string' ? arg : '' })],
   ['state:get', 'app.state', () => ({})],
   ['state:set', 'app.set-state', (arg) => ({ patch: arg && typeof arg === 'object' ? arg : {} })],
-  ['rail:set-left', 'app.set-left-rail', (arg) => ({ collapsed: !!(arg && arg.collapsed) })],
-  ['rail:set-right', 'app.set-right-rail', (arg) => ({ collapsed: !!(arg && arg.collapsed) })],
+  ['view:set', 'app.set-view', (arg) => ({ view: (arg && arg.view) || '' })],
+  ['nav:set', 'app.set-nav', (arg) => ({ pinned: !!(arg && arg.pinned) })],
 ];
 for (const [channel, name, map] of IPC_ROUTES) {
   ipcMain.handle(channel, (_e, arg) => registry.invoke(name, map ? map(arg) : (arg || {}), { source: 'ipc' }));

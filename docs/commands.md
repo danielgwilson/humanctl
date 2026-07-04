@@ -35,11 +35,10 @@ writing:
 | `app.status` | observation | no | `maxAgeH, limit` |
 | `app.state` | observation | no | (none) |
 | `app.set-state` | action | no | `patch*` |
-| `app.set-mode` | action | no | `mode*` (`inbox\|focus\|wall`) |
+| `app.set-view` | action | no | `view*` (`inbox\|metrics\|fleet\|sessions\|settings`) |
+| `app.set-nav` | action | no | `pinned*` |
 | `app.set-theme` | action | no | `theme*` (`light\|dark\|system`) |
 | `app.set-engine` | action | no | `engine*` (`claude\|codex`) |
-| `app.set-left-rail` | action | no | `collapsed*` |
-| `app.set-right-rail` | action | no | `collapsed*` |
 | `inbox.mark-read` | action | no | `threadId*, at` |
 | `inbox.mark-all-read` | action | no | (none) |
 | `session.pin` | action | no | `id*` |
@@ -159,8 +158,8 @@ Examples:
     humanctl app sessions.list --limit 10
     humanctl app session.detail --id 553653c8
     humanctl app session.pin --id 553653c8
-    humanctl app app.set-mode --mode wall
-    humanctl app app.set-mode --mode focus
+    humanctl app app.set-view --view sessions
+    humanctl app app.set-view --view inbox
 
 Dispatch order: `humanctl app` predates the registry and still launches a
 legacy source-checkout workspace UI when its first argument is not
@@ -176,7 +175,7 @@ All three forms try the control socket first. If nothing is listening:
   span`, `humanctl note`, and `humanctl pulse` are themselves thin wrappers
   over this same path, so they, `humanctl app span.run`, and the app's own UI
   share one implementation and one event-log trail.
-- Anything else (an app-only action, like `session.pin` or `app.set-mode`)
+- Anything else (an app-only action, like `session.pin` or `app.set-view`)
   returns an honest error: `"humanctl desktop app is not running (start it
   with \`npm run desktop\` or open the installed app)"`. It never pretends to
   have mutated state it could not reach.
@@ -198,8 +197,9 @@ truncation), `digestParams` shaping, registry dispatch (unknown command,
 missing handler, validation short-circuit, a throwing handler turned into
 `ok: false`, a real `note.post` write), inbox thread assembly (notes,
 detected asks, and persisted btw Q&A each producing the right thread shape),
-the ask-log round-trip (`appendAskLog`/`readAskLog`), the new command
-declarations (`inbox.mark-read`, `app.set-left-rail`/`app.set-right-rail`,
-`atlas.ask`), the event log (entry shape, rotation at the byte boundary, a
+the ask-log round-trip (`appendAskLog`/`readAskLog`), the shell-v2 command
+declarations (`app.set-mode` deleted; `app.set-view`/`app.set-nav` added;
+the persistent-rail commands removed; `inbox.mark-read`, `atlas.ask`),
+the event log (entry shape, rotation at the byte boundary, a
 broken log directory degrading to a no-op), and a real control-socket
 round-trip (including the 0600 mode and stale-socket unlink).
