@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.15.0",
+  "version": "0.15.1",
   "description": "A control plane for the human bottleneck.",
   "main": "electron/main.js",
   "bin": {
@@ -24,12 +24,14 @@
     "pulse:selftest": "node lib/pulse.selftest.js",
     "reader:selftest": "node lib/reader.selftest.js",
     "commands:selftest": "node lib/commands.selftest.js",
+    "perf:selftest": "node scripts/perf-selftest/run.js",
+    "perf:logic-selftest": "node scripts/perf-selftest/logic.selftest.js",
     "desktop": "electron electron/main.js",
     "renderer": "python3 -m http.server 4173 --directory electron/renderer",
     "desktop:sessions": "node lib/sessions.js",
     "app:build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
     "app:dmg": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
-    "app:install": "npm run app:build && bash scripts/install-app.sh",
+    "app:install": "npm run app:build && npm run perf:selftest && bash scripts/install-app.sh",
     "app:release": "electron-builder --mac dmg --config.mac.notarize=true",
     "notch:generate": "cd attic/notch/macos && xcodegen generate",
     "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",

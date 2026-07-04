@@ -101,8 +101,9 @@ const KIND_LABEL = { user: 'you', assistant: 'agent', thinking: 'thinking', 'too
 // Identity: deterministic display name from the session id hash + a NEUTRAL
 // built-in harness glyph. Harness identity is conveyed by GLYPH SHAPE, never
 // vendor art and never color (DESIGN.md: "Harness identity is conveyed by
-// icon, never by color"). Two glyphs only in PR-1: claude and codex. Runtime
-// icon extraction is PR-2 scope and deliberately absent here.
+// icon, never by color"). Two glyphs are the permanent fallback; PR-2 adds
+// runtime icon extraction from the LOCALLY INSTALLED app (never committed,
+// never fixture mode -- see loadHarnessIcons below and lib/harness-icons.js).
 const NAMES = [
   'Goodall', 'Leibniz', 'Curie', 'Turing', 'Hopper', 'Lovelace', 'Feynman', 'Darwin',
   'Bohr', 'Noether', 'Franklin', 'Hodgkin', 'Ramanujan', 'Euler', 'Gauss', 'Hypatia',
@@ -116,10 +117,35 @@ const NAMES = [
 // Two neutral built-in glyphs. Solid disc for claude, hollow ring for codex.
 // Distinguished by shape, so they read the same in light and dark and carry no
 // vendor branding. Rendered as an inline mark, colored by the harness hue only
-// for a faint accent, not to encode identity.
-function harnessGlyph(harness) {
+// for a faint accent, not to encode identity. This is the PERMANENT fallback:
+// fixture mode (no window.humanctl) always uses it, and the real app falls
+// back to it silently whenever runtime icon extraction cannot produce an
+// icon for a harness (app not installed, unreadable plist, decode failure --
+// see loadHarnessIcons below and lib/harness-icons.js's resolveHarnessIconPath).
+function builtinGlyph(harness) {
   const codex = harness === 'codex';
   return `<span class="hglyph ${codex ? 'g-codex' : 'g-claude'}" aria-hidden="true">${codex ? '◯' : '◉'}</span>`;
+}
+// Runtime-extracted icons (PR-2 item 1), keyed by harness id ('claude-code' |
+// 'codex') -> data URL, populated once by loadHarnessIcons(). Fixture mode
+// never populates this map, so demo/screenshots always render the glyph.
+const harnessIconUrls = new Map();
+async function loadHarnessIcons() {
+  if (!window.humanctl || !window.humanctl.getHarnessIcons) return; // fixture mode: glyphs only, by design
+  try {
+    const r = await window.humanctl.getHarnessIcons();
+    if (r && r.ok && r.icons) {
+      for (const [harness, dataUrl] of Object.entries(r.icons)) {
+        if (dataUrl) harnessIconUrls.set(harness, dataUrl);
+      }
+    }
+  } catch { /* any failure: the glyph map below just stays empty */ }
+}
+function harnessGlyph(harness) {
+  const key = harness === 'codex' ? 'codex' : 'claude-code';
+  const url = harnessIconUrls.get(key);
+  if (url) return `<span class="hglyph hicon" aria-hidden="true"><img src="${esc(url)}" alt="" width="16" height="16" /></span>`;
+  return builtinGlyph(harness);
 }
 function hashU(str) {
   let h = 2166136261 >>> 0;
@@ -228,6 +254,38 @@ function cwdBase(cwd) {
   if (!cwd) return '';
   const parts = String(cwd).replace(/\/+$/, '').split('/');
   return parts[parts.length - 1] || cwd;
+}
+
+// ============================================================
+// PR chips (PR-2 item 2, DESIGN.md row anatomy line 3): CACHE-ONLY contract.
+// pulse.pr-chip reads ONLY ~/.humanctl/pulse-cache.json (lib/commands.js
+// prChip): zero network, zero git/gh spawns, ever, from this rendering path.
+// A miss (no cache, repo not configured in pulse, cache expired past pulse's
+// own TTL) renders no chip at all -- never a fake "0/0" -- and refreshing the
+// underlying cache only ever happens when `humanctl pulse` itself runs
+// (manual, or a future scheduled run), never triggered from here.
+// prChipCache is populated once per _refresh()/runInboxFast() tick (batched
+// over the distinct repo basenames on screen, not once per row) so the
+// per-row render stays a synchronous cache lookup, same shape as isUnread().
+// ============================================================
+const prChipCache = new Map(); // repoBase -> chip object | null
+async function refreshPrChips(repoBases) {
+  if (!window.humanctl || !window.humanctl.getPrChip) return;
+  const uniq = [...new Set(repoBases.filter(Boolean))];
+  await Promise.all(uniq.map(async (repo) => {
+    try {
+      const r = await window.humanctl.getPrChip(repo);
+      prChipCache.set(repo, r && r.ok ? r.chip : null);
+    } catch { prChipCache.set(repo, null); }
+  }));
+}
+function prChipHtml(repoBase) {
+  const chip = repoBase ? prChipCache.get(repoBase) : null;
+  if (!chip) return '';
+  const label = `${chip.merged}/${chip.total}`;
+  const ageTxt = chip.stale ? ` &middot; as of ${agoTxt(Date.now() - chip.ageMs)}` : '';
+  const cls = chip.open > 0 ? 'c-need' : 'c-done';
+  return `<span class="prchip ${cls}" title="pulse cache: ${chip.open} open, ${chip.merged} merged${ageTxt ? ageTxt.replace(' &middot; ', ', ') : ''}">${label} PRs${ageTxt}</span>`;
 }
 
 // ============================================================
@@ -640,14 +698,34 @@ function renderHeader() {
   const qpct = qp && qp.used_percent != null ? qp.used_percent : null;
   const chip = el('quotaChip');
   if (qpct != null && qpct > 80) {
-    chip.style.display = '';
+    // A bare `chip.style.display = ''` cannot override `.hdr #quotaChip{display:none}`
+    // (an id selector always outranks the `.chip` class rule that sets
+    // display:inline-flex, regardless of which rule the browser parsed
+    // last), so visibility is toggled with a class the CSS specifically
+    // carves an exception for (`:not(.on)`) instead of relying on inline
+    // style vs. stylesheet specificity.
+    chip.classList.add('on');
     chip.innerHTML = `<span class="dt"></span>codex quota ${qpct}%${qp.resets_at ? ' · resets ' + fmtReset(qp.resets_at) : ''}`;
-    chip.className = 'chip ' + (qpct > 95 ? 'c-block' : 'c-need');
+    chip.className = 'chip on ' + (qpct > 95 ? 'c-block' : 'c-need');
   } else {
-    chip.style.display = 'none';
+    chip.classList.remove('on');
   }
   el('verTag').textContent = status && status.version ? 'v' + status.version : 'demo';
   el('demoBadge').style.display = demo ? '' : 'none';
+  // Summary budget pause chip: honest, ambient, ONLY when the always-on
+  // engine has actually paused for the day (never a running total otherwise;
+  // Settings owns the configured/spent numbers, this chip owns the pause
+  // fact, same "one owner, exception only when summoned" shape as the quota
+  // chip above it). Same class-toggle visibility fix as quotaChip above.
+  const sbc = el('sumBudgetChip');
+  if (sbc) {
+    if (summaryBudgetChip && summaryBudgetChip.paused) {
+      sbc.classList.add('on');
+      sbc.innerHTML = `<span class="dt"></span>summary budget reached today (${fmtUSD(summaryBudgetChip.dailyBudgetUSD)}/day)`;
+    } else {
+      sbc.classList.remove('on');
+    }
+  }
 }
 
 // ============================================================
@@ -823,7 +901,11 @@ function renderDetail() {
   wireResumeSplit(a, wrap);
   wireAsk(a);
   const dtStream = el('dtStream');
-  if (dtStream) dtStream.querySelectorAll('[data-retry-q]').forEach((b) => b.addEventListener('click', () => runAsk(a, b.dataset.retryQ)));
+  if (dtStream) {
+    dtStream.querySelectorAll('[data-retry-q]').forEach((b) => b.addEventListener('click', () => runAsk(a, b.dataset.retryQ)));
+    wireThumbClicks(dtStream);
+    hydrateThumbs(dtStream);
+  }
   el('discTog').addEventListener('click', () => {
     const body = el('discBody');
     body.hidden = !body.hidden;
@@ -927,12 +1009,54 @@ function fillSessionDetails(a) {
 // a note carries an `attachments` field on the data, it is ignored here.
 const LEVEL_LABEL = { blocked: 'blocked', review: 'review', done: 'done', fyi: 'fyi' };
 const LEVEL_HUE = { blocked: 'var(--s-block)', review: 'var(--s-need)', done: 'var(--s-done)', fyi: 'var(--iris)' };
+// Note images (PR-2 item 3): a note's `attachments` array holds filenames
+// under ~/.humanctl/attachments/ (never a raw path -- see lib/commands.js
+// storeNoteImages, which copies the caller's file in). Rendered as small
+// inline thumbnails; clicking one opens the full image via app.open-path,
+// same "open externally, never embed a viewer" pattern session.reveal uses
+// for transcripts. Thumbnails are hydrated async (loadNoteThumb below) since
+// each needs its own IPC read; the placeholder is a quiet loading square, not
+// a broken-image flash.
+function attachmentsHtml(attachments) {
+  const list = Array.isArray(attachments) ? attachments : [];
+  if (!list.length) return '';
+  return `<div class="tsimgs">${list.map((name) => `<span class="tsimg" data-thumb="${esc(name)}" title="click to open"></span>`).join('')}</div>`;
+}
+const noteThumbCache = new Map(); // filename -> data URL
+async function hydrateThumbs(root) {
+  if (!window.humanctl || !window.humanctl.getNoteImage || !root) return;
+  const spans = root.querySelectorAll('.tsimg[data-thumb]');
+  for (const span of spans) {
+    const name = span.dataset.thumb;
+    if (!name) continue;
+    if (noteThumbCache.has(name)) { span.style.backgroundImage = `url(${noteThumbCache.get(name)})`; continue; }
+    try {
+      const r = await window.humanctl.getNoteImage(name);
+      if (r && r.ok && r.dataUrl) {
+        noteThumbCache.set(name, r.dataUrl);
+        span.style.backgroundImage = `url(${r.dataUrl})`;
+      }
+    } catch { /* leave the quiet placeholder */ }
+  }
+}
+function wireThumbClicks(root) {
+  if (!root) return;
+  root.querySelectorAll('.tsimg[data-thumb]').forEach((span) => {
+    span.addEventListener('click', async () => {
+      if (!window.humanctl || !window.humanctl.resolveAttachment) return;
+      const r = await window.humanctl.resolveAttachment(span.dataset.thumb);
+      if (r && r.ok && r.path) window.humanctl.openPath(r.path); // app.open-path: the one registered "open a local file" action
+      else toast('could not open this image.');
+    });
+  });
+}
 function streamItemHtml(it) {
   const ts = (i) => esc(agoTxt(Date.parse(i.ts) || 0));
   if (it.kind === 'note') {
     return `<div class="tsitem" style="--il:${LEVEL_HUE[it.level] || 'var(--iris)'}">
       <div class="th2"><span class="lvl">${esc(LEVEL_LABEL[it.level] || it.level)} &middot; note</span><span class="when2">${ts(it)}</span></div>
       <div class="body2">${esc(it.message)}</div>
+      ${attachmentsHtml(it.attachments)}
     </div>`;
   }
   if (it.kind === 'ask') {
@@ -1213,7 +1337,7 @@ function anatomyRow(a, dense) {
     <span class="sbody">
       <span class="l1">${harnessGlyph(a.harness)}<span class="nm">${nameHtml(a)}</span><span class="when">${timeLadder(a)}</span></span>
       <span class="l2"><span class="chip ${s.cls}"><span class="dt"></span>${s.label}</span><span class="msg">${esc(messageToHuman(a))}</span></span>
-      <span class="l3">${esc(cwdBase(a.cwd) || a.repo)}</span>
+      <span class="l3">${esc(cwdBase(a.cwd) || a.repo)}${prChipHtml(cwdBase(a.cwd) || a.repo)}</span>
     </span>
     <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'}">&#128204;</button>
   </div>`;
@@ -1349,6 +1473,14 @@ function renderSettings() {
         <div class="set-row"><span class="sk">Claude Code</span>${destSeg('claude-code')}</div>
         <div class="set-row"><span class="sk">Codex</span>${destSeg('codex')}</div>
       </div>
+      <div class="set-sect">
+        <h4>Always-on AI summary</h4>
+        <p class="sub">Unread threads that need you get a background summary automatically (haiku, same engine as the manual button), refreshed after roughly 12 new events. It pauses honestly for the rest of the day once it hits this budget; nothing is ever silently over-spent.</p>
+        <div class="set-row"><span class="sk">Daily budget (est USD)</span>
+          <input class="set-num" id="setSumBudget" type="number" min="0.10" step="0.10" value="${esc(String(summaryBudgetUSD))}" />
+        </div>
+        ${summaryBudgetChip ? `<p class="note">Today: ${esc(fmtUSD(summaryBudgetChip.spentUSD))} of ${esc(fmtUSD(summaryBudgetChip.dailyBudgetUSD))}${summaryBudgetChip.paused ? ' -- paused for the rest of today' : ''}.</p>` : ''}
+      </div>
     </div>`;
   el('setTheme').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { theme = b.dataset.val; applyTheme(); if (window.humanctl) window.humanctl.setState({ theme }); renderSettings(); redrawChrome(); }));
   el('setEngine').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { summarizer = b.dataset.val === 'codex' ? 'codex' : 'claude'; if (window.humanctl) window.humanctl.setState({ summarizer }); renderSettings(); toast('AI summary engine: ' + engineLabel(summarizer)); }));
@@ -1360,6 +1492,14 @@ function renderSettings() {
     renderSettings();
     toast((h === 'codex' ? 'Codex' : 'Claude Code') + ' sessions now open in ' + (openPref[h] === 'app' ? 'the desktop app' : 'Terminal') + '.');
   }));
+  const sb = el('setSumBudget');
+  if (sb) sb.addEventListener('change', () => {
+    const v = Math.max(0.1, Number(sb.value) || 1.0);
+    summaryBudgetUSD = v;
+    if (window.humanctl) window.humanctl.setState({ summaryBudgetUSD: v });
+    refreshSummaryBudgetChip().then(() => { renderSettings(); redrawChrome(); });
+    toast('summary budget set to ' + fmtUSD(v) + '/day');
+  });
 }
 
 // ============================================================
@@ -1433,6 +1573,81 @@ function toast(msg) {
 }
 
 // ============================================================
+// Always-on summary engine (PR-2 item 4, DESIGN.md-adjacent: one ambient
+// signal, no new timer). Scope: unread AND needs-* threads only. Piggybacks
+// the EXISTING 20s renderer poll via _refresh() -> runAutoSummaries() above;
+// there is no separate setInterval for this. A thread qualifies for
+// (re)summary when it has no cached summary yet, or has landed >=12 new
+// substantive items since the cached summary's timestamp. Budget: one
+// authoritative unit (estimated dollars/day, lib/pricing.js-priced,
+// lib/summary-budget.js-tracked); on persistent failure electron/main.js
+// returns {skipped:true} and this engine leaves the stale summary exactly as
+// it was (age label included), never blanking it and never toasting.
+// ============================================================
+let summaryBudgetUSD = 1.0;         // default; overridden by state.summaryBudgetUSD
+let summaryBudgetChip = null;       // {paused, spentUSD, dailyBudgetUSD} | null, rendered by renderHeader
+const autoSummaryRunning = new Set(); // sessionIds with an in-flight auto call (dedupe overlapping ticks)
+const AUTO_SUMMARY_EVENT_THRESHOLD = 12;
+
+function threadNeedsAutoSummary(t, a) {
+  if (!a) return false; // no live session row (aged out of scan): nothing to summarize
+  const isNeedsState = a.state === 'need' || a.state === 'block';
+  if (!isNeedsState) return false;
+  const last = lastReadTs[t.sessionId] || 0;
+  const unread = t.items.some((it) => (Date.parse(it.ts) || 0) > last);
+  if (!unread) return false;
+  const cached = summaries.get(a.id);
+  if (!cached) return true; // no summary yet: always qualifies
+  const cachedAt = cached.at || 0;
+  const newSince = t.items.filter((it) => (Date.parse(it.ts) || 0) > cachedAt).length;
+  return newSince >= AUTO_SUMMARY_EVENT_THRESHOLD;
+}
+
+async function refreshSummaryBudgetChip() {
+  if (!window.humanctl || !window.humanctl.getSummaryBudget) return;
+  try {
+    const r = await window.humanctl.getSummaryBudget({ dailyBudgetUSD: summaryBudgetUSD });
+    if (r && r.ok) {
+      const prevPaused = summaryBudgetChip && summaryBudgetChip.paused;
+      summaryBudgetChip = r.budget;
+      if (summaryBudgetChip.paused !== prevPaused) redrawChrome();
+    }
+  } catch { /* the chip is advisory; a failed read just skips this tick */ }
+}
+
+async function runAutoSummaries() {
+  if (!window.humanctl) return;
+  await refreshSummaryBudgetChip();
+  if (summaryBudgetChip && summaryBudgetChip.paused) return; // honest pause: no auto calls fire past the cap
+  const candidates = inboxThreads.filter((t) => {
+    if (autoSummaryRunning.has(t.sessionId)) return false;
+    const a = byId.get(t.sessionId);
+    return threadNeedsAutoSummary(t, a);
+  });
+  if (!candidates.length) return;
+  // One at a time per tick keeps this a background trickle, not a burst of
+  // spawned CLI processes the moment several threads go stale together.
+  const t = candidates[0];
+  const a = byId.get(t.sessionId);
+  autoSummaryRunning.add(t.sessionId);
+  try {
+    const r = await window.humanctl.summarize({ path: a.path, harness: a.harness, engine: 'claude', auto: true });
+    if (r && r.ok && r.summary) {
+      rememberSummary(a.id, { text: r.summary, engine: r.engine || 'claude', at: Date.now() });
+      repaintSummary(a.id, true);
+    } else if (r && r.paused) {
+      summaryBudgetChip = { paused: true, spentUSD: r.spentUSD, dailyBudgetUSD: r.dailyBudgetUSD };
+      redrawChrome();
+    }
+    // r.skipped (401-retry-exhausted / not-authenticated) and any other
+    // failure: intentionally silent, no toast, stale summary (if any) is left
+    // exactly as-is with its existing age label. This IS the honest-skip
+    // behavior the spec calls for.
+  } catch { /* background engine failures are always silent */ }
+  finally { autoSummaryRunning.delete(t.sessionId); }
+}
+
+// ============================================================
 // detail loading (real readSession, cached per id)
 // ============================================================
 async function loadDetail(a) {
@@ -1456,6 +1671,14 @@ function remapAgents() {
   agents = allRows.map((r) => mapAgent(r, allNotes));
   computeDisplayNames(agents);
   byId = new Map(agents.map((a) => [a.id, a]));
+  // PR chips (cache-only, see prChipHtml above): refresh the small set of
+  // distinct repo basenames currently on screen, then repaint once landed.
+  // This is a local cache read (no network, no spawn), so the round trip is
+  // fast; the repaint-after-land pattern avoids blocking remapAgents/render
+  // on it, matching how summaries/asks already repaint their own block in
+  // place rather than gating the main render loop.
+  const repoBases = agents.map((a) => cwdBase(a.cwd) || a.repo);
+  refreshPrChips(repoBases).then(() => redrawActive());
 }
 // Chrome that must stay in sync no matter which view is active.
 function redrawChrome() {
@@ -1589,6 +1812,7 @@ async function load() {
     if (window.Atlas) window.Atlas.hydrateFixture();
     return;
   }
+  await loadHarnessIcons(); // best-effort; harnessGlyph() falls back to the built-in glyph either way
   const st = await window.humanctl.getState();
   if (st && st.ok && st.state) {
     theme = st.state.theme === 'light' ? 'light' : 'dark';
@@ -1603,10 +1827,12 @@ async function load() {
     askAck = st.state.askCodexAck === true;
     if (st.state.selectedId) selId = st.state.selectedId;
     lastReadTs = st.state.lastReadTs || {};
+    if (Number.isFinite(st.state.summaryBudgetUSD) && st.state.summaryBudgetUSD > 0) summaryBudgetUSD = st.state.summaryBudgetUSD;
   }
   applyTheme(); applyNavPinned(); setupNavHover();
   await fetchData();
   if (window.Atlas) await window.Atlas.hydrate();
+  await refreshSummaryBudgetChip();
   remapAgents(); renderHeader(); renderNav(); setView(view);
 }
 let lastSig = '';
@@ -1614,6 +1840,12 @@ const rowSubSig = new Map();
 async function _refresh() {
   if (!window.humanctl) return;
   await fetchData();
+  // Always-on summary engine (PR-2 item 4): evaluated on every poll tick,
+  // independent of the DOM signature gate below, since a thread's summary can
+  // go stale (>=12 new substantive events) without any of the fields that
+  // gate participate changing shape. runAutoSummaries no-ops fast when
+  // nothing qualifies, so this costs nothing extra at idle.
+  runAutoSummaries();
   const sig = allRows.map((r) => r.id + r.ageMs + r.state + ':' + r.tier + ':' + r.contextPct).join('|')
     + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
     + '#' + inboxThreads.map((t) => t.sessionId + ':' + t.lastTs + ':' + t.items.length).join('|')
@@ -1656,6 +1888,7 @@ function applyExternalState(st) {
   openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
   lastReadTs = st.lastReadTs || lastReadTs;
   navPinned = st.navPinned === true;
+  if (Number.isFinite(st.summaryBudgetUSD) && st.summaryBudgetUSD > 0) summaryBudgetUSD = st.summaryBudgetUSD;
   applyTheme(); applyNavPinned();
   const v = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(st.view) ? st.view : view;
   if (v !== view && !overlayOpen()) setView(v); else redrawActive();
