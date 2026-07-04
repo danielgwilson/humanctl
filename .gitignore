@@ -17,3 +17,4 @@ DerivedData
 *.xcodeproj/xcuserdata
 .humanctl/state
 .humanctl/inbox/events.jsonl
+.claude/

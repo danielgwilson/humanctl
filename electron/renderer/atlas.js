@@ -55,9 +55,9 @@
     const need = onDesk().filter((a) => a.state === 'need' || a.state === 'block');
     const rows = need.map((a) => {
       const h = hue(STATE[a.state].hue);
-      return `<div class="qrow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
+      return `<div class="qrow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}">
         <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rz">${esc(a.stateReason || STATE[a.state].label)} &middot; ${esc(a.repo || 'no repo')}</span></span>
-        <span class="chip ${STATE[a.state].cls}"><span class="dt"></span>${esc((a.tier === 'drifting' ? 'drifting · ' : '') + (a.when || ''))}</span>
+        <span class="chip ${STATE[a.state].cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${esc((a.tier === 'drifting' ? 'drifting · ' : '') + (a.when || ''))}</span>
       </div>`;
     }).join('') || `<div class="queue-empty">nothing needs you right now.</div>`;
     return `<div class="atlas-sect">

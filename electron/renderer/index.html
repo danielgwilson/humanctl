@@ -117,11 +117,18 @@ svg{display:block}
 .nav-rail{
   position:fixed; left:0; top:var(--hdr-h); bottom:0; width:var(--nav-w); z-index:60;
   background:var(--panel); border-right:1px solid var(--rule2);
-  box-shadow:12px 0 40px -18px rgba(0,0,0,.55);
+  /* Edge-shadow fix (2026-07 real-use feedback): box-shadow paints past an
+     element's own box regardless of a transform placing that box off-screen,
+     so this rail's shadow was bleeding ~40px back into the visible content
+     even while translateX(-100%) hid the rail itself (confirmed by removing
+     the shadow alone: the left-edge darkening at x=0..64 disappeared
+     entirely). No shadow while hidden or pinned; only the open, overlay
+     state casts one, matching the existing nav-pinned rule below. */
+  box-shadow:none;
   transform:translateX(-100%); transition:transform .16s cubic-bezier(.2,.7,.2,1);
   display:flex; flex-direction:column; padding:var(--s3) var(--s2); gap:2px;
 }
-body.nav-open .nav-rail{ transform:translateX(0); }
+body.nav-open .nav-rail{ transform:translateX(0); box-shadow:12px 0 40px -18px rgba(0,0,0,.55); }
 .nav-item{ display:flex; align-items:center; gap:var(--s3); width:100%; text-align:left;
   font-family:var(--disp); font-size:13.5px; font-weight:600; color:var(--ink2);
   background:transparent; border:0; border-radius:var(--r1); padding:9px var(--s3); cursor:pointer; position:relative; transition:.1s; }
@@ -196,11 +203,15 @@ body.nav-pinned .nav-rail{ box-shadow:none; }
 /* Inbox two-pane shell. The detail pane hosts the SAME .detail component the
    full-width overlay renders (renderer.js renderDetail, host 'inbPreview'),
    so it carries no padding of its own; the .detail wrapper supplies it. The
-   aged-out fallback wraps itself in .prev-fallback instead. */
+   aged-out fallback wraps itself in .prev-fallback instead. .inb-preview is a
+   height-constrained flex column (NOT itself a scroll container) so the
+   composer footer inside .detail can pin to its bottom; see the
+   #detailWrap/.detail/.detail-scroll rules below for the shared column
+   layout both hosts use. */
 .inbox-shell{ height:100%; display:grid; grid-template-columns:340px 1fr; min-height:0; }
 .inb-list{ display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--rule); background:var(--bg2); }
-.inb-preview{ overflow-y:auto; min-width:0; }
-.prev-fallback{ padding:var(--s5); }
+.inb-preview{ display:flex; flex-direction:column; min-height:0; min-width:0; overflow:hidden; }
+.prev-fallback{ padding:var(--s5); overflow-y:auto; min-height:0; flex:1 1 auto; }
 .prev-hd{ display:flex; align-items:flex-start; gap:var(--s3); margin-bottom:var(--s4); }
 .prev-hd .hglyph{ font-size:22px; margin-top:2px; }
 .prev-meta h2{ font-size:19px; font-weight:700; margin:0; letter-spacing:-.02em; }
@@ -234,9 +245,24 @@ body.light .seg2 button.on{ color:#fff; }
 .set-num:focus{ outline:none; border-color:var(--iris); }
 
 /* ---------- SESSION DETAIL (full-width overlay over the active view) ---------- */
-#detailWrap{ position:absolute; inset:0; display:none; background:var(--bg); overflow-y:auto; }
-#detailWrap.on{ display:block; }
-.detail{ max-width:840px; margin:0 auto; padding:var(--s3) var(--s5) var(--s6); display:flex; flex-direction:column; }
+/* Composer-cutoff fix (2026-07): the detail pane is a height-constrained flex
+   column, never a single scrolling blob. #detailWrap and .detail no longer
+   scroll themselves (that was the bug: a plain overflow-y:auto blob puts the
+   composer wherever the content flow happens to end, below the fold on a
+   long conversation or a short window). .detail-scroll is the ONE scrolling
+   region (header + notes + summary + conversation + touched chips +
+   disclosure); the askblock (ask-the-session composer + its suggested-reply
+   row) is a sticky footer, a flex sibling of .detail-scroll, so it stays
+   fully visible at any window height or conversation length. Verified at
+   both 800px and 1000px window heights with a long fixture conversation. */
+#detailWrap{ position:absolute; inset:0; display:none; background:var(--bg); overflow:hidden; }
+#detailWrap.on{ display:flex; flex-direction:column; }
+/* .detail is BOTH the static #detailBody element's own class (the overlay
+   host) AND a wrapper div renderer.js injects inside #inbPreview (the Inbox
+   host), so this one flex-column contract applies identically to both
+   without duplicating it per host. */
+.detail{ max-width:840px; width:100%; margin:0 auto; min-height:0; flex:1 1 auto; display:flex; flex-direction:column; overflow:hidden; }
+.detail-scroll{ flex:1 1 auto; min-height:0; overflow-y:auto; padding:var(--s3) var(--s5) var(--s4); }
 .detail-crumb{ display:flex; align-items:center; gap:var(--s3); padding:var(--s2) 0; }
 .crumb-back{ font-family:var(--mono); font-size:11px; color:var(--ink2); background:transparent; border:1px solid var(--rule2);
   border-radius:var(--r1); padding:5px 11px; cursor:pointer; }
@@ -334,12 +360,16 @@ body.light .resume-menu button:hover{ color:#fff; }
 .tl-more button:disabled{ opacity:.6; cursor:default; }
 .tl-start{ font-family:var(--mono); font-size:9.5px; letter-spacing:.08em; text-transform:uppercase; color:var(--ink4); padding:var(--s2) 0; }
 
-/* ask the session (persisted composer, reused) */
-.askblock{ margin-top:var(--s4); padding:var(--s3) var(--s4); border:1px solid var(--rule); border-left:2px solid var(--s-done); border-radius:var(--r2); background:var(--panel); }
+/* ask the session (persisted composer, reused). A sticky footer: a flex
+   sibling of .detail-scroll (never inside it), so it never scrolls out of
+   view. flex:0 0 auto keeps it at its natural height; the ask-thread's own
+   max-height (below) keeps a long Q&A history from pushing the composer
+   input off-screen instead of the window doing so. */
+.askblock{ flex:0 0 auto; margin:0 var(--s5); padding:var(--s3) var(--s4); border:1px solid var(--rule); border-left:2px solid var(--s-done); border-radius:var(--r2) var(--r2) 0 0; border-bottom:0; background:var(--panel2); max-height:45vh; display:flex; flex-direction:column; min-height:0; }
 .askblock .lh{ display:flex; align-items:center; gap:var(--s3); }
 .askblock .lh .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.12em; text-transform:uppercase; color:var(--s-done); font-weight:600; }
 .askblock .lh .meta{ font-family:var(--mono); font-size:10px; color:var(--ink4); margin-left:auto; }
-.ask-thread{ display:flex; flex-direction:column; gap:var(--s3); margin-top:var(--s3); }
+.ask-thread{ display:flex; flex-direction:column; gap:var(--s3); margin-top:var(--s3); overflow-y:auto; min-height:0; }
 .ask-x{ display:grid; gap:var(--s1); }
 .ask-x .tag{ font-family:var(--mono); font-size:8.5px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink4); flex:0 0 44px; padding-top:2px; }
 .ask-x .q, .ask-x .a{ display:flex; align-items:flex-start; gap:var(--s2); }
@@ -351,11 +381,11 @@ body.light .resume-menu button:hover{ color:#fff; }
 .ask-x .a.err{ border-left-color:var(--s-block); }
 .ask-x .a.err .tag{ color:var(--s-block); }
 .ask-x .a.err .txt{ color:var(--ink2); font-size:12px; }
-.ask-ctl{ display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s3); }
+.ask-ctl{ flex:0 0 auto; display:flex; gap:var(--s2); flex-wrap:wrap; margin-top:var(--s3); }
 .ask-qp{ font-family:var(--mono); font-size:10px; letter-spacing:.02em; color:var(--ink2); background:transparent; border:1px solid var(--rule2); border-radius:999px; padding:4px 11px; cursor:pointer; transition:.12s; }
 .ask-qp:hover{ color:var(--ink); border-color:var(--ink4); }
 .ask-qp:disabled{ opacity:.4; cursor:default; }
-.ask-in{ display:flex; gap:var(--s2); margin-top:var(--s2); }
+.ask-in{ flex:0 0 auto; display:flex; gap:var(--s2); margin-top:var(--s2); }
 .ask-in input{ flex:1 1 auto; min-width:0; font-family:var(--disp); font-size:12.5px; color:var(--ink); background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:7px 10px; outline:none; }
 .ask-in input:focus{ border-color:var(--s-done); }
 .ask-in input::placeholder{ color:var(--ink4); }
@@ -392,10 +422,17 @@ body.light .resume-menu button:hover{ color:#fff; }
 #atlasScrim{ position:fixed; inset:0; z-index:70; background:rgba(4,6,10,.32); opacity:0; pointer-events:none; transition:opacity .2s; }
 #atlasScrim.on{ opacity:1; pointer-events:auto; }
 body.light #atlasScrim{ background:rgba(30,36,48,.14); }
+/* Edge-shadow fix (2026-07 real-use feedback): same bug as .nav-rail above,
+   mirrored on the right edge. box-shadow renders past the element's box
+   regardless of transform, so this drawer's -24px 0 60px shadow was bleeding
+   back into the visible right edge of the window even while fully
+   translateX(100%)-hidden (confirmed: removing the shadow alone flattened
+   the right-edge darkening at x=1200..1279). Only cast the shadow once the
+   drawer is actually open (.on). */
 #atlasDrawer{ position:fixed; top:0; right:0; bottom:0; width:340px; max-width:90vw; z-index:75;
-  background:var(--bg2); border-left:1px solid var(--rule2); box-shadow:-24px 0 60px -12px rgba(0,0,0,.6);
+  background:var(--bg2); border-left:1px solid var(--rule2); box-shadow:none;
   transform:translateX(100%); transition:transform .24s cubic-bezier(.2,.7,.2,1); display:flex; flex-direction:column; }
-#atlasDrawer.on{ transform:translateX(0); }
+#atlasDrawer.on{ transform:translateX(0); box-shadow:-24px 0 60px -12px rgba(0,0,0,.6); }
 .atlas-hd{ height:44px; flex:0 0 auto; display:flex; align-items:center; gap:var(--s2); padding:0 var(--s4); border-bottom:1px solid var(--rule); }
 .atlas-hd .glyph{ font-size:15px; }
 .atlas-hd .ttl{ font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--iris); font-weight:600; }
@@ -446,6 +483,28 @@ body.light #atlasScrim{ background:rgba(30,36,48,.14); }
 body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 .ctxitem:hover .k2, .ctxitem.hi .k2{ color:inherit; opacity:.75; }
 .ctxsep{ height:1px; background:var(--rule); margin:4px 2px; }
+
+/* Dot tooltip (2026-07 real-use feedback: "state dots are unclear"). One
+   shared, pure-CSS, zero-JS component: any element carrying data-tip shows a
+   small bespoke tooltip on hover/focus, consistent with the app's mono/panel
+   language instead of the browser's native unstyled title box. Applied to
+   the unread dot, the harness glyph, and every state chip's dot (the dot
+   itself, not just its neighboring text, so a dot alone is still
+   self-explaining). Delayed slightly so it does not flicker on fast mouse
+   travel across a dense row list; instant enough to read as responsive. */
+[data-tip]{ position:relative; }
+[data-tip]::after{
+  content:attr(data-tip); position:absolute; left:50%; bottom:calc(100% + 7px); transform:translateX(-50%) translateY(2px);
+  font-family:var(--mono); font-size:10.5px; line-height:1.4; color:var(--ink); background:var(--panel2);
+  border:1px solid var(--rule2); border-radius:var(--r1); padding:5px 9px; white-space:nowrap; max-width:260px;
+  box-shadow:0 10px 24px rgba(0,0,0,.4); pointer-events:none; z-index:90;
+  opacity:0; transition:opacity .1s ease .35s, transform .1s ease .35s;
+}
+[data-tip]:hover::after, [data-tip]:focus-visible::after{ opacity:1; transform:translateX(-50%) translateY(0); }
+/* Rows near the left edge would clip a centered tooltip against the nav hot
+   edge; anchor those to the left instead of centering. */
+[data-tip].tip-left::after{ left:0; transform:translateX(0) translateY(2px); }
+[data-tip].tip-left:hover::after, [data-tip].tip-left:focus-visible::after{ transform:translateX(0) translateY(0); }
 
 /* toast */
 #toast{ position:fixed; left:50%; bottom:var(--s5); transform:translateX(-50%) translateY(140%); z-index:95;
