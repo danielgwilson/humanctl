@@ -1,23 +1,23 @@
 'use strict';
 
-// Custom right-click context menu (spec: docs/inbox-ui-v1-spec.md). Native
-// menus break the app's design language and cannot show reasons/shortcuts
-// consistently, so this is plain HTML positioned at the click point.
+// Custom right-click context menu (shell v2). Native menus break the app's
+// design language and cannot show reasons/shortcuts consistently, so this is
+// plain HTML positioned at the click point.
 //
-// Hardline invariant (repo AGENTS.md / docs/commands.md): every entry here
-// calls a function that already routes through a registered command
-// (session.resume, session.open-app, session.reveal, session.summarize,
-// app.set-state for pins, inbox.mark-read, app.set-mode, app.set-theme, ...).
-// This module never touches window.humanctl directly and never invents a new
-// mutation path; it only decides which of the EXISTING actions apply to the
-// clicked target and renders them.
+// Hardline invariant (AGENTS.md / docs/commands.md): every entry here calls a
+// function that already routes through a registered command (session.resume,
+// session.open-app, session.reveal, session.summarize, app.set-state for pins,
+// inbox.mark-read, app.set-view, app.set-nav, ...). This module never touches
+// window.humanctl directly and never invents a new mutation path; it only
+// decides which of the EXISTING actions apply to the clicked target.
 //
-// Depends on globals from renderer.js/inbox.js/atlas.js (el, esc, resumeActs,
-// resumeAgent, openAppAgent, revealAgent, summarizeAgent, openLinear,
-// togglePin, pins, setMode, mode, theme, applyTheme). Loaded last.
+// Depends on globals from renderer.js/inbox.js (el, esc, resumeActs,
+// resumeAgent, openAppAgent, revealAgent, summarizeAgent, copySessionId,
+// togglePin, pins, summaries, detailCache, byId, inboxThreads, openDetail,
+// setView, theme, toggleNavPinned, navPinned, toast). Loaded last.
 
 (function () {
-  let openFor = null; // { type, ... } the target the menu is currently showing
+  let openFor = null;
   let hiIndex = -1;
 
   function menuEl() { return el('ctxmenu'); }
@@ -26,20 +26,16 @@
     if (!a) return [];
     const ra = resumeActs(a);
     const items = [
-      { label: ra.primary.label, run: () => (ra.primary.act === 'resume-app' ? openAppAgent(a) : resumeAgent(a)) },
+      { label: a.state === 'done' ? 'Reveal transcript' : ra.primary.label, run: () => (a.state === 'done' ? revealAgent(a) : (ra.primary.act === 'resume-app' ? openAppAgent(a) : resumeAgent(a))) },
     ];
     if (ra.secondary) items.push({ label: ra.secondary.label, run: () => (ra.secondary.act === 'resume-app' ? openAppAgent(a) : resumeAgent(a)) });
     items.push({ sep: true });
-    items.push({ label: 'Reveal transcript', run: () => revealAgent(a) });
+    items.push({ label: 'Open session', run: () => openDetail(a.id, 'sessions') });
+    if (a.state !== 'done') items.push({ label: 'Reveal transcript', run: () => revealAgent(a) });
+    items.push({ label: 'Copy session id', run: () => copySessionId(a) });
     items.push({ label: summaries.has(a.id) ? 'Refresh AI summary' : 'AI summary', run: () => summarizeAgent(a) });
-    const d = detailCache.get(a.id);
-    const hasLinear = d && d !== 'loading' && d !== 'error' && d.detail && d.detail.linearRefs && d.detail.linearRefs.length;
-    if (hasLinear) items.push({ label: 'Open in Linear', run: () => openLinear(a) });
     items.push({ sep: true });
     items.push({ label: pins.has(a.id) ? 'Unpin' : 'Pin', run: () => togglePin(a.id) });
-    if (window.Inbox && inboxThreads.some((t) => t.sessionId === a.id)) {
-      items.push({ label: 'Mark thread read', run: () => window.Inbox.markRead(a.id) });
-    }
     return items;
   }
 
@@ -54,19 +50,21 @@
       items.push({ sep: true });
       const ra = resumeActs(a);
       items.push({ label: ra.primary.label, run: () => (ra.primary.act === 'resume-app' ? openAppAgent(a) : resumeAgent(a)) });
+      items.push({ label: pins.has(a.id) ? 'Unpin' : 'Pin', run: () => togglePin(a.id) });
     }
     return items;
   }
 
   function entriesForBackground() {
     return [
-      { label: 'Inbox', k: '1', run: () => setMode('inbox') },
-      { label: 'Focus', k: '2', run: () => setMode('focus') },
-      { label: 'Wall', k: '3', run: () => setMode('wall') },
+      { label: 'Inbox', k: '1', run: () => setView('inbox') },
+      { label: 'Metrics', k: '2', run: () => setView('metrics') },
+      { label: 'Fleet', k: '3', run: () => setView('fleet') },
+      { label: 'Sessions', k: '4', run: () => setView('sessions') },
       { sep: true },
+      { label: 'Atlas', k: 'a', run: () => window.Atlas && window.Atlas.open() },
+      { label: navPinned ? 'Unpin nav rail' : 'Pin nav rail', k: '⌘\\', run: () => toggleNavPinned() },
       { label: theme === 'light' ? 'Switch to dark theme' : 'Switch to light theme', run: () => el('tTheme').click() },
-      { label: leftRailCollapsed ? 'Expand left sidebar' : 'Collapse left sidebar', run: () => setLeftRail(!leftRailCollapsed) },
-      { label: rightRailCollapsed ? 'Expand right sidebar' : 'Collapse right sidebar', run: () => setRightRail(!rightRailCollapsed) },
     ];
   }
 
@@ -88,17 +86,14 @@
       node.addEventListener('mouseenter', () => setHighlight(+node.dataset.i, entries));
     });
   }
-
   function setHighlight(i, entries) {
     hiIndex = i;
     menuEl().querySelectorAll('.ctxitem').forEach((n) => n.classList.toggle('hi', +n.dataset.i === i));
   }
-
   function runEntry(e) {
     close();
     if (e && typeof e.run === 'function') { try { e.run(); } catch (err) { toast(String((err && err.message) || err)); } }
   }
-
   function open(evt, target) {
     const entries = entriesFor(target).filter(Boolean);
     if (!entries.length) return;
@@ -107,23 +102,16 @@
     const m = menuEl();
     render(entries);
     m.hidden = false;
-    // Position at the click point, clamped inside the viewport.
     const rect = m.getBoundingClientRect();
     const x = Math.min(evt.clientX, window.innerWidth - rect.width - 8);
     const y = Math.min(evt.clientY, window.innerHeight - rect.height - 8);
     m.style.left = Math.max(4, x) + 'px';
     m.style.top = Math.max(4, y) + 'px';
   }
-  function close() {
-    openFor = null;
-    hiIndex = -1;
-    menuEl().hidden = true;
-  }
+  function close() { openFor = null; hiIndex = -1; menuEl().hidden = true; }
   function isOpen() { return !!openFor; }
 
-  document.addEventListener('mousedown', (e) => {
-    if (isOpen() && !menuEl().contains(e.target)) close();
-  });
+  document.addEventListener('mousedown', (e) => { if (isOpen() && !menuEl().contains(e.target)) close(); });
   document.addEventListener('keydown', (e) => {
     if (!isOpen()) return;
     const entries = (openFor && openFor.entries) || [];
@@ -144,10 +132,6 @@
       if (hiIndex >= 0) runEntry(entries[hiIndex]);
     }
   });
-  // Background target: anywhere that did not already open a more specific
-  // menu (session row / inbox thread wire their own 'contextmenu' handlers
-  // and call e.preventDefault() + stopPropagation is unnecessary since this
-  // bubbling handler only fires when the event was not already handled).
   document.addEventListener('contextmenu', (e) => {
     if (e.defaultPrevented) return;
     e.preventDefault();
