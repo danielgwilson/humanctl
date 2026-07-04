@@ -32,6 +32,30 @@ function hue(varRef) {
 const fmtTok = (n) => { n = n || 0; return n >= 1e9 ? (n / 1e9).toFixed(1) + 'B' : n >= 1e6 ? (n / 1e6).toFixed(1) + 'M' : n >= 1e3 ? (n / 1e3).toFixed(1) + 'k' : String(Math.round(n)); };
 const fmtUSD = (n) => { if (n == null) return null; return n >= 1000 ? '$' + (n / 1000).toFixed(1) + 'k' : n >= 10 ? '$' + n.toFixed(0) : '$' + n.toFixed(2); };
 const fmtReset = (ts) => { if (!ts) return ''; const ms = ts * 1000 - Date.now(); if (ms <= 0) return 'now'; const h = ms / 3.6e6; return h < 1 ? Math.round(h * 60) + 'm' : h < 48 ? h.toFixed(0) + 'h' : (h / 24).toFixed(0) + 'd'; };
+// Absolute local reset clock ("resets 9:41pm" / "resets Sun 12:00am"), never a
+// relative "resets now": the bottom bar's quota rule requires a real datetime,
+// not a countdown. `ts` is codex's real rate_limits resets_at, unix SECONDS.
+function fmtResetClock(ts) {
+  if (!ts) return '';
+  const d = new Date(ts * 1000);
+  const now = new Date();
+  const sameDay = d.toDateString() === now.toDateString();
+  const time = d.toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }).replace(' ', '').toLowerCase();
+  if (sameDay) return time;
+  const dayMs = d - new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const weekday = dayMs > 0 && dayMs < 7 * 86400000 ? d.toLocaleDateString(undefined, { weekday: 'short' }) : d.toLocaleDateString(undefined, { month: 'numeric', day: 'numeric' });
+  return `${weekday} ${time}`;
+}
+// Cadence label from codex's real window_minutes ("5h window" / "weekly").
+function fmtCadence(mins) {
+  if (!mins) return '';
+  if (mins % 10080 === 0) return mins === 10080 ? 'weekly' : (mins / 10080) + 'w';
+  if (mins % 1440 === 0) return (mins / 1440) + 'd';
+  if (mins % 60 === 0) return (mins / 60) + 'h';
+  return mins + 'm';
+}
+// Quota color per DESIGN.md thresholds: neutral <50, amber >50, red >80.
+function quotaCls(pct) { return pct == null ? 'q-na' : pct > 80 ? 'q-red' : pct > 50 ? 'q-amber' : ''; }
 
 // DISPLAY-ONLY narrative cleaner. Codex user messages often begin with wrapper
 // boilerplate ("# Files mentioned by the user:", markdown-comment/heading
@@ -294,11 +318,13 @@ function prChipHtml(repoBase) {
 let agents = [];
 let byId = new Map();
 let allRows = [], status = null, allNotes = [], demo = false;
+let inboxThreads = [];        // declared here (not near load) so functions above load() that read it are never in its TDZ during boot
 // View replaces the old three modes. inbox is the default; metrics/fleet are
 // quiet placeholder views (0.16 / 0.17); sessions replaces the old Wall;
 // settings is a real view now (the old header gear popover is gone).
 let view = 'inbox';           // inbox | metrics | fleet | sessions | settings
 let navPinned = false;        // Cmd+\ pins the nav rail as a fixed column
+let rightRailOpen = false;    // chief-of-staff drawer open state (persisted, default closed)
 // The session detail renders in ONE of two hosts through the same render
 // function (same component family, never forked): 'detailBody' is the
 // full-width overlay (entered from Sessions, or from Inbox via Enter / the
@@ -308,8 +334,9 @@ let detailId = null;          // the session whose detail is showing (either hos
 let detailHostId = null;      // 'detailBody' | 'inbPreview' | null
 let detailFrom = 'inbox';     // which view Esc/back returns to from the overlay
 const overlayOpen = () => detailHostId === 'detailBody' && !!detailId;
-let selId = null;             // the selected session (drives detail + Atlas queue highlight)
-let theme = 'dark';           // dark | light
+let selId = null;             // the selected session (drives which detail renders)
+let theme = 'dark';           // effective: dark | light (what's actually applied)
+let themePref = 'dark';       // stored preference: dark | light | system
 let pins = new Set();
 let summarizer = 'claude';    // claude | codex: which local CLI powers AI summary
 let lastReadTs = {};          // threadId -> ms, from state.json
@@ -566,7 +593,7 @@ function fixtureStatus() {
       codex: { sessions: 5, generated: 240000, totalTokens: 5e6, apiEquivUSD: 1.71 },
       'claude-code': { sessions: 7, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
     },
-    codexQuota: { plan_type: 'pro', primary: { used_percent: 46, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, resets_at: now + 5 * 86400 } },
+    codexQuota: { plan_type: 'pro', primary: { used_percent: 46, window_minutes: 300, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, window_minutes: 10080, resets_at: now + 5 * 86400 } },
     needsYou: 5, working: 4, nearCompaction: 1, sessions: 12, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
   };
@@ -650,9 +677,10 @@ function rollups() {
 }
 
 // ============================================================
-// FLEET DIGEST (one owner: the header). DESIGN.md signal-ownership table:
-// "Fleet digest (counts) | header | Atlas drawer reuses the same component."
-// This is the single digest renderer; the Atlas drawer calls digestHtml() too.
+// FLEET DIGEST (one owner: the bottom context bar). DESIGN.md signal-ownership
+// table: "Fleet digest (counts) | bottom bar | none." Shell v3 moves the
+// digest out of the header AND out of the chief-of-staff drawer (both were
+// second homes for the same signal); this is now the ONLY digest renderer.
 // ============================================================
 function digestData() {
   const desk = onDesk();
@@ -681,66 +709,75 @@ function digestHtml() {
 }
 
 // ============================================================
-// HEADER (shared, never swaps). Owns: brand, the fleet digest (the ONE header
-// home for fleet counts, including the needs-you number), the quota chip
-// (rendered ONLY above 80% per DESIGN.md), the Atlas summon button, and the
-// theme toggle. The old ring/"needs you now" hero block is deleted: it was a
-// second home for the count the digest text already owns (one-owner rule).
-// Fleet totals do not live here either; their one home is the Metrics view,
-// summarized by the Atlas drawer.
+// HEADER (slim: wordmark + version + the right-drawer sidebar-toggle icon.
+// Owns nothing else -- digest, resources, theme, and settings all moved out
+// per the DESIGN.md signal-ownership table update in this release.
 // ============================================================
 function renderHeader() {
-  const r = rollups();
-  el('digest').innerHTML = digestHtml();
-  // Quota chip: DESIGN.md gives the header the quota signal ONLY when quota
-  // exceeds 80 percent. Otherwise it is silent (Metrics / Atlas own it).
-  const qp = r.quota && r.quota.primary;
-  const qpct = qp && qp.used_percent != null ? qp.used_percent : null;
-  const chip = el('quotaChip');
-  if (qpct != null && qpct > 80) {
-    // A bare `chip.style.display = ''` cannot override `.hdr #quotaChip{display:none}`
-    // (an id selector always outranks the `.chip` class rule that sets
-    // display:inline-flex, regardless of which rule the browser parsed
-    // last), so visibility is toggled with a class the CSS specifically
-    // carves an exception for (`:not(.on)`) instead of relying on inline
-    // style vs. stylesheet specificity.
-    chip.classList.add('on');
-    chip.innerHTML = `<span class="dt"></span>codex quota ${qpct}%${qp.resets_at ? ' · resets ' + fmtReset(qp.resets_at) : ''}`;
-    chip.className = 'chip on ' + (qpct > 95 ? 'c-block' : 'c-need');
-  } else {
-    chip.classList.remove('on');
-  }
   el('verTag').textContent = status && status.version ? 'v' + status.version : 'demo';
   el('demoBadge').style.display = demo ? '' : 'none';
-  // Summary budget pause chip: honest, ambient, ONLY when the always-on
-  // engine has actually paused for the day (never a running total otherwise;
-  // Settings owns the configured/spent numbers, this chip owns the pause
-  // fact, same "one owner, exception only when summoned" shape as the quota
-  // chip above it). Same class-toggle visibility fix as quotaChip above.
-  const sbc = el('sumBudgetChip');
-  if (sbc) {
-    if (summaryBudgetChip && summaryBudgetChip.paused) {
-      sbc.classList.add('on');
-      sbc.innerHTML = `<span class="dt"></span>summary budget reached today (${fmtUSD(summaryBudgetChip.dailyBudgetUSD)}/day)`;
-    } else {
-      sbc.classList.remove('on');
-    }
-  }
+  const rb = el('btnRightRail');
+  if (rb) rb.classList.toggle('on', rightRailOpen);
 }
 
 // ============================================================
-// NAV RAIL (hidden by default; hover left hot-edge reveals as overlay; Cmd+\
-// pins it as a fixed column). Contents top to bottom: Inbox (unread badge),
-// Metrics (0.16 placeholder), Fleet (0.17 placeholder), Sessions, divider,
-// Settings. Keys 1/2/3/4 switch the first four (Inbox/Metrics/Fleet/Sessions).
+// BOTTOM CONTEXT BAR (sole home: fleet digest, Codex quota, Claude quota, and
+// the selected session's context-fill % when a session is open). Calm,
+// single line, mono. Quota color: neutral <50, amber >50, red >80.
+// ============================================================
+function quotaItemHtml(label, pct, resetsAt, windowMinutes, extra) {
+  if (pct == null) {
+    return `<span class="cb-item q-na" title="${esc(extra || label + ' quota: no data source')}"><span class="dt"></span>${esc(label)} n/a</span>`;
+  }
+  const cadence = fmtCadence(windowMinutes);
+  const tip = `${cadence ? cadence + ' window' : ''}${resetsAt ? (cadence ? '; ' : '') + 'resets ' + fmtResetClock(resetsAt) : ''}${extra ? ' · ' + extra : ''}`;
+  const resetTxt = resetsAt ? ` · resets ${fmtResetClock(resetsAt)}` : '';
+  return `<span class="cb-item ${quotaCls(pct)}" title="${esc(tip)}"><span class="dt"></span>${esc(label)} ${pct}%${resetTxt}</span>`;
+}
+function renderCtxBar() {
+  const bar = el('ctxBar');
+  if (!bar) return;
+  const r = rollups();
+  const qp = r.quota && r.quota.primary;
+  const qs = r.quota && r.quota.secondary;
+  const codexItem = qp && qp.used_percent != null
+    ? quotaItemHtml('codex', Math.round(qp.used_percent), qp.resets_at, qp.window_minutes, qs && qs.used_percent != null ? `weekly ${Math.round(qs.used_percent)}%${qs.resets_at ? ', resets ' + fmtResetClock(qs.resets_at) : ''}` : '')
+    : quotaItemHtml('codex', null);
+  // Claude exposes no rate-limit/window field in its transcripts (only token
+  // counts for cost estimation) -- confirmed absent, per rev-2 amendment 2.
+  // Ship "n/a" honestly rather than fabricate a percentage.
+  const claudeItem = quotaItemHtml('claude', null, null, null, 'confirmed: Claude Code transcripts expose no rate-limit/window data, only token counts');
+  // overlayOpen() gates this on the full-width detail specifically (not just
+  // any selection): the spec's "selected-session context%" means the session
+  // actually open in view, not merely the last-clicked row in a list.
+  const sel = overlayOpen() && detailId ? byId.get(detailId) : null;
+  const ctxItem = sel && sel.ctxPct != null
+    ? `<span class="cb-item" title="context window fill for the open session">${esc(sel.ctxPct)}% context</span>`
+    : '';
+  bar.innerHTML = `
+    <span class="cb-digest">${digestHtml()}</span>
+    <span class="cb-sep"></span>
+    ${codexItem}
+    <span class="cb-sep"></span>
+    ${claudeItem}
+    ${ctxItem ? `<span class="cb-sep"></span>${ctxItem}` : ''}
+  `;
+}
+
+// ============================================================
+// NAV STRIP (a VISIBLE icon strip by default; hover the strip itself for
+// >=150ms to expand and show labels as an overlay; Cmd+\ pins the widened
+// rail as a fixed column). Contents top to bottom: Inbox (unread badge),
+// Metrics, Fleet, Sessions, then a spacer, then the user/settings picker
+// anchored at the foot (Codex/Claude-Code sidebar-footer style). Keys
+// 1/2/3/4 switch the four views; Settings is reached via the picker's
+// "All settings" (still the registered app.set-view('settings') route).
 // ============================================================
 const NAV = [
   { view: 'inbox', label: 'Inbox', key: '1', glyph: '✉' },
   { view: 'metrics', label: 'Metrics', key: '2', glyph: '◰' },
   { view: 'fleet', label: 'Fleet', key: '3', glyph: '⌘' },
   { view: 'sessions', label: 'Sessions', key: '4', glyph: '☷' },
-  { divider: true },
-  { view: 'settings', label: 'Settings', glyph: '⚙' },
 ];
 function unreadCount() {
   return inboxThreads.filter((t) => {
@@ -748,12 +785,15 @@ function unreadCount() {
     return t.items.some((it) => (Date.parse(it.ts) || 0) > last);
   }).length;
 }
+// humanctl is single-user and local-only (no account system, no Node `os`
+// module in the renderer per preload.js's locked-down bridge), so the picker
+// avatar is a fixed, honest "You" label rather than a fabricated username.
+function userInitial() { return 'Y'; }
 function renderNav() {
   const rail = el('navRail');
   if (!rail) return;
   const un = unreadCount();
-  rail.innerHTML = NAV.map((n) => {
-    if (n.divider) return `<div class="nav-div"></div>`;
+  const items = NAV.map((n) => {
     const active = (view === n.view && !overlayOpen()) ? 'on' : '';
     const badge = (n.view === 'inbox' && un) ? `<span class="nav-badge">${un}</span>` : '';
     const kk = n.key ? `<span class="nav-key">${n.key}</span>` : '';
@@ -763,8 +803,99 @@ function renderNav() {
       ${badge}${kk}
     </button>`;
   }).join('');
+  rail.innerHTML = `${items}<div class="nav-fill"></div>
+    <div class="nav-user">
+      <button class="nav-user-btn" id="navUserBtn" title="theme, settings" aria-haspopup="menu">
+        <span class="av"><span class="dot">${esc(userInitial())}</span></span>
+        <span class="nm">You</span>
+        <span class="gear">&#9881;</span>
+      </button>
+    </div>`;
   rail.querySelectorAll('.nav-item').forEach((b) => b.addEventListener('click', () => setView(b.dataset.view)));
+  const ub = el('navUserBtn');
+  if (ub) ub.addEventListener('click', (e) => { e.stopPropagation(); toggleUserPicker(); });
 }
+
+// ============================================================
+// USER / SETTINGS PICKER (bespoke popover anchored at the foot of the nav
+// strip; Codex/Claude-Code sidebar-footer style). Houses quick theme
+// (light/dark/system), the always-on summary budget (the one real "how often
+// does it run" control this app has -- no fabricated frequency knob), and
+// "All settings", which routes to the existing registered app.set-view
+// ('settings') destination rather than orphaning it.
+// ============================================================
+let userPickerOpen = false;
+function setThemePref(v) {
+  themePref = v === 'light' || v === 'system' ? v : 'dark';
+  applyTheme();
+  if (window.humanctl) window.humanctl.setState({ theme: themePref });
+  redrawActive();
+  renderUserPicker();
+}
+function renderUserPicker() {
+  const box = el('userPicker');
+  if (!box || !userPickerOpen) return;
+  const seg = (id, opts, cur) => `<div class="seg2" id="${id}">${opts.map((o) => `<button data-val="${o[0]}" class="${o[0] === cur ? 'on' : ''}">${esc(o[1])}</button>`).join('')}</div>`;
+  box.innerHTML = `
+    <div class="pk-sect">
+      <div class="pk-l">Theme</div>
+      ${seg('pkTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref)}
+    </div>
+    <hr />
+    <div class="pk-sect">
+      <div class="pk-l">Always-on summary budget</div>
+      <div class="pk-row"><span class="sk">Daily (est USD)</span>
+        <input class="set-num" id="pkSumBudget" type="number" min="0.10" step="0.10" value="${esc(String(summaryBudgetUSD))}" style="width:76px" />
+      </div>
+      ${summaryBudgetChip ? `<p class="note" style="margin:6px 0 0;font-size:10.5px;color:var(--ink4)">today: ${esc(fmtUSD(summaryBudgetChip.spentUSD))} of ${esc(fmtUSD(summaryBudgetChip.dailyBudgetUSD))}${summaryBudgetChip.paused ? ' -- paused' : ''}</p>` : ''}
+    </div>
+    <hr />
+    <button class="pk-item" id="pkAllSettings">All settings&hellip;</button>
+  `;
+  el('pkTheme').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => setThemePref(b.dataset.val)));
+  const sb = el('pkSumBudget');
+  if (sb) sb.addEventListener('change', () => {
+    const v = Math.max(0.1, Number(sb.value) || 1.0);
+    summaryBudgetUSD = v;
+    if (window.humanctl) window.humanctl.setState({ summaryBudgetUSD: v });
+    refreshSummaryBudgetChip().then(() => renderUserPicker());
+    toast('summary budget set to ' + fmtUSD(v) + '/day');
+  });
+  el('pkAllSettings').addEventListener('click', () => { closeUserPicker(); setView('settings'); });
+}
+function openUserPicker() {
+  const box = el('userPicker');
+  const btn = el('navUserBtn');
+  if (!box || !btn) return;
+  const r = btn.getBoundingClientRect();
+  box.style.left = (r.right + 8) + 'px';
+  box.style.bottom = (window.innerHeight - r.bottom) + 'px';
+  box.hidden = false;
+  userPickerOpen = true;
+  renderUserPicker();
+  document.addEventListener('click', onPickerOutsideClick);
+}
+function closeUserPicker() {
+  const box = el('userPicker');
+  if (box) box.hidden = true;
+  userPickerOpen = false;
+  document.removeEventListener('click', onPickerOutsideClick);
+}
+function onPickerOutsideClick(e) {
+  const box = el('userPicker');
+  // Use composedPath(), not box.contains(e.target): a click on a picker
+  // control (e.g. the theme segmented buttons) can trigger a synchronous
+  // re-render that replaces box.innerHTML BEFORE this document-level
+  // listener runs (it fires after the click's own handler on bubble), which
+  // would make e.target a now-detached node and box.contains(e.target)
+  // incorrectly return false, closing the picker out from under the click
+  // that was supposed to update it. composedPath() reflects the DOM as it
+  // was at dispatch time, so it is immune to that race.
+  const path = typeof e.composedPath === 'function' ? e.composedPath() : [e.target];
+  const btn = el('navUserBtn');
+  if (box && !path.includes(box) && !(btn && path.includes(btn))) closeUserPicker();
+}
+function toggleUserPicker() { if (userPickerOpen) closeUserPicker(); else openUserPicker(); }
 
 // ============================================================
 // VIEW SWITCHING (registry-backed via app.set-view). Leaving detail if open.
@@ -793,6 +924,10 @@ function renderView() {
     else if (view === 'settings') renderSettings();
   }
   renderNav();
+  // The bottom context bar shows the open session's context-fill % (its one
+  // owner per DESIGN.md); every view/detail transition passes through here,
+  // so this is the one place that needs to repaint it.
+  renderCtxBar();
 }
 
 // ============================================================
@@ -813,7 +948,6 @@ function openDetail(id, fromView) {
   detailHostId = 'detailBody';
   renderView();
   renderDetail();
-  if (window.Atlas) window.Atlas.renderQueue();
 }
 function closeDetail() {
   detailId = null;
@@ -1429,13 +1563,33 @@ function togglePin(id) {
 // METRICS + FLEET placeholder views (quiet, honest, no fake data). Metrics is
 // where spend/tokens/quota WILL live (0.16); until then it says so.
 // ============================================================
+// Metrics (0.16): the one owner of spend / tokens / quota (DESIGN.md). This
+// ships the basic version -- real numbers, no chart yet; the richer tiles
+// (time-range picker, anomaly line, skills/productivity breakdown) are a
+// fast-follow, called out honestly rather than faked here.
 function renderMetrics() {
+  const r = rollups();
+  const rows = [
+    ['claude spend (est)', r.claudeUSD != null ? fmtUSD(r.claudeUSD) : 'n/a'],
+    ['codex api-equiv (est)', r.codexUSD != null ? fmtUSD(r.codexUSD) : 'n/a'],
+    ['tokens (fleet)', r.tokens ? fmtTok(r.tokens) : 'n/a'],
+  ];
+  if (r.quota && r.quota.primary && r.quota.primary.used_percent != null) {
+    const qp = r.quota.primary;
+    rows.push(['codex quota (' + (fmtCadence(qp.window_minutes) || '5h') + ')', qp.used_percent + '%' + (qp.resets_at ? ' &middot; resets ' + fmtResetClock(qp.resets_at) : '')]);
+  }
+  if (r.quota && r.quota.secondary && r.quota.secondary.used_percent != null) {
+    const qs = r.quota.secondary;
+    rows.push(['codex quota (' + (fmtCadence(qs.window_minutes) || 'weekly') + ')', qs.used_percent + '%' + (qs.resets_at ? ' &middot; resets ' + fmtResetClock(qs.resets_at) : '')]);
+  }
+  rows.push(['claude quota', 'n/a &middot; Claude Code transcripts expose no rate-limit data']);
   el('view-metrics').innerHTML = `
-    <div class="view-hd"><span class="glyph">&#9712;</span><span class="ttl">Metrics</span></div>
-    <div class="placeholder">
-      <div class="ph-num">0.16</div>
-      <div class="ph-msg">Metrics arrive in 0.16.</div>
-      <div class="ph-sub">Spend, tokens, and quota over time will live here, with one owner for each. Until then the Atlas drawer summarizes the current numbers; nothing is faked in the meantime.</div>
+    <div class="view-hd"><span class="glyph">&#9712;</span><span class="ttl">Metrics</span><span class="sub">basic; the fuller view (time range, anomaly line, skills/productivity) is a fast-follow</span></div>
+    <div class="settings">
+      <div class="set-sect">
+        <h4>Resources</h4>
+        <div class="gstats">${rows.map((x) => `<div class="gstat"><span class="k">${x[0]}</span><span class="v">${x[1]}</span></div>`).join('')}</div>
+      </div>
     </div>`;
 }
 function renderFleetPlaceholder() {
@@ -1468,7 +1622,7 @@ function renderSettings() {
     <div class="settings">
       <div class="set-sect">
         <h4>Appearance</h4>
-        <div class="set-row"><span class="sk">Theme</span>${seg('setTheme', [['dark', 'Dark'], ['light', 'Light']], theme)}</div>
+        <div class="set-row"><span class="sk">Theme</span>${seg('setTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref)}</div>
       </div>
       <div class="set-sect">
         <h4>AI summary engine</h4>
@@ -1491,7 +1645,7 @@ function renderSettings() {
         ${summaryBudgetChip ? `<p class="note">Today: ${esc(fmtUSD(summaryBudgetChip.spentUSD))} of ${esc(fmtUSD(summaryBudgetChip.dailyBudgetUSD))}${summaryBudgetChip.paused ? ' -- paused for the rest of today' : ''}.</p>` : ''}
       </div>
     </div>`;
-  el('setTheme').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { theme = b.dataset.val; applyTheme(); if (window.humanctl) window.humanctl.setState({ theme }); renderSettings(); redrawChrome(); }));
+  el('setTheme').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { setThemePref(b.dataset.val); renderSettings(); }));
   el('setEngine').querySelectorAll('button').forEach((b) => b.addEventListener('click', () => { summarizer = b.dataset.val === 'codex' ? 'codex' : 'claude'; if (window.humanctl) window.humanctl.setState({ summarizer }); renderSettings(); toast('AI summary engine: ' + engineLabel(summarizer)); }));
   box.querySelectorAll('[data-openseg] button').forEach((b) => b.addEventListener('click', () => {
     if (b.disabled) return;
@@ -1693,6 +1847,8 @@ function remapAgents() {
 function redrawChrome() {
   renderHeader();
   renderNav();
+  renderCtxBar();
+  if (userPickerOpen) renderUserPicker();
   if (window.Atlas) window.Atlas.refresh();
 }
 function redrawActive() {
@@ -1708,23 +1864,26 @@ function redrawActive() {
 }
 
 // ============================================================
-// theme
+// theme (dark | light | system; the header toggle is gone -- the user picker
+// at the foot of the nav strip is the one entry point per DESIGN.md)
 // ============================================================
+const sysDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)');
 function applyTheme() {
+  theme = themePref === 'system' ? ((sysDark && sysDark.matches) ? 'dark' : 'light') : themePref;
   document.body.classList.toggle('light', theme === 'light');
-  el('tTheme').textContent = theme;
   clearHueCache();
 }
-el('tTheme').addEventListener('click', () => { theme = theme === 'light' ? 'dark' : 'light'; applyTheme(); if (window.humanctl) window.humanctl.setState({ theme }); redrawActive(); });
+if (sysDark && sysDark.addEventListener) {
+  sysDark.addEventListener('change', () => { if (themePref === 'system') { applyTheme(); redrawActive(); } });
+}
 
 // ============================================================
-// NAV RAIL hover intent + pin. The hot edge is 8px wide and its vertical range
-// STARTS BELOW THE HEADER (the header is -webkit-app-region: drag for the
-// frameless window; an overlapping hot edge would fight window dragging). The
-// hot edge element is positioned from the header's bottom to the viewport
-// bottom in CSS (top: var(--hdr-h)); a >=150ms hover intent reveals the overlay
-// rail; mouse-out hides it unless pinned. This is the ONE hover-intent timer;
-// no other timers are introduced (perf: SLOs).
+// NAV STRIP hover intent + pin. The strip is a VISIBLE icon-width column by
+// default (not hidden); hovering it for >=150ms expands it to show labels as
+// an overlay (does not push content); mouse-out collapses it back to icons
+// unless pinned. Cmd+\ pins the widened rail as a fixed column that pushes
+// content over. This is the ONE hover-intent timer; no other timers are
+// introduced (perf: SLOs).
 const HOVER_INTENT_MS = 150;
 let hoverTimer = null;
 function showNav() { document.body.classList.add('nav-open'); }
@@ -1734,21 +1893,38 @@ function applyNavPinned() {
   if (navPinned) document.body.classList.add('nav-open'); else document.body.classList.remove('nav-open');
 }
 function setupNavHover() {
-  const edge = el('navHotEdge');
   const rail = el('navRail');
-  if (edge) {
-    edge.addEventListener('mouseenter', () => { clearTimeout(hoverTimer); hoverTimer = setTimeout(showNav, HOVER_INTENT_MS); });
-    edge.addEventListener('mouseleave', () => { clearTimeout(hoverTimer); });
-  }
   if (rail) {
-    rail.addEventListener('mouseenter', () => { clearTimeout(hoverTimer); showNav(); });
-    rail.addEventListener('mouseleave', () => { clearTimeout(hoverTimer); hoverTimer = setTimeout(hideNav, HOVER_INTENT_MS); });
+    rail.addEventListener('mouseenter', () => { clearTimeout(hoverTimer); hoverTimer = setTimeout(showNav, HOVER_INTENT_MS); });
+    rail.addEventListener('mouseleave', () => { clearTimeout(hoverTimer); hoverTimer = setTimeout(hideNav, HOVER_INTENT_MS); if (userPickerOpen) closeUserPicker(); });
   }
 }
 function toggleNavPinned() {
   navPinned = !navPinned;
   applyNavPinned();
   if (window.humanctl) window.humanctl.setNav(navPinned);
+}
+
+// ============================================================
+// right (chief-of-staff) drawer toggle + persistence (app.set-cos-drawer;
+// named distinctly from the retired shell-v2 app.set-right-rail command so
+// this newer, unrelated concept does not resurrect a deleted name).
+// Atlas.setOnClose fires for EVERY close path (scrim click, Esc, the drawer's
+// own close button, or this toggle), so rightRailOpen and the header icon
+// state never drift from what is actually on screen.
+// ============================================================
+function persistRightRail(nowOpen) {
+  rightRailOpen = nowOpen;
+  renderHeader();
+  if (window.humanctl && window.humanctl.setCosDrawer) window.humanctl.setCosDrawer(nowOpen);
+}
+// window.Atlas is registered by atlas.js, loaded AFTER this file (script tag
+// order in index.html), so this wiring happens in boot.js's load path instead
+// of here at top level.
+function toggleRightRail() {
+  if (!window.Atlas) return;
+  if (window.Atlas.isOpen()) window.Atlas.close();
+  else { window.Atlas.open(); persistRightRail(true); }
 }
 
 // ============================================================
@@ -1761,9 +1937,10 @@ document.addEventListener('keydown', (e) => {
     if (e.key === 'Escape' && e.target.blur) e.target.blur();
     return;
   }
-  if (window.Atlas && window.Atlas.isOpen()) { if (e.key === 'Escape') window.Atlas.close(); return; }
+  if (window.Atlas && window.Atlas.isOpen()) { if (e.key === 'Escape') toggleRightRail(); return; }
+  if (userPickerOpen && e.key === 'Escape') { closeUserPicker(); return; }
   if (e.key === 'Escape' && overlayOpen()) { closeDetail(); return; }
-  if (e.key === 'a' || e.key === 'A') { if (window.Atlas) window.Atlas.open(); return; }
+  if (e.key === 'a' || e.key === 'A') { toggleRightRail(); return; }
   if (e.key === '1') setView('inbox');
   else if (e.key === '2') setView('metrics');
   else if (e.key === '3') setView('fleet');
@@ -1774,12 +1951,11 @@ document.addEventListener('keydown', (e) => {
     else if (e.key === 'Enter') { e.preventDefault(); window.Inbox.openSelected(); }
   }
 });
-el('btnAtlas').addEventListener('click', () => { if (window.Atlas) window.Atlas.open(); });
+el('btnRightRail').addEventListener('click', () => toggleRightRail());
 
 // ============================================================
 // load + realtime
 // ============================================================
-let inboxThreads = [];
 async function fetchData() {
   const [s, l, nt, it] = await Promise.all([
     window.humanctl.getStatus({ maxAgeH: 72, limit: 40 }),
@@ -1813,20 +1989,22 @@ async function runInboxFast() {
   }
 }
 async function load() {
+  if (window.Atlas) window.Atlas.setOnClose(() => persistRightRail(false));
   if (!window.humanctl) {
     demo = true;
     allRows = FIXTURE_ROWS; status = fixtureStatus(); allNotes = FIXTURE_NOTES;
     inboxThreads = (window.Inbox && window.Inbox.fixtureThreads) ? window.Inbox.fixtureThreads() : [];
-    applyTheme(); applyNavPinned(); setupNavHover(); remapAgents(); renderHeader(); renderNav(); setView('inbox');
+    applyTheme(); applyNavPinned(); setupNavHover(); remapAgents(); renderHeader(); renderNav(); renderCtxBar(); setView('inbox');
     if (window.Atlas) window.Atlas.hydrateFixture();
     return;
   }
   await loadHarnessIcons(); // best-effort; harnessGlyph() falls back to the built-in glyph either way
   const st = await window.humanctl.getState();
   if (st && st.ok && st.state) {
-    theme = st.state.theme === 'light' ? 'light' : 'dark';
+    themePref = ['light', 'dark', 'system'].includes(st.state.theme) ? st.state.theme : 'dark';
     view = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(st.state.view) ? st.state.view : 'inbox';
     navPinned = st.state.navPinned === true;
+    rightRailOpen = st.state.rightRailOpen === true;
     pins = new Set(st.state.pins || []);
     summarizer = st.state.summarizer === 'codex' ? 'codex' : 'claude';
     const op = st.state.openPref || {};
@@ -1839,6 +2017,7 @@ async function load() {
     if (Number.isFinite(st.state.summaryBudgetUSD) && st.state.summaryBudgetUSD > 0) summaryBudgetUSD = st.state.summaryBudgetUSD;
   }
   applyTheme(); applyNavPinned(); setupNavHover();
+  if (rightRailOpen && window.Atlas) window.Atlas.open();
   // Perf (2026-07 click-lag investigation): fetchData()'s withUsage:true scan
   // is cheap once lib/sessions.js's caches are warm, but on a cold process
   // (app just launched, or the fleet is large/inactive enough that the
@@ -1850,7 +2029,7 @@ async function load() {
   // below), then let fetchData land and repaint through the same signature
   // gate the 20s poll already uses, so the first screen the user can click on
   // never waits behind a full session scan.
-  remapAgents(); renderHeader(); renderNav(); setView(view);
+  remapAgents(); renderHeader(); renderNav(); renderCtxBar(); setView(view);
   await fetchData();
   if (window.Atlas) await window.Atlas.hydrate();
   await refreshSummaryBudgetChip();
@@ -1917,15 +2096,17 @@ if (window.humanctl && window.humanctl.onSessionAppend) window.humanctl.onSessio
 // the CLI-driven app is visibly the same app.
 function applyExternalState(st) {
   if (!st || typeof st !== 'object') return;
-  theme = st.theme === 'light' ? 'light' : 'dark';
+  themePref = ['light', 'dark', 'system'].includes(st.theme) ? st.theme : 'dark';
   pins = new Set(st.pins || []);
   summarizer = st.summarizer === 'codex' ? 'codex' : 'claude';
   const op = st.openPref || {};
   openPref = { 'claude-code': op['claude-code'] === 'app' ? 'app' : 'terminal', codex: op.codex === 'app' ? 'app' : 'terminal' };
   lastReadTs = st.lastReadTs || lastReadTs;
   navPinned = st.navPinned === true;
+  rightRailOpen = st.rightRailOpen === true;
   if (Number.isFinite(st.summaryBudgetUSD) && st.summaryBudgetUSD > 0) summaryBudgetUSD = st.summaryBudgetUSD;
   applyTheme(); applyNavPinned();
+  if (window.Atlas) { if (rightRailOpen && !window.Atlas.isOpen()) window.Atlas.open(); else if (!rightRailOpen && window.Atlas.isOpen()) window.Atlas.close(); }
   const v = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(st.view) ? st.view : view;
   if (v !== view && !overlayOpen()) setView(v); else redrawActive();
 }

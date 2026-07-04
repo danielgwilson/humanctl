@@ -6,23 +6,27 @@ humanctl is an attention router for a scarce human running many coding-agent ses
 
 **One owner per signal.** Every piece of information has exactly one home per screen. Adding a second home for a signal requires deleting the first. If a review adds a count, digest, or status that already renders elsewhere on the same screen, the PR is wrong by definition.
 
-Signal ownership:
+Signal ownership (updated in shell v3's chrome pass, 0.16.0a):
 
 | Signal | Owner | Exception |
 |---|---|---|
-| Fleet digest (counts) | header | Atlas drawer reuses the same component |
-| What needs the human, ranked | Inbox list order | Atlas drawer may repeat the queue and digest because it is a summoned transient overlay, not an ambient surface |
+| Fleet digest (counts) | bottom context bar | none (sole home; removed from the header and from the chief-of-staff drawer, both former second homes) |
+| What needs the human, ranked | Inbox list order | none |
 | Session state + reason | row chip in lists; header chip in detail | none |
-| Spend, tokens, quota | Metrics view (Atlas drawer summarizes) | header chip only when quota exceeds 80 percent |
+| Spend, tokens, quota | Metrics view | bottom bar shows Codex + Claude quota always (not gated to >80 percent); Claude quota renders "n/a" honestly (Claude Code transcripts expose no rate-limit data) |
 | Complete fleet | Sessions view | none |
-| Fleet chat | Atlas drawer | none |
+| Chief-of-staff chat | right drawer (chat only) | none (resources and digest were removed from this drawer; it is chat-only) |
 | Chat with one session | session detail composer | Inbox reply is the same composer |
-| Context fill | session detail meta | none |
+| Context fill | bottom context bar (when a session is open); session detail meta | none |
 | Notes stream | Inbox | per-session slice in detail |
+| Navigation | left nav strip (visible icon strip, hover-expands, pins) | none |
+| Settings + theme | the user/settings picker at the foot of the nav strip | Settings remains a routable `app.set-view('settings')` destination; the picker is its entry point, not a second, independent home |
 
 ## Information architecture
 
-Nav (hidden rail; hover left edge reveals as overlay; Cmd+backslash pins): Inbox (default), Metrics, Fleet, Sessions, Settings. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. Atlas is a summonable right-side drawer (key: a), never a permanent column.
+Chrome (shell v3): a slim header (wordmark + version + the right-drawer sidebar-toggle icon only) / a VISIBLE left nav icon-strip with a user-settings picker at its foot / the active view / a toggled right chief-of-staff drawer / a persistent bottom context bar.
+
+Nav (a visible icon strip by default -- NOT hidden; hovering the strip itself for >=150ms expands it to show labels as an overlay; Cmd+backslash pins the widened rail as a fixed column): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. Settings is reached through the user/settings picker's "All settings," not a nav-strip icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
 
 ## Vocabulary (one, everywhere)
 

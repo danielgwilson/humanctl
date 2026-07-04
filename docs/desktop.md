@@ -13,41 +13,58 @@ or `codex` CLI (you pick the engine in Settings); the ask-the-session action
 injects a one-turn question into a session through that session's own harness
 CLI (Claude asks leave no trace in the session; Codex asks write the marked
 question into the thread itself and are disclosed and acknowledged before the
-first one runs, see [ask-session.md](./ask-session.md)); and Atlas (below)
-sends a fleet-level prompt through the same local CLI, advisory only, never
-executing anything.
+first one runs, see [ask-session.md](./ask-session.md)); and the chief-of-staff
+chat (below) sends a fleet-level prompt through the same local CLI, advisory
+only, never executing anything.
 
 ## The shell (one rule: one owner per signal)
 
-The shell is deliberately subtracted. There is no persistent left roster and no
-persistent right rail. Instead there is a hidden nav rail, one active view at a
-time, a full-width session detail, and a summonable Atlas drawer. Every piece of
-information has exactly one home per screen; the design contract is
-[DESIGN.md](../DESIGN.md) at the repo root, and its signal-ownership table is
-the acceptance checklist for any UI change.
+The shell is deliberately subtracted, but shell v2's fully-hidden nav rail went
+too far (it was undiscoverable). Shell v3's chrome pass (0.16.0a) restores a
+VISIBLE left nav strip, adds a bottom context bar as the sole home for the
+fleet digest and quota, moves resources into Metrics, and narrows the former
+Atlas drawer to chat only. Every piece of information has exactly one home per
+screen; the design contract is [DESIGN.md](../DESIGN.md) at the repo root, and
+its signal-ownership table is the acceptance checklist for any UI change.
 
-- **Header** (always present, the frameless window's drag region). Owns the
-  fleet digest sentence ("N need you, M moving, ..."), the header's ONE home for
-  fleet counts including the needs-you number (there is deliberately no ring or
-  hero count beside it: that would be a second home for a count the digest
-  already owns), plus the Atlas summon button and the theme toggle. It renders
-  the codex quota chip ONLY when quota exceeds 80 percent; below that the chip
-  is silent and Metrics / Atlas own the number. Fleet spend and token totals do
-  NOT live in the header either; their owner is the Metrics view, summarized in
-  the Atlas drawer.
-- **Nav rail** (hidden by default). A left hover hot-edge, 8px wide, whose
-  vertical range starts BELOW the header so it never fights the window drag
-  region. A hover of at least 150ms reveals the rail as an overlay; mouse-out
-  hides it. `Cmd+\` pins it as a fixed column that pushes content over.
-  Contents top to bottom: Inbox (with an unread badge), Metrics, Fleet,
-  Sessions, a divider, Settings. Keys `1`/`2`/`3`/`4` switch Inbox / Metrics /
-  Fleet / Sessions. Every switch is the registered `app.set-view` command;
-  pinning is `app.set-nav`.
-- **Views**: Inbox (default), Metrics, Fleet, Sessions, Settings.
+- **Header** (always present, the frameless window's drag region). Slim: the
+  wordmark, the version tag, and the right-drawer sidebar-toggle icon button.
+  It owns nothing else -- no digest, no quota chip, no theme control, no
+  settings entry point. Those all moved to the bottom context bar and the
+  user/settings picker (below), each becoming that signal's one owner.
+- **Nav strip** (a VISIBLE icon strip by default, not hidden -- shell v2's
+  fully-hidden rail was undiscoverable and is the mistake this pass corrects).
+  Icons top to bottom: Inbox (unread badge), Metrics, Fleet, Sessions. Hovering
+  the strip itself for at least 150ms expands it to show labels as an overlay
+  (does not push content); mouse-out collapses it back to icons. `Cmd+\` pins
+  the widened rail as a fixed column that pushes content over. Keys
+  `1`/`2`/`3`/`4` switch Inbox / Metrics / Fleet / Sessions. Every switch is the
+  registered `app.set-view` command; pinning is `app.set-nav`. A user/settings
+  picker anchors the foot of the strip (see below).
+- **User / settings picker** (bottom-left, foot of the nav strip; styled like
+  the Codex/Claude-Code sidebar footer). A bespoke popover with quick theme
+  (light/dark/system), the always-on summary budget, and "All settings," which
+  routes to the existing `app.set-view('settings')` destination -- Settings
+  stays a first-class routable view; the picker is its entry point, not a
+  second home. Theme persists via the existing `app.set-theme`.
+- **Views**: Inbox (default), Metrics, Fleet, Sessions, Settings (reached via
+  the picker, not a nav-strip icon).
 - **Session detail**: opening any session from any view shows the full-width
   detail with a back breadcrumb; `Esc` returns to the calling view.
-- **Atlas drawer**: a summonable right-side overlay (key `a` or the header
-  button), never a permanent column. `Esc` or a scrim click closes it.
+- **Chief-of-staff drawer**: a summonable right-side overlay (key `a`, or the
+  header's sidebar-toggle icon button), chat only -- the digest block and the
+  resources block that used to live here are gone, each with exactly one home
+  elsewhere now. Default closed; state persists via `app.set-cos-drawer`.
+  `Esc` or a scrim click closes it (and persists the closed state the same as
+  the header toggle).
+- **Bottom context bar** (always present, one line, mono). The sole home for
+  the fleet digest ("N need you, M moving, ..."), Codex quota (absolute reset
+  clock, e.g. "resets 9:41pm," never "resets now"; hover shows the cadence and
+  windows remaining), Claude quota (shown honestly as "n/a" with a tooltip --
+  Claude Code transcripts expose no rate-limit data, only token counts, so
+  nothing is fabricated), and, when a session's full-width detail is open,
+  that session's context-fill percent. Quota color: neutral under 50 percent,
+  amber over 50, red over 80.
 
 Vocabulary is fixed (DESIGN.md): session states are `running`, `needs input`,
 `needs approval`, `blocked`, `stalled`, `stale`, `finished`, `archived`. Note
@@ -130,33 +147,40 @@ ephemera). Pinned sessions float to the top. Pin/unpin from the context menu or
 the detail header. There is no kanban and no peek overlay in 0.15.x (both were
 deliberately cut).
 
-## Metrics and Fleet (placeholder views)
+## Metrics (basic) and Fleet (placeholder)
 
-Metrics (0.16) and Fleet (0.17) are quiet placeholders in this release: they
-state which release brings them and, in Metrics' case, point at the Atlas drawer
-for the current numbers in the meantime. Neither shows fabricated data. Metrics
-will be the one owner of spend / tokens / quota over time; Fleet will add the
-shape of the fleet (a graph), not a second session list.
+Metrics is basic as of 0.16.0a: it is now the one owner of the Resources block
+(claude spend est, codex api-equiv est, fleet tokens, both codex quota windows
+with absolute reset clocks, and an honest claude-quota n/a row), moved here
+from the former Atlas/chief-of-staff drawer, which no longer renders it. The
+richer Metrics tiles (arbitrary time range, number+bar usage tiles, an anomaly
+line, skills/productivity breakdowns) are a fast-follow, called out honestly in
+the view's own subhead rather than pretended to already exist. Fleet (0.17)
+remains a quiet placeholder: the complete list already lives in Sessions; Fleet
+will add the shape of the fleet (a graph), not a second session list.
 
-## Atlas drawer (summonable)
+## Chief-of-staff drawer (summonable, chat only)
 
-Atlas is a summonable right-side overlay drawer (key `a` or the header button),
-a behavioral change from the old persistent rail. Its contents:
+The chief-of-staff drawer is a summonable right-side overlay (key `a`, or the
+header's sidebar-toggle icon button), narrowed to chat only in shell v3's
+chrome pass -- the digest block and the resources block that used to live here
+are deleted (`atlas.js`'s old `digestHtml()` reuse and `resourcesHtml()`),
+since both had exactly one other home already (the bottom context bar and
+Metrics, respectively) and a second home for either was a one-owner-rule
+violation. Its only contents now:
 
-- Fleet digest: the exact same digest component the header renders (one owner,
-  reused, never a second digest).
-- Needs-you-now queue: the ranked list of sessions whose turn is yours; click a
-  row to open its full detail.
-- Resources: the spend estimate, tokens, and codex quota with reset time. This
-  is the drawer summarizing the numbers Metrics will own; the header still shows
-  quota only above 80 percent.
-- Ask Atlas: an advisory-only chat grounded in `pulse --json`'s lane summary,
-  recent notes, and the top-N session states with their reasons. The prompt
-  requires citing which sessions or lanes an answer refers to and saying "I
-  don't see that" rather than guessing. Atlas never invokes a registry command
-  itself. Every exchange is logged as an `atlas.ask` observation and persisted
-  to `~/.humanctl/atlas.jsonl`, restored on launch so the thread survives a
-  restart.
+- Ask the chief of staff: an advisory-only chat grounded in `pulse --json`'s
+  lane summary, recent notes, and the top-N session states with their reasons.
+  The prompt requires citing which sessions or lanes an answer refers to and
+  saying "I don't see that" rather than guessing. It never invokes a registry
+  command itself. Every exchange is logged as an `atlas.ask` observation and
+  persisted to `~/.humanctl/atlas.jsonl`, restored on launch so the thread
+  survives a restart. (The underlying command name and log file stay `atlas.*`
+  for continuity with existing data; only the UI surface and copy changed.)
+
+Default closed; open/close state persists via `app.set-cos-drawer` (a
+distinctly-named command from the retired shell-v2 `app.set-right-rail`, so
+this newer concept does not resurrect a deleted name for something else).
 
 ## Custom right-click context menu
 
@@ -165,10 +189,10 @@ context menu (not the native OS menu, so it matches the app's design language
 and shows reasons and shortcuts consistently). Menu entries are exactly the
 applicable REGISTERED commands for that target: a session row offers resume /
 open-in-app, reveal, copy id, summarize, and pin/unpin; a thread offers open,
-mark-read, resume, and pin; the background offers the view switches, the Atlas
-summon, the nav-pin toggle, and the theme toggle. No entry bypasses the
-registry. Keyboard navigable (arrows, Enter, Escape); dismisses on Escape or a
-click outside.
+mark-read, resume, and pin; the background offers the view switches, the
+chief-of-staff drawer toggle, the nav-pin toggle, the theme toggle, and
+Settings. No entry bypasses the registry. Keyboard navigable (arrows, Enter,
+Escape); dismisses on Escape or a click outside.
 
 ## State model (who the ball is with)
 
@@ -325,13 +349,21 @@ estimated:
 - Claude logs `message.usage` (input / output / cache) plus the model per
   assistant turn, so spend is computed from `pricing.js` and shown as an
   API-equivalent value (both harnesses are usually plan-billed, so it is framed
-  as "what this would cost at API rates", not a literal bill).
+  as "what this would cost at API rates", not a literal bill). Claude exposes
+  no rate-limit/window field anywhere in its transcripts, confirmed absent (not
+  merely unimplemented), so Claude quota renders "n/a" with an explanatory
+  tooltip everywhere it appears rather than a fabricated number.
 - Codex logs `token_count` events carrying cumulative usage and live rate
-  limits, so the app shows the real Codex quota: 5h and weekly windows with
-  used-percent and reset time, plus plan type.
+  limits (`rate_limits.primary`/`secondary`, each a real `used_percent`,
+  `window_minutes`, and an absolute `resets_at` unix timestamp), so the app
+  shows the real Codex quota: 5h and weekly windows with used-percent and an
+  absolute local reset clock, plus plan type.
 
-Spend, tokens, and quota surface in the Atlas drawer's Resources block (and, in
-0.16, the Metrics view). The header shows the quota chip only above 80 percent.
+Spend, tokens, and Codex quota detail surface in the Metrics view (their one
+owner as of 0.16.0a). The bottom context bar always shows both quotas (Codex
+with its real percent and absolute reset clock; Claude honestly as "n/a") plus
+the fleet digest, regardless of percentage -- there is no header quota chip
+anymore (the header owns nothing but brand and the drawer toggle).
 
 ## Command registry
 
@@ -339,8 +371,9 @@ Everything the app can do that mutates durable state, spawns a process, or
 observes another session is a registered command (`lib/commands.js`), invocable
 from the UI (IPC), from the CLI against the running app (a control socket), and
 logged as one event line in `~/.humanctl/events.jsonl`. The view switch
-(`app.set-view`), the nav pin (`app.set-nav`), theme, engine, pins, mark-read,
-resume, reveal, summarize, ask, and Atlas ask all route through it. Renderer
+(`app.set-view`), the nav pin (`app.set-nav`), the chief-of-staff drawer toggle
+(`app.set-cos-drawer`), theme, engine, pins, mark-read, resume, reveal,
+summarize, ask, and the chief-of-staff ask all route through it. Renderer
 ephemera (hover, selection, scroll position, and the Inbox/Sessions search /
 filter / sort) are exempt. See [commands.md](./commands.md).
 

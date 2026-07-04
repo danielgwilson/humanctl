@@ -29,6 +29,7 @@ contextBridge.exposeInMainWorld('humanctl', {
   getAtlasLog: () => ipcRenderer.invoke('atlas:get-log'),
   setView: (view) => ipcRenderer.invoke('view:set', { view }),
   setNav: (pinned) => ipcRenderer.invoke('nav:set', { pinned }),
+  setCosDrawer: (open) => ipcRenderer.invoke('cos-drawer:set', { open }),
   resumeSession: (arg) => ipcRenderer.invoke('session:resume', arg),
   openInApp: (arg) => ipcRenderer.invoke('session:open-app', arg),
   revealSession: (filePath) => ipcRenderer.invoke('sessions:reveal', filePath),

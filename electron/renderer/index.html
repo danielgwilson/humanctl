@@ -31,8 +31,10 @@
   /* chip flood (quiet, considered) */
   --chip-mix:15%; --chip-ink:78%;
 
-  --hdr-h:52px;      /* header height; the nav hot edge starts BELOW this */
-  --nav-w:220px;     /* nav rail width when open/pinned */
+  --hdr-h:52px;      /* header height; the nav strip starts BELOW this */
+  --nav-w:220px;     /* nav strip width when hover-expanded/pinned */
+  --nav-w-icon:52px; /* nav strip width when collapsed to icons (the default) */
+  --ctxbar-h:30px;   /* bottom context bar height */
 }
 body.light{
   --bg:#f4f5f8; --bg2:#eceef3; --panel:#ffffff; --panel2:#f7f8fb; --rule:#e2e6ee; --rule2:#d3d9e4;
@@ -73,9 +75,12 @@ svg{display:block}
 
 <!-- ===== SHELL LAYOUT (shell v2: nav rail overlay + one active view + detail overlay + Atlas drawer) ===== -->
 <style id="shell">
-.app{ height:100vh; display:grid; grid-template-rows:var(--hdr-h) 1fr; }
+.app{ height:100vh; display:grid; grid-template-rows:var(--hdr-h) 1fr var(--ctxbar-h); }
 
-/* ---------- HEADER (routing surface; the drag region for the frameless window) ---------- */
+/* ---------- HEADER (slim: wordmark + version + sidebar-toggle icon only; the
+   drag region for the frameless window). Digest, resources, and theme/settings
+   controls do NOT live here (one-owner rule: digest -> bottom bar, resources ->
+   Metrics, settings/theme -> the user picker at the foot of the nav strip). ---------- */
 .hdr{
   display:flex; align-items:center; gap:var(--s3);
   height:var(--hdr-h); padding:0 var(--s5) 0 80px;   /* left inset clears the macOS traffic lights */
@@ -91,11 +96,7 @@ svg{display:block}
 .hdr .brand .demo{ font-family:var(--mono); font-size:8.5px; color:var(--s-need); letter-spacing:.06em; text-transform:uppercase;
   border:1px solid color-mix(in srgb, var(--s-need) 40%, transparent); border-radius:4px; padding:1px 5px; }
 
-.hdr .digestwrap{ display:flex; align-items:center; gap:var(--s3); flex:1 1 auto; min-width:0;
-  padding-left:var(--s4); border-left:1px solid var(--rule); }
-.hdr .digest{ font-size:12.5px; color:var(--ink2); letter-spacing:-.005em; line-height:1.3;
-  white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.hdr .digest b{ color:var(--ink); font-weight:600; }
+.hdr .spacer{ flex:1 1 auto; }
 
 .hdr .ctl{ display:flex; gap:var(--s2); align-items:center; flex:0 0 auto; }
 .hdr .ctl button{
@@ -104,49 +105,99 @@ svg{display:block}
   border-radius:5px; padding:5px 9px; cursor:pointer; transition:.12s;
 }
 .hdr .ctl button:hover{ color:var(--ink); border-color:var(--ink4); }
-#btnAtlas{ display:inline-flex; align-items:center; gap:6px; }
-#btnAtlas .a-glyph{ font-size:12px; }
-.hdr #quotaChip:not(.on){ display:none; }
-.hdr #sumBudgetChip:not(.on){ display:none; }
+/* sidebar-toggle icon button (replaces the old "ATLAS" text button). Standard
+   right-rail glyph, no label; the CoS drawer is the only thing it opens. */
+.icon-btn{ display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; padding:0 !important; }
+.icon-btn svg{ width:15px; height:15px; }
+#btnRightRail.on{ color:var(--iris); border-color:var(--iris-dim); }
 
-/* ---------- NAV RAIL: hidden by default, hover left hot-edge reveals overlay, Cmd+\ pins ---------- */
-/* The hot edge is 8px wide and its top starts at var(--hdr-h): it must NOT
-   overlap the header's -webkit-app-region: drag region, or it would fight
-   window dragging. So it spans header-bottom to viewport-bottom only. */
-.nav-hotedge{ position:fixed; left:0; top:var(--hdr-h); bottom:0; width:8px; z-index:45; }
+/* ---------- NAV STRIP: a VISIBLE icon strip by default (0.15.0's fully-hidden
+   rail was the mistake; Daniel could not find it). Collapsed width shows just
+   glyphs + the unread badge; hovering the strip itself (150ms intent) expands
+   it to show labels as an overlay; Cmd+\ pins the widened rail as a fixed
+   column. Keys 1/2/3/4 still switch views. A user/settings picker anchors the
+   foot of the strip (Codex/Claude-Code sidebar-footer style). ---------- */
 .nav-rail{
-  position:fixed; left:0; top:var(--hdr-h); bottom:0; width:var(--nav-w); z-index:60;
+  /* bottom stops ABOVE the context bar (never covers it, even pinned/expanded);
+     the context bar stays a full-bleed, always-visible strip per DESIGN.md
+     (digest's sole home must never be obscured by chrome above it). The rail
+     itself is never translated off-screen in this shell-v3 model (unlike the
+     old shell-v2 hidden rail this replaces) -- it always occupies
+     --nav-w-icon at minimum, so the box-shadow-bleeds-through-a-transform bug
+     fixed for that old model (2026-07 real-use feedback) cannot recur here:
+     the base/collapsed state below carries no box-shadow at all, only the
+     open-overlay state adds one, and it is removed again once pinned. */
+  position:fixed; left:0; top:var(--hdr-h); bottom:var(--ctxbar-h); width:var(--nav-w-icon); z-index:60;
   background:var(--panel); border-right:1px solid var(--rule2);
-  /* Edge-shadow fix (2026-07 real-use feedback): box-shadow paints past an
-     element's own box regardless of a transform placing that box off-screen,
-     so this rail's shadow was bleeding ~40px back into the visible content
-     even while translateX(-100%) hid the rail itself (confirmed by removing
-     the shadow alone: the left-edge darkening at x=0..64 disappeared
-     entirely). No shadow while hidden or pinned; only the open, overlay
-     state casts one, matching the existing nav-pinned rule below. */
-  box-shadow:none;
-  transform:translateX(-100%); transition:transform .16s cubic-bezier(.2,.7,.2,1);
-  display:flex; flex-direction:column; padding:var(--s3) var(--s2); gap:2px;
+  transition:width .16s cubic-bezier(.2,.7,.2,1), box-shadow .16s;
+  display:flex; flex-direction:column; padding:var(--s3) var(--s2); gap:2px; overflow:hidden;
 }
-body.nav-open .nav-rail{ transform:translateX(0); box-shadow:12px 0 40px -18px rgba(0,0,0,.55); }
+/* Hover-expanded (overlay: widens over the content, does not push it) or
+   pinned (widens AND pushes .stage over, see body.nav-pinned below). */
+body.nav-open .nav-rail{ width:var(--nav-w); box-shadow:12px 0 40px -18px rgba(0,0,0,.55); }
+body.nav-pinned .nav-rail{ box-shadow:none; }
 .nav-item{ display:flex; align-items:center; gap:var(--s3); width:100%; text-align:left;
   font-family:var(--disp); font-size:13.5px; font-weight:600; color:var(--ink2);
-  background:transparent; border:0; border-radius:var(--r1); padding:9px var(--s3); cursor:pointer; position:relative; transition:.1s; }
+  background:transparent; border:0; border-radius:var(--r1); padding:9px 0; cursor:pointer; position:relative; transition:.1s;
+  white-space:nowrap; }
 .nav-item:hover{ background:var(--panel2); color:var(--ink); }
 .nav-item.on{ background:color-mix(in srgb, var(--iris) 16%, transparent); color:var(--ink); }
 .nav-item.on .nav-glyph{ color:var(--iris); }
-.nav-glyph{ font-size:14px; width:18px; text-align:center; color:var(--ink3); flex:0 0 auto; }
-.nav-label{ flex:1 1 auto; }
-.nav-key{ font-family:var(--mono); font-size:9px; color:var(--ink4); }
-.nav-badge{ font-family:var(--mono); font-size:9px; font-weight:600; color:#0a0c10; background:var(--iris);
-  border-radius:999px; min-width:16px; height:16px; padding:0 5px; display:inline-flex; align-items:center; justify-content:center; }
+.nav-glyph{ font-size:14px; width:36px; flex:0 0 auto; text-align:center; }
+.nav-label{ flex:1 1 auto; opacity:0; transition:opacity .1s; }
+body.nav-open .nav-label{ opacity:1; }
+.nav-key{ font-family:var(--mono); font-size:9px; color:var(--ink4); opacity:0; flex:0 0 auto; }
+body.nav-open .nav-key{ opacity:1; }
+.nav-badge{ font-family:var(--mono); font-size:8.5px; font-weight:600; color:#0a0c10; background:var(--iris);
+  border-radius:999px; min-width:15px; height:15px; padding:0 4px; display:inline-flex; align-items:center; justify-content:center;
+  position:absolute; left:24px; top:5px; }
+body.nav-open .nav-badge{ position:static; margin-left:auto; }
 body.light .nav-badge{ color:#fff; }
-.nav-div{ height:1px; background:var(--rule); margin:var(--s2) var(--s3); }
+.nav-div{ height:1px; background:var(--rule); margin:var(--s2) 4px; }
+.nav-fill{ flex:1 1 auto; }
 
-/* Pinned: the rail is a fixed column that pushes the content over. */
+/* Pinned: the rail is a fixed widened column that pushes the content over. */
 body.nav-pinned .stage{ margin-left:var(--nav-w); }
-body.nav-pinned .nav-rail{ box-shadow:none; }
+body:not(.nav-pinned) .stage{ margin-left:var(--nav-w-icon); }
+/* The bottom context bar sits BELOW the stage in the grid (its own row), so it
+   needs the identical left inset applied directly (margin-left on .stage does
+   not affect a grid sibling). Un-pinned, the icon strip's own width already
+   reserves the same 52px whether hovered or not (hover only widens as an
+   overlay, per .nav-open above, and does not affect layout), so the bar's
+   inset stays constant at --nav-w-icon in that state; pinned, it matches the
+   widened column. */
+body.nav-pinned .ctxbar{ margin-left:var(--nav-w); }
+body:not(.nav-pinned) .ctxbar{ margin-left:var(--nav-w-icon); }
 .stage{ position:relative; min-height:0; height:100%; overflow:hidden; transition:margin-left .16s cubic-bezier(.2,.7,.2,1); }
+
+/* ---------- USER / SETTINGS PICKER (foot of the nav strip; Codex/Claude-Code
+   sidebar-footer style). Houses theme (light/dark/system), summary frequency,
+   and "All settings" (routes to the existing settings view). Replaces the
+   old top-right theme + settings controls (one owner: the picker). ---------- */
+.nav-user{ flex:0 0 auto; margin-top:auto; padding-top:var(--s2); border-top:1px solid var(--rule); }
+.nav-user-btn{ display:flex; align-items:center; gap:var(--s3); width:100%; text-align:left;
+  background:transparent; border:0; border-radius:var(--r1); padding:8px 0; cursor:pointer; color:var(--ink2); }
+.nav-user-btn:hover{ background:var(--panel2); color:var(--ink); }
+.nav-user-btn .av{ flex:0 0 auto; width:36px; display:flex; align-items:center; justify-content:center; }
+.nav-user-btn .av .dot{ width:20px; height:20px; border-radius:50%; background:var(--iris); color:#0a0c10;
+  font-family:var(--mono); font-size:10px; font-weight:700; display:flex; align-items:center; justify-content:center; }
+body.light .nav-user-btn .av .dot{ color:#fff; }
+.nav-user-btn .nm{ flex:1 1 auto; font-family:var(--disp); font-size:12.5px; font-weight:600; opacity:0; transition:opacity .1s; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+body.nav-open .nav-user-btn .nm{ opacity:1; }
+.nav-user-btn .gear{ font-size:12px; color:var(--ink4); opacity:0; flex:0 0 auto; margin-right:4px; }
+body.nav-open .nav-user-btn .gear{ opacity:1; }
+
+.picker{ position:fixed; z-index:65; min-width:230px; background:var(--panel2); border:1px solid var(--rule2);
+  border-radius:var(--r2); box-shadow:0 16px 40px -8px rgba(0,0,0,.55); padding:var(--s2); }
+.picker[hidden]{ display:none; }
+.picker .pk-sect{ padding:var(--s2) var(--s2) var(--s3); }
+.picker .pk-l{ font-family:var(--mono); font-size:9px; letter-spacing:.1em; text-transform:uppercase; color:var(--ink4); margin-bottom:var(--s2); }
+.picker .pk-row{ display:flex; align-items:center; justify-content:space-between; gap:var(--s2); }
+.picker hr{ border:0; border-top:1px solid var(--rule); margin:2px 0; }
+.pk-item{ display:flex; align-items:center; gap:var(--s2); width:100%; text-align:left; font-family:var(--disp); font-size:12.5px;
+  color:var(--ink); background:transparent; border:0; border-radius:6px; padding:8px var(--s2); cursor:pointer; }
+.pk-item:hover{ background:var(--iris); color:#0a0c10; }
+body.light .pk-item:hover{ color:#fff; }
 
 /* ---------- VIEWS ---------- */
 .view{ position:absolute; inset:0; display:none; flex-direction:column; overflow:hidden; background:var(--bg); }
@@ -243,6 +294,13 @@ body.light .seg2 button.on{ color:#fff; }
 .set-num{ font-family:var(--mono); font-size:12px; color:var(--ink); background:var(--panel2); border:1px solid var(--rule2); border-radius:var(--r1);
   padding:6px 10px; width:100px; }
 .set-num:focus{ outline:none; border-color:var(--iris); }
+
+/* stat list (Metrics' Resources section: spend/tokens/quota, one owner) */
+.gstats{ display:flex; flex-direction:column; border:1px solid var(--rule); border-radius:var(--r2); background:var(--panel); overflow:hidden; }
+.gstat{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--s3); min-height:38px; padding:var(--s1) var(--s4); border-bottom:1px solid var(--rule); }
+.gstat:last-child{ border-bottom:0; }
+.gstat .k{ font-family:var(--mono); font-size:10px; color:var(--ink3); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.gstat .v{ display:flex; align-items:center; gap:var(--s2); font-size:14px; font-weight:600; justify-content:flex-end; white-space:nowrap; }
 
 /* ---------- SESSION DETAIL (full-width overlay over the active view) ---------- */
 /* Composer-cutoff fix (2026-07): the detail pane is a height-constrained flex
@@ -418,7 +476,11 @@ body.light .resume-menu button:hover{ color:#fff; }
 .disc-row .dk{ font-family:var(--mono); font-size:9.5px; color:var(--ink4); text-transform:uppercase; letter-spacing:.06em; }
 .disc-row .dv{ font-family:var(--mono); font-size:11px; color:var(--ink); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 
-/* ---------- ATLAS DRAWER (summonable right overlay) ---------- */
+/* ---------- CHIEF-OF-STAFF DRAWER (summonable right overlay; CHAT ONLY.
+   The digest block and the resources block that used to live here are
+   deleted -- one owner each: digest -> bottom bar, resources -> Metrics.
+   Toggled by the header's sidebar-toggle icon button; default closed;
+   state persisted via app.set-right-rail. ---------- */
 #atlasScrim{ position:fixed; inset:0; z-index:70; background:rgba(4,6,10,.32); opacity:0; pointer-events:none; transition:opacity .2s; }
 #atlasScrim.on{ opacity:1; pointer-events:auto; }
 body.light #atlasScrim{ background:rgba(30,36,48,.14); }
@@ -438,40 +500,41 @@ body.light #atlasScrim{ background:rgba(30,36,48,.14); }
 .atlas-hd .ttl{ font-family:var(--mono); font-size:10px; letter-spacing:.14em; text-transform:uppercase; color:var(--iris); font-weight:600; }
 .atlas-hd .close{ margin-left:auto; font-family:var(--mono); font-size:15px; line-height:1; color:var(--ink3); background:transparent; border:1px solid var(--rule2); border-radius:6px; width:26px; height:26px; cursor:pointer; }
 .atlas-hd .close:hover{ color:var(--ink); border-color:var(--rule2); }
-#atlasBody{ flex:1 1 auto; overflow-y:auto; padding:var(--s4); display:flex; flex-direction:column; gap:var(--s4); }
-.atlas-sect{}
+#atlasBody{ flex:1 1 auto; overflow-y:auto; padding:var(--s4); display:flex; flex-direction:column; }
 .sec-l{ font-family:var(--mono); font-size:9.5px; letter-spacing:.12em; text-transform:uppercase; color:var(--ink3); font-weight:600; margin-bottom:var(--s2); display:flex; align-items:center; }
 .sec-l .ct{ margin-left:auto; color:var(--ink4); }
-.atlas-digest{ font-size:12.5px; color:var(--ink2); line-height:1.4; }
-.atlas-digest b{ color:var(--ink); font-weight:600; }
-.queue{ display:flex; flex-direction:column; gap:var(--s2); }
-.qrow{ display:grid; grid-template-columns:1fr auto; align-items:center; gap:var(--s2); min-height:40px; padding:var(--s2) var(--s3);
-  border:1px solid var(--rule); border-radius:var(--r1); background:var(--panel); cursor:pointer; }
-.qrow:hover{ border-color:var(--ink4); }
-.qrow.sel{ border-color:var(--c-sel); background:var(--panel2); }
-.qrow .who{ min-width:0; display:flex; flex-direction:column; }
-.qrow .who .nm{ font-size:12px; font-weight:600; line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.qrow .who .rz{ font-family:var(--mono); font-size:9px; color:var(--ink4); line-height:1.2; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
-.queue-empty{ font-family:var(--mono); font-size:10.5px; color:var(--ink4); padding:var(--s2) 0; }
-.gstats{ display:flex; flex-direction:column; border:1px solid var(--rule); border-radius:var(--r2); background:var(--panel); overflow:hidden; }
-.gstat{ display:grid; grid-template-columns:minmax(0,1fr) auto; align-items:center; gap:var(--s3); min-height:38px; padding:var(--s1) var(--s4); border-bottom:1px solid var(--rule); }
-.gstat:last-child{ border-bottom:0; }
-.gstat .k{ font-family:var(--mono); font-size:10px; color:var(--ink3); min-width:0; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-.gstat .v{ display:flex; align-items:center; gap:var(--s2); font-size:14px; font-weight:600; justify-content:flex-end; white-space:nowrap; }
-.atlas-chat{ display:flex; flex-direction:column; gap:var(--s3); }
-.achat-thread{ display:flex; flex-direction:column; gap:var(--s3); max-height:300px; overflow-y:auto; }
+.atlas-chat{ display:flex; flex-direction:column; gap:var(--s3); flex:1 1 auto; min-height:0; }
+.achat-thread{ display:flex; flex-direction:column; gap:var(--s3); flex:1 1 auto; overflow-y:auto; }
 .achat-x{ display:grid; gap:6px; }
 .achat-x .q{ font-size:12px; color:var(--ink2); }
 .achat-x .a{ font-size:12.5px; color:var(--ink); line-height:1.5; padding-left:var(--s2); border-left:2px solid var(--iris-dim); white-space:pre-wrap; }
 .achat-x .a.load{ font-family:var(--mono); font-size:11px; color:var(--ink3); }
 .achat-x .a.err{ border-left-color:var(--s-block); color:var(--ink2); }
 .achat-x .meta{ font-family:var(--mono); font-size:9px; color:var(--ink4); padding-left:var(--s2); }
-.achat-in{ display:flex; gap:6px; }
+.achat-in{ display:flex; gap:6px; margin-top:var(--s3); flex:0 0 auto; }
 .achat-in input{ flex:1 1 auto; min-width:0; font-family:var(--disp); font-size:12px; color:var(--ink); background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:7px 9px; outline:none; }
 .achat-in input:focus{ border-color:var(--iris); }
 .achat-in button{ font-family:var(--mono); font-size:10px; color:var(--iris); background:transparent; border:1px solid var(--iris-dim); border-radius:var(--r1); padding:6px 12px; cursor:pointer; }
 .achat-in button:disabled{ opacity:.4; cursor:default; }
 .achat-empty{ font-family:var(--mono); font-size:10.5px; color:var(--ink4); line-height:1.6; }
+
+/* ---------- BOTTOM CONTEXT BAR (returns as the SOLE home for: the fleet
+   digest, Codex quota + Claude quota, and the selected session's context-fill
+   %). Calm, single line, mono. ---------- */
+.ctxbar{ height:var(--ctxbar-h); flex:0 0 auto; display:flex; align-items:center; gap:var(--s4);
+  padding:0 var(--s4); background:var(--bg2); border-top:1px solid var(--rule);
+  font-family:var(--mono); font-size:10.5px; color:var(--ink3); white-space:nowrap; overflow:hidden;
+  transition:margin-left .16s cubic-bezier(.2,.7,.2,1); }
+.ctxbar .cb-digest{ flex:1 1 auto; min-width:0; overflow:hidden; text-overflow:ellipsis; font-family:var(--disp); font-size:11.5px; letter-spacing:-.005em; }
+.ctxbar .cb-digest b{ color:var(--ink); font-weight:600; }
+.ctxbar .cb-sep{ width:1px; height:14px; background:var(--rule2); flex:0 0 auto; }
+.ctxbar .cb-item{ flex:0 0 auto; display:flex; align-items:center; gap:5px; cursor:default; }
+.ctxbar .cb-item .dt{ width:5px; height:5px; border-radius:50%; background:var(--s-idle); }
+.ctxbar .cb-item.q-amber .dt{ background:var(--s-need); }
+.ctxbar .cb-item.q-amber{ color:var(--s-need); }
+.ctxbar .cb-item.q-red .dt{ background:var(--s-block); }
+.ctxbar .cb-item.q-red{ color:var(--s-block); }
+.ctxbar .cb-item.q-na{ color:var(--ink4); }
 
 /* custom right-click context menu */
 .ctxmenu{ position:fixed; z-index:90; min-width:190px; background:var(--panel2); border:1px solid var(--rule2); border-radius:var(--r2);
@@ -524,32 +587,29 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 
 <div class="app">
 
-  <!-- ===== HEADER (routing surface; owns brand, fleet digest, quota chip >80%, Atlas summon, theme).
-       The digest text is the ONE header home for fleet counts including the needs-you number;
-       the old ring/"needs you now" hero was deleted as a duplicate (one-owner rule). ===== -->
+  <!-- ===== HEADER (slim: wordmark + version + sidebar-toggle icon only.
+       Digest, resources, and theme/settings controls do not live here --
+       see DESIGN.md signal-ownership table. ===== -->
   <header class="hdr">
     <div class="brand">
       <span class="mk">human<b>ctl</b></span>
       <span class="tag" id="verTag">home</span>
       <span class="demo" id="demoBadge" style="display:none">demo &middot; fixture</span>
     </div>
-    <div class="digestwrap">
-      <div class="digest" id="digest"></div>
-    </div>
-    <span class="chip c-need" id="quotaChip"></span>
-    <span class="chip c-idle" id="sumBudgetChip" title="the always-on AI-summary engine pauses for the rest of the day once it hits this budget"></span>
+    <div class="spacer"></div>
     <div class="ctl">
-      <button id="btnAtlas" title="Atlas (a)"><span class="a-glyph">&#129517;</span>Atlas</button>
-      <button id="tTheme">dark</button>
+      <button id="btnRightRail" class="icon-btn" title="chief-of-staff chat (a)" aria-label="toggle chief-of-staff chat">
+        <svg viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg"><rect x="1.5" y="2.5" width="13" height="11" rx="1.5" stroke="currentColor" stroke-width="1.3"/><path d="M10.5 2.5V13.5" stroke="currentColor" stroke-width="1.3"/></svg>
+      </button>
     </div>
   </header>
 
-  <!-- ===== STAGE: one active view; the nav rail and Atlas drawer are overlays ===== -->
+  <!-- ===== STAGE: one active view; the nav strip and CoS drawer are overlays ===== -->
   <div class="stage">
 
     <!-- INBOX (default) -->
     <section class="view" id="view-inbox"></section>
-    <!-- METRICS (0.16 placeholder) -->
+    <!-- METRICS -->
     <section class="view" id="view-metrics"></section>
     <!-- FLEET (0.17 placeholder) -->
     <section class="view" id="view-fleet"></section>
@@ -562,17 +622,23 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
     <div id="detailWrap"><div class="detail" id="detailBody"></div></div>
 
   </div>
+
+  <!-- ===== BOTTOM CONTEXT BAR: sole home for the fleet digest, both quotas,
+       and the selected session's context-fill %. ===== -->
+  <footer class="ctxbar" id="ctxBar"></footer>
 </div>
 
-<!-- nav rail: hidden by default; hover the left hot-edge (below the header) to reveal, Cmd+\ pins -->
-<div class="nav-hotedge" id="navHotEdge" aria-hidden="true"></div>
+<!-- nav strip: a VISIBLE icon strip by default (hover to expand labels, Cmd+\ to pin) -->
 <nav class="nav-rail" id="navRail" aria-label="views"></nav>
 
-<!-- Atlas drawer (summonable right overlay; key a or the header button) -->
+<!-- user / settings picker popover (anchored at the foot of the nav strip) -->
+<div class="picker" id="userPicker" hidden role="menu" aria-label="user and settings"></div>
+
+<!-- chief-of-staff drawer (summonable right overlay; key a or the header icon). Chat only. -->
 <div id="atlasScrim"></div>
-<aside id="atlasDrawer" aria-label="Atlas">
-  <div class="atlas-hd"><span class="glyph">&#129517;</span><span class="ttl">Atlas</span>
-    <button class="close" id="atlasClose" aria-label="close Atlas">&times;</button>
+<aside id="atlasDrawer" aria-label="Chief of staff">
+  <div class="atlas-hd"><span class="glyph">&#129517;</span><span class="ttl">Chief of staff</span>
+    <button class="close" id="atlasClose" aria-label="close chief-of-staff chat">&times;</button>
   </div>
   <div id="atlasBody"></div>
 </aside>

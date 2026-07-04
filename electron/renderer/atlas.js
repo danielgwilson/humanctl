@@ -1,26 +1,22 @@
 'use strict';
 
-// Atlas (shell v2): a SUMMONABLE right-side overlay DRAWER, not a persistent
-// column. This is a behavioral rewrite of the old persistent rail: it renders
-// as an overlay over the active view, summoned with the key `a` or the header
-// button, and closed with Esc or a click on the scrim.
+// Chief-of-staff drawer (shell v3 chrome pass): a SUMMONABLE right-side
+// overlay DRAWER, CHAT ONLY. Shell v2 made it a summonable overlay (not a
+// persistent column); shell v3's chrome pass removes the digest block and the
+// resources block that used to live here too -- both were second homes for
+// signals the bottom context bar (digest) and the Metrics view (resources)
+// now own exclusively (DESIGN.md one-owner rule). This module now renders
+// nothing but the atlas.ask chat.
 //
-// Contents (DESIGN.md signal ownership):
-//   - Digest: reuses the EXACT same digest component the header uses
-//     (renderer.js's digestHtml). The digest has ONE owner; the drawer is the
-//     documented exception that reuses that owner's component, never a second
-//     digest renderer.
-//   - Chat: the existing atlas.ask flow (advisory only, grounded in pulse +
-//     notes + session states, logged + persisted). Mechanics unchanged.
-//   - Resources: spend estimate, tokens, codex quota + reset time. This is the
-//     Atlas drawer summarizing spend/tokens/quota (the Metrics view is their
-//     primary owner; the header shows quota only above 80 percent).
-//   - Needs-you queue: the ranked "what needs the human" list, click to open.
+// Toggled by the header's sidebar-toggle icon button (or key `a`), default
+// closed, state persisted via app.set-cos-drawer (renderer.js owns the
+// persistence call; this module just exposes open/close/isOpen and notifies
+// via the optional onClose hook so ANY close path -- scrim click, Esc, the
+// close button, or the header toggle -- keeps renderer.js's rightRailOpen
+// flag in sync).
 //
-// Depends on globals from renderer.js (el, esc, hue, STATE, TIERS, onDesk,
-// nameHtml, stateTip, openDetail, agoTxt, engineLabel, rollups, fmtUSD, fmtTok,
-// fmtReset, digestHtml, selId, summarizer). Loaded after renderer.js, before
-// inbox.js.
+// Depends on globals from renderer.js (el, esc, engineLabel, summarizer).
+// Loaded after renderer.js, before inbox.js.
 
 (function () {
   const achat = [];
@@ -28,6 +24,7 @@
   const ACHAT_CAP = 40;
   let hydrated = false;
   let open = false;
+  let onCloseCb = null;
 
   function hydrateFromLog(log) {
     achat.length = 0;
@@ -46,41 +43,8 @@
   function hydrateFixture() {
     hydrated = true;
     hydrateFromLog([
-      { q: 'what needs me right now?', a: 'Two sessions are asking for a decision: see the needs-you queue. Everything else is moving or idle, nothing else is blocked.', engine: 'claude', ts: new Date(Date.now() - 6 * 6e4).toISOString() },
+      { q: 'what needs me right now?', a: 'Two sessions are asking for a decision: see Inbox. Everything else is moving or idle, nothing else is blocked.', engine: 'claude', ts: new Date(Date.now() - 6 * 6e4).toISOString() },
     ]);
-  }
-
-  // ---- needs-you queue (the ranked list; click opens the full detail) ----
-  function queueHtml() {
-    const need = onDesk().filter((a) => a.state === 'need' || a.state === 'block');
-    const rows = need.map((a) => {
-      const h = hue(STATE[a.state].hue);
-      return `<div class="qrow ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}">
-        <span class="who"><span class="nm">${nameHtml(a)}</span><span class="rz">${esc(a.stateReason || STATE[a.state].label)} &middot; ${esc(a.repo || 'no repo')}</span></span>
-        <span class="chip ${STATE[a.state].cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${esc((a.tier === 'drifting' ? 'drifting · ' : '') + (a.when || ''))}</span>
-      </div>`;
-    }).join('') || `<div class="queue-empty">nothing needs you right now.</div>`;
-    return `<div class="atlas-sect">
-      <div class="sec-l">Needs you now <span class="ct">${need.length}</span></div>
-      <div class="queue">${rows}</div>
-    </div>`;
-  }
-
-  // ---- resources: spend / tokens / quota + reset ----
-  function resourcesHtml() {
-    const r = rollups();
-    const rows = [
-      ['claude spend (est)', r.claudeUSD != null ? fmtUSD(r.claudeUSD) : 'n/a'],
-      ['codex api-equiv (est)', r.codexUSD != null ? fmtUSD(r.codexUSD) : 'n/a'],
-      ['tokens', r.tokens ? fmtTok(r.tokens) : 'n/a'],
-    ];
-    if (r.quota && r.quota.primary && r.quota.primary.used_percent != null) {
-      rows.push(['codex quota (5h)', r.quota.primary.used_percent + '%' + (r.quota.primary.resets_at ? ' &middot; resets ' + fmtReset(r.quota.primary.resets_at) : '')]);
-    }
-    return `<div class="atlas-sect">
-      <div class="sec-l">Resources</div>
-      <div class="gstats">${rows.map((x) => `<div class="gstat"><span class="k">${x[0]}</span><span class="v">${x[1]}</span></div>`).join('')}</div>
-    </div>`;
   }
 
   // ---- chat (atlas.ask, unchanged mechanics) ----
@@ -93,15 +57,12 @@
     const busy = achatState === 'loading' || (achatState && achatState.phase === 'loading');
     if (busy) thread += `<div class="achat-x"><div class="q">${esc(achatState && achatState.q ? achatState.q : '')}</div><div class="a load">thinking...</div></div>`;
     else if (achatState && achatState.error) thread += `<div class="achat-x"><div class="q">${esc(achatState.q || '')}</div><div class="a err">${esc(achatState.error)}</div></div>`;
-    const empty = !thread ? `<div class="achat-empty">Ask Atlas things like "what needs me right now?" Answers are advisory only, grounded in pulse, notes, and session states, and cite what they refer to.</div>` : '';
-    return `<div class="atlas-sect">
-      <div class="sec-l">Ask Atlas</div>
-      <div class="atlas-chat">
-        <div class="achat-thread" id="achatThread">${thread}${empty}</div>
-        <div class="achat-in">
-          <input id="achatInput" type="text" maxlength="500" placeholder="Ask Atlas..." ${busy ? 'disabled' : ''} />
-          <button id="achatSend" ${busy ? 'disabled' : ''}>Ask</button>
-        </div>
+    const empty = !thread ? `<div class="achat-empty">Ask your chief of staff things like "what needs me right now?" Answers are advisory only, grounded in pulse, notes, and session states, and cite what they refer to.</div>` : '';
+    return `<div class="atlas-chat">
+      <div class="achat-thread" id="achatThread">${thread}${empty}</div>
+      <div class="achat-in">
+        <input id="achatInput" type="text" maxlength="500" placeholder="Ask your chief of staff..." ${busy ? 'disabled' : ''} />
+        <button id="achatSend" ${busy ? 'disabled' : ''}>Ask</button>
       </div>
     </div>`;
   }
@@ -120,11 +81,11 @@
     render();
     const settle = (entry, err) => {
       if (entry) { achatState = null; achat.push(entry); while (achat.length > ACHAT_CAP) achat.shift(); }
-      else achatState = { q, error: err || 'could not reach Atlas.' };
+      else achatState = { q, error: err || 'could not reach the chief of staff.' };
       render();
     };
     if (!window.humanctl) {
-      setTimeout(() => settle({ q, a: 'Demo answer: in the real app Atlas grounds this in pulse --json, recent notes, and the top session states, and cites which sessions or lanes it means.', engine: summarizer, at: Date.now() }), 900);
+      setTimeout(() => settle({ q, a: 'Demo answer: in the real app this grounds in pulse --json, recent notes, and the top session states, and cites which sessions or lanes it means.', engine: summarizer, at: Date.now() }), 900);
       return;
     }
     try {
@@ -139,19 +100,10 @@
     if (!open) return;
     const body = el('atlasBody');
     if (!body) return;
-    body.innerHTML = `
-      <div class="atlas-sect">
-        <div class="sec-l">Fleet digest</div>
-        <div class="atlas-digest">${digestHtml()}</div>
-      </div>
-      ${queueHtml()}
-      ${resourcesHtml()}
-      ${chatHtml()}`;
-    body.querySelectorAll('.qrow').forEach((r) => r.addEventListener('click', () => { openDetail(r.dataset.id, 'inbox'); close(); }));
+    body.innerHTML = chatHtml();
     wireChat();
   }
-  function refresh() { if (open) render(); }        // live data changed while the drawer is open
-  function renderQueue() { if (open) render(); }     // selection changed
+  function refresh() { /* no ambient data in a chat-only drawer; nothing to refresh passively */ }
 
   function openDrawer() {
     if (open) return;
@@ -159,14 +111,18 @@
     el('atlasDrawer').classList.add('on');
     el('atlasScrim').classList.add('on');
     render();
+    const input = el('achatInput');
+    if (input) input.focus();
   }
   function close() {
     if (!open) return;
     open = false;
     el('atlasDrawer').classList.remove('on');
     el('atlasScrim').classList.remove('on');
+    if (onCloseCb) { try { onCloseCb(); } catch {} }
   }
   function isOpen() { return open; }
+  function setOnClose(cb) { onCloseCb = cb; }
 
   document.addEventListener('DOMContentLoaded', () => {
     const scrim = el('atlasScrim');
@@ -184,5 +140,5 @@
     if (x) x.addEventListener('click', close);
   }
 
-  window.Atlas = { open: openDrawer, close, isOpen, render, refresh, renderQueue, hydrate, hydrateFixture };
+  window.Atlas = { open: openDrawer, close, isOpen, render, refresh, hydrate, hydrateFixture, setOnClose };
 })();
