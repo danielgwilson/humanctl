@@ -82,11 +82,17 @@
     const unread = threadUnread(t);
     const a = agentFor(t);
     const tierCls = a && TIERS[a.tier] ? TIERS[a.tier].cls : '';
+    // Dot tooltip (2026-07 real-use feedback): prefer the live row's full
+    // stateTip (state + honest reason, e.g. "needs input - asks you a
+    // question") when this thread's session is still in the recent scan;
+    // an aged-out thread has no live row to reason over, so its dot just
+    // names the state derived from the newest item's shape.
+    const dotTip = a ? stateTip(a) : s.label;
     return `<div class="srow ${t.sessionId === selThreadId ? 'sel' : ''} ${tierCls}" style="--c-sel:${cssvHue(s.hue)}" data-id="${esc(t.sessionId)}" title="${esc(t.repo || '')}">
-      <span class="unread ${unread ? 'on' : ''}"></span>
+      ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" tabindex="0"></span>` : `<span class="unread"></span>`}
       <span class="sbody">
         <span class="l1">${harnessGlyph(harnessOf(t))}<span class="nm">${esc(displayTitle(t))}</span><span class="when">${esc(whenOf(t) || '')}</span></span>
-        <span class="l2"><span class="chip ${s.cls}"><span class="dt"></span>${esc(s.label)}</span><span class="msg">${esc(messageToHuman(t))}</span></span>
+        <span class="l2"><span class="chip ${s.cls}"><span class="dt" data-tip="${esc(dotTip)}" tabindex="0"></span>${esc(s.label)}</span><span class="msg">${esc(messageToHuman(t))}</span></span>
         <span class="l3">${esc(repoBase(t))}${prChipHtml(repoBase(t))}</span>
       </span>
     </div>`;

@@ -859,7 +859,16 @@ function renderDetail() {
   const t = inboxThreads.find((x) => x.sessionId === a.id);
   const stream = t ? t.items.slice().reverse().map(streamItemHtml).join('') : '';
 
-  const inner = `
+  // Layout (2026-07 composer-cutoff fix): the detail pane is a height-
+  // constrained flex column, not a single scrolling blob. Everything through
+  // the conversation timeline lives in a scrollable .detail-scroll region
+  // (flex:1, its own overflow-y); the ask-the-session block -- the composer
+  // and its suggested-reply row, the core reply loop DESIGN.md calls out as
+  // this app's point -- is a sticky footer OUTSIDE that scroll region, so it
+  // is always fully visible regardless of conversation length or window
+  // height. Touched chips and the details disclosure are supplementary and
+  // stay in the scroll area with everything else.
+  const scrollInner = `
     <div class="detail-crumb">
       ${crumbBack ? `<button class="crumb-back" id="crumbBack">&#8592; ${esc(fromLabel)}</button>` : ''}
       <span class="crumb-live" id="detailLive">${esc(liveIndicatorText(a))}</span>
@@ -871,8 +880,8 @@ function renderDetail() {
         <div class="dh-meta">
           <div class="dh-row1">
             <h1>${nameHtml(a)}</h1>
-            <span class="chip ${s.cls}" title="${esc(stateTip(a))}"><span class="dt"></span>${s.label}</span>
-            ${a.tier !== 'hot' ? `<span class="chip c-idle" title="${esc(stateTip(a))}"><span class="dt"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
+            <span class="chip ${s.cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${s.label}</span>
+            ${a.tier !== 'hot' ? `<span class="chip c-idle"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
           </div>
           <div class="dh-sub">${a.stateReason ? esc(a.stateReason) + ' · ' : ''}${esc(a.when || '')}</div>
         </div>
@@ -885,12 +894,12 @@ function renderDetail() {
       <div class="tl-head"><span class="lbl">Conversation</span><span class="tl-live" id="tlLive">${esc(liveIndicatorText(a))}</span></div>
       <div id="tlBody"><div class="tl-empty">reading transcript...</div></div>
     </div>
-    ${askBlockHtml(a)}
     <div id="touchedChips"></div>
     <div class="detail-disc">
       <button class="disc-tog" id="discTog">Session details</button>
       <div class="disc-body" id="discBody" hidden></div>
     </div>`;
+  const inner = `<div class="detail-scroll">${scrollInner}</div>${askBlockHtml(a)}`;
   // The overlay host (#detailBody) already carries the .detail width wrapper;
   // the Inbox pane wraps the same markup in one so both read identically.
   wrap.innerHTML = crumbBack ? inner : `<div class="detail">${inner}</div>`;
@@ -1332,11 +1341,11 @@ function anatomyRow(a, dense) {
   const s = STATE[a.state], h = hue(s.hue);
   const unread = isUnread(a.id);
   const isPin = pins.has(a.id);
-  return `<div class="srow ${dense ? 'dense' : ''} ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}" title="${esc(stateTip(a))}">
-    <span class="unread ${unread ? 'on' : ''}"></span>
+  return `<div class="srow ${dense ? 'dense' : ''} ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}">
+    ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" tabindex="0"></span>` : `<span class="unread"></span>`}
     <span class="sbody">
       <span class="l1">${harnessGlyph(a.harness)}<span class="nm">${nameHtml(a)}</span><span class="when">${timeLadder(a)}</span></span>
-      <span class="l2"><span class="chip ${s.cls}"><span class="dt"></span>${s.label}</span><span class="msg">${esc(messageToHuman(a))}</span></span>
+      <span class="l2"><span class="chip ${s.cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${s.label}</span><span class="msg">${esc(messageToHuman(a))}</span></span>
       <span class="l3">${esc(cwdBase(a.cwd) || a.repo)}${prChipHtml(cwdBase(a.cwd) || a.repo)}</span>
     </span>
     <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'}">&#128204;</button>
@@ -1830,13 +1839,46 @@ async function load() {
     if (Number.isFinite(st.state.summaryBudgetUSD) && st.state.summaryBudgetUSD > 0) summaryBudgetUSD = st.state.summaryBudgetUSD;
   }
   applyTheme(); applyNavPinned(); setupNavHover();
+  // Perf (2026-07 click-lag investigation): fetchData()'s withUsage:true scan
+  // is cheap once lib/sessions.js's caches are warm, but on a cold process
+  // (app just launched, or the fleet is large/inactive enough that the
+  // caches evicted) it is a real, measured ~1s of synchronous main-process
+  // work, and Electron routes window input through that same main process --
+  // so awaiting it here before the first paint/setView blocks the window
+  // from accepting any click for that whole span ("does not open right
+  // away"). Paint the shell with an empty fleet first (setView/renderHeader
+  // below), then let fetchData land and repaint through the same signature
+  // gate the 20s poll already uses, so the first screen the user can click on
+  // never waits behind a full session scan.
+  remapAgents(); renderHeader(); renderNav(); setView(view);
   await fetchData();
   if (window.Atlas) await window.Atlas.hydrate();
   await refreshSummaryBudgetChip();
-  remapAgents(); renderHeader(); renderNav(); setView(view);
+  // Prime the signature gate with this first fetch's data (same computation
+  // _refresh() uses below) BEFORE any repaint, so the next real _refresh()
+  // tick correctly recognizes unchanged data as unchanged instead of forcing
+  // one extra rebuild because lastSig was still its initial ''. Without this
+  // priming, a poll landing right after boot would always rebuild once even
+  // when the fleet is byte-identical to what load() already painted (perf:
+  // signature-gate SLO, DOM rebuilds must be signature-gated).
+  lastSig = currentSig();
+  syncRowSubSig();
+  remapAgents(); renderHeader(); renderNav(); redrawActive();
 }
 let lastSig = '';
 const rowSubSig = new Map();
+function currentSig() {
+  return allRows.map((r) => r.id + r.ageMs + r.state + ':' + r.tier + ':' + r.contextPct).join('|')
+    + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
+    + '#' + inboxThreads.map((t) => t.sessionId + ':' + t.lastTs + ':' + t.items.length).join('|')
+    + '#' + (status ? status.needsYou + ':' + status.working + ':' + status.sessions : '');
+}
+function syncRowSubSig() {
+  for (const r of allRows) {
+    const sub = r.ageMs + ':' + r.contextPct;
+    if (rowSubSig.get(r.id) !== sub) { detailCache.delete(r.id); rowSubSig.set(r.id, sub); }
+  }
+}
 async function _refresh() {
   if (!window.humanctl) return;
   await fetchData();
@@ -1846,16 +1888,10 @@ async function _refresh() {
   // gate participate changing shape. runAutoSummaries no-ops fast when
   // nothing qualifies, so this costs nothing extra at idle.
   runAutoSummaries();
-  const sig = allRows.map((r) => r.id + r.ageMs + r.state + ':' + r.tier + ':' + r.contextPct).join('|')
-    + '#' + allNotes.map((n) => n.id + ':' + n.level).join('|')
-    + '#' + inboxThreads.map((t) => t.sessionId + ':' + t.lastTs + ':' + t.items.length).join('|')
-    + '#' + (status ? status.needsYou + ':' + status.working + ':' + status.sessions : '');
+  const sig = currentSig();
   if (sig === lastSig) return; // nothing changed; unchanged data must not rebuild (perf: signature gate)
   lastSig = sig;
-  for (const r of allRows) {
-    const sub = r.ageMs + ':' + r.contextPct;
-    if (rowSubSig.get(r.id) !== sub) { detailCache.delete(r.id); rowSubSig.set(r.id, sub); }
-  }
+  syncRowSubSig();
   remapAgents();
   redrawActive();
 }
