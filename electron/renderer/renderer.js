@@ -318,6 +318,7 @@ function prChipHtml(repoBase) {
 let agents = [];
 let byId = new Map();
 let allRows = [], status = null, allNotes = [], demo = false;
+let inboxThreads = [];        // declared here (not near load) so functions above load() that read it are never in its TDZ during boot
 // View replaces the old three modes. inbox is the default; metrics/fleet are
 // quiet placeholder views (0.16 / 0.17); sessions replaces the old Wall;
 // settings is a real view now (the old header gear popover is gone).
@@ -1955,7 +1956,6 @@ el('btnRightRail').addEventListener('click', () => toggleRightRail());
 // ============================================================
 // load + realtime
 // ============================================================
-let inboxThreads = [];
 async function fetchData() {
   const [s, l, nt, it] = await Promise.all([
     window.humanctl.getStatus({ maxAgeH: 72, limit: 40 }),
