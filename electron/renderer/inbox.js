@@ -78,14 +78,33 @@
       </span>
     </div>`;
   }
+  // Cheap content signature of everything threadRowHtml's output actually
+  // depends on (thread identity/content/preview/level/recency, selection,
+  // unread state), mirroring the pattern renderer.js's _refresh() already
+  // uses for its own repaint gate. runInboxFast() calls render() on every
+  // inbox:fast tick, so without this the whole pane (up to ~100 rows, each
+  // with re-attached click/contextmenu listeners) rebuilds even when nothing
+  // the user would see has changed.
+  let lastListSig = null;
+  function threadListSig() {
+    return threads.map((t) => (
+      `${t.sessionId}:${t.lastTs}:${t.items.length}:${threadLevel(t)}:${threadPreview(t)}`
+      + `:${t.sessionId === selThreadId ? 1 : 0}:${threadUnread(t) ? 1 : 0}`
+    )).join('|');
+  }
   function renderThreadList() {
     const box = el('threadList');
     if (!box) return;
     el('inbox-ct').textContent = threads.length + (threads.length === 1 ? ' thread' : ' threads');
     if (!threads.length) {
+      if (lastListSig === '') return;
+      lastListSig = '';
       box.innerHTML = `<div class="inbox-empty">No agent updates yet. Agents post here via <code>humanctl note</code>.</div>`;
       return;
     }
+    const sig = threadListSig();
+    if (sig === lastListSig) return; // nothing a viewer would see has changed; skip the rebuild
+    lastListSig = sig;
     box.innerHTML = threads.map(threadRowHtml).join('');
     box.querySelectorAll('.thread-row').forEach((r) => r.addEventListener('click', () => selectThread(r.dataset.id)));
     if (window.ContextMenu) {
