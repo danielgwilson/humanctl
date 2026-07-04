@@ -2,8 +2,10 @@
 
 // Inbox v2 (shell v2): the default view. Two panes only, no other columns
 // (the old persistent left roster and right rail are gone). A thread list plus
-// a preview; opening a thread shows the full-width session detail
-// (renderer.js's renderDetail, reused, not forked).
+// the thread detail: selecting a thread renders the FULL session-detail
+// component into the second pane (renderer.js's renderDetail through
+// renderThreadDetail; same component family, never forked). Enter opens the
+// same session as the full-width overlay detail (entered from Inbox).
 //
 // Row anatomy (DESIGN.md "Row anatomy", three lines):
 //   line 1: harness glyph + title + time ladder, unread dot on the left edge
@@ -140,26 +142,26 @@
     if (window.renderNavExternal) window.renderNavExternal();
   }
 
+  // Selecting a thread renders the FULL session-detail component into the
+  // second pane (renderer.js's renderThreadDetail -> renderDetail, host
+  // 'inbPreview'): header + resume split button, notes stream prominent at
+  // top, AI summary, conversation tail, composer, touched chips, disclosure.
+  // Same component family as the full-width detail; never a fork.
   function selectThread(id) {
     selThreadId = id;
-    const t = threads.find((x) => x.sessionId === id);
-    if (t) selectSession(id);
     markRead(id);
-    // Opening a thread from Inbox shows the full-width session detail. A thread
-    // whose session is no longer in the recent scan cannot open detail (resume/
-    // reply need the live row); preview it in place instead.
-    if (byId.has(id)) openDetail(id, 'inbox');
-    else { renderList(); renderPreview(); }
+    renderList();
+    renderPreview(true);
   }
-  function openSelected() { if (selThreadId) selectThread(selThreadId); }
+  // Enter (or the context menu's open): the full-width session detail,
+  // entered from Inbox; Esc returns here.
+  function openSelected() { if (selThreadId && byId.has(selThreadId)) openDetail(selThreadId, 'inbox'); }
   function move(dir) {
     const list = visibleThreads();
     if (!list.length) return;
     let i = list.findIndex((t) => t.sessionId === selThreadId);
     i = i < 0 ? 0 : Math.max(0, Math.min(i + dir, list.length - 1));
-    selThreadId = list[i].sessionId;
-    renderList();
-    renderPreview();
+    selectThread(list[i].sessionId);
     const row = document.querySelector(`#inbList .srow[data-id="${CSS.escape(list[i].sessionId)}"]`);
     if (row) row.scrollIntoView({ block: 'nearest' });
   }
@@ -186,27 +188,45 @@
     }
   }
 
-  // A quiet preview column for when no thread is opened into detail yet, and
-  // for threads whose session is gone from the scan.
-  function renderPreview() {
+  // The thread-detail pane. When the thread's session is in the recent scan it
+  // renders the full session-detail component (via renderer.js's
+  // renderThreadDetail; not a fork). A thread whose session aged out of the
+  // scan cannot offer resume/reply, so it gets an honest stream-only fallback.
+  // Signature-gated so unchanged data does not rebuild the pane (and does not
+  // clobber composer focus); a landed summary or ask repaints its own block
+  // in place through repaintSummary/repaintAsk.
+  let lastPrevSig = null;
+  function renderPreview(force) {
     const wrap = el('inbPreview');
     if (!wrap) return;
     const t = threads.find((x) => x.sessionId === selThreadId);
     if (!t) {
+      lastPrevSig = null;
+      detailId = null; detailHostId = null;
       wrap.innerHTML = threads.length
         ? `<div class="view-empty">Select a thread to open it.</div>`
         : `<div class="view-empty">No agent updates yet. Agents post here via <code>humanctl note</code>.<br><br>Try: <code>humanctl note --level review "PR is up, need a review"</code></div>`;
       return;
     }
     const a = agentFor(t);
+    if (a) {
+      const sig = [t.sessionId, t.lastTs, t.items.length, a.state, a.stateReason, a.when, pins.has(a.id) ? 1 : 0].join(':');
+      if (!force && sig === lastPrevSig && wrap.childElementCount) return;
+      lastPrevSig = sig;
+      renderThreadDetail(t.sessionId);
+      return;
+    }
+    lastPrevSig = null;
+    detailId = null; detailHostId = null;
     const stream = t.items.slice().reverse().map(streamItemHtml).join('') || `<div class="tl-empty">no updates in this thread yet.</div>`;
-    wrap.innerHTML = `
+    wrap.innerHTML = `<div class="prev-fallback">
       <div class="prev-hd">
         ${harnessGlyph(harnessOf(t))}
         <div class="prev-meta"><h2>${esc(displayTitle(t))}</h2><div class="prev-sub">${esc(t.repo || 'no repo')}</div></div>
       </div>
-      ${a ? '' : '<div class="prev-note">this session is no longer in the recent scan; open, resume, and reply are unavailable.</div>'}
-      <div class="tstream">${stream}</div>`;
+      <div class="prev-note">this session is no longer in the recent scan; resume and reply are unavailable.</div>
+      <div class="tstream">${stream}</div>
+    </div>`;
   }
 
   function wireToolbar() {
@@ -226,15 +246,15 @@
     threads = nextThreads || [];
     lastReadTs = nextLastReadTs || {};
   }
-  // Full render (called on view entry). Builds the shell, then the list and
-  // preview. selThreadId defaults to the first visible thread.
+  // Full render (called on view entry and data refresh). The two-pane shell is
+  // built ONCE and kept (so the search input never loses focus to a refresh);
+  // after that only the list and the detail pane repaint, each behind its own
+  // signature gate. selThreadId defaults to the first visible thread.
   function render() {
     const box = el('view-inbox');
     if (!box) return;
-    const list = visibleThreads();
-    if (!selThreadId && list.length) selThreadId = list[0].sessionId;
-    else if (selThreadId && !threads.some((t) => t.sessionId === selThreadId)) selThreadId = list[0] ? list[0].sessionId : null;
-    box.innerHTML = `
+    if (!el('inbList')) {
+      box.innerHTML = `
       <div class="inbox-shell">
         <aside class="inb-list">
           <div class="view-hd"><span class="glyph">&#9993;</span><span class="ttl">Inbox</span><span class="sub" id="inbox-ct"></span>
@@ -245,8 +265,13 @@
         </aside>
         <section class="inb-preview" id="inbPreview"></section>
       </div>`;
-    lastListSig = null;
-    wireToolbar();
+      lastListSig = null;
+      lastPrevSig = null;
+      wireToolbar();
+    }
+    const list = visibleThreads();
+    if (!selThreadId && list.length) selThreadId = list[0].sessionId;
+    else if (selThreadId && !threads.some((t) => t.sessionId === selThreadId)) selThreadId = list[0] ? list[0].sessionId : null;
     renderList();
     renderPreview();
   }

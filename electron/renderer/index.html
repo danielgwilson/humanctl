@@ -95,11 +95,6 @@ svg{display:block}
   white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
 .hdr .digest b{ color:var(--ink); font-weight:600; }
 
-.hdr .hero{ display:flex; align-items:center; gap:var(--s3); flex:0 0 auto; padding:0 var(--s3); border-left:1px solid var(--rule); }
-.hdr .hero .shape{ display:flex; }
-.hdr .hero .num{ font-family:var(--mono); font-weight:600; font-size:23px; line-height:1; color:var(--s-need); font-variant-numeric:tabular-nums; }
-.hdr .hero .lbl{ font-family:var(--mono); font-size:9px; letter-spacing:.09em; text-transform:uppercase; color:var(--ink3); line-height:1.3; }
-
 .hdr .ctl{ display:flex; gap:var(--s2); align-items:center; flex:0 0 auto; }
 .hdr .ctl button{
   font-family:var(--mono); font-size:9px; letter-spacing:.05em; text-transform:uppercase;
@@ -192,10 +187,14 @@ body.nav-pinned .nav-rail{ box-shadow:none; }
 .srow:hover .pinbtn{ opacity:.5; }
 .srow .pinbtn.on, .srow:hover .pinbtn.on{ opacity:1; filter:none; }
 
-/* Inbox two-pane shell */
+/* Inbox two-pane shell. The detail pane hosts the SAME .detail component the
+   full-width overlay renders (renderer.js renderDetail, host 'inbPreview'),
+   so it carries no padding of its own; the .detail wrapper supplies it. The
+   aged-out fallback wraps itself in .prev-fallback instead. */
 .inbox-shell{ height:100%; display:grid; grid-template-columns:340px 1fr; min-height:0; }
 .inb-list{ display:flex; flex-direction:column; min-height:0; border-right:1px solid var(--rule); background:var(--bg2); }
-.inb-preview{ overflow-y:auto; padding:var(--s5); min-width:0; }
+.inb-preview{ overflow-y:auto; min-width:0; }
+.prev-fallback{ padding:var(--s5); }
 .prev-hd{ display:flex; align-items:flex-start; gap:var(--s3); margin-bottom:var(--s4); }
 .prev-hd .hglyph{ font-size:22px; margin-top:2px; }
 .prev-meta h2{ font-size:19px; font-weight:700; margin:0; letter-spacing:-.02em; }
@@ -454,7 +453,9 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 
 <div class="app">
 
-  <!-- ===== HEADER (routing surface; owns brand, fleet digest, needs-you hero, quota chip >80%, Atlas summon, theme) ===== -->
+  <!-- ===== HEADER (routing surface; owns brand, fleet digest, quota chip >80%, Atlas summon, theme).
+       The digest text is the ONE header home for fleet counts including the needs-you number;
+       the old ring/"needs you now" hero was deleted as a duplicate (one-owner rule). ===== -->
   <header class="hdr">
     <div class="brand">
       <span class="mk">human<b>ctl</b></span>
@@ -465,11 +466,6 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
       <div class="digest" id="digest"></div>
     </div>
     <span class="chip c-need" id="quotaChip"></span>
-    <div class="hero">
-      <div class="shape" id="heroShape"></div>
-      <div class="num" id="heroNum">0</div>
-      <div class="lbl">needs<br>you now</div>
-    </div>
     <div class="ctl">
       <button id="btnAtlas" title="Atlas (a)"><span class="a-glyph">&#129517;</span>Atlas</button>
       <button id="tTheme">dark</button>

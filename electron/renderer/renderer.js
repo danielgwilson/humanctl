@@ -16,8 +16,6 @@
 // ---------- tiny utils ----------
 const el = (id) => document.getElementById(id);
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-const clamp = (n, lo, hi) => Math.max(lo, Math.min(hi, n));
-const RM = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
 function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
 // hue() runs per row; getComputedStyle forces a style recalc each call, so
@@ -98,25 +96,6 @@ const DONE_NOTE_SLACK_MS = 10 * 60 * 1000;
 // context-map kind constants
 const KIND_ORDER = ['user', 'assistant', 'thinking', 'tool-call', 'tool-result', 'meta'];
 const KIND_LABEL = { user: 'you', assistant: 'agent', thinking: 'thinking', 'tool-call': 'tool call', 'tool-result': 'tool result', meta: 'system' };
-
-// ============================================================
-// SVG metric helpers
-// ============================================================
-function svgRing(pct, color, size) {
-  size = size || 46; pct = clamp(pct || 0, 0, 100);
-  const r = size / 2 - 3, c = 2 * Math.PI * r, off = c * (1 - pct / 100), ct = size / 2;
-  return `<svg viewBox="0 0 ${size} ${size}" width="${size}" height="${size}">`
-    + `<circle cx="${ct}" cy="${ct}" r="${r}" fill="none" stroke="var(--rule2)" stroke-width="4.5"/>`
-    + `<circle cx="${ct}" cy="${ct}" r="${r}" fill="none" stroke="${color}" stroke-width="4.5" stroke-linecap="round"`
-    + ` stroke-dasharray="${c.toFixed(1)}" stroke-dashoffset="${off.toFixed(1)}" transform="rotate(-90 ${ct} ${ct})"/></svg>`;
-}
-function svgBar(pct, color, w, h) {
-  w = w || 60; h = h || 5; pct = clamp(pct || 0, 0, 100);
-  const fw = Math.max(2, w * pct / 100);
-  return `<svg viewBox="0 0 ${w} ${h}" width="${w}" height="${h}" preserveAspectRatio="none">`
-    + `<rect x="0" y="0" width="${w}" height="${h}" rx="${h / 2}" fill="var(--rule2)"/>`
-    + `<rect x="0" y="0" width="${fw.toFixed(1)}" height="${h}" rx="${h / 2}" fill="${color}"/></svg>`;
-}
 
 // ============================================================
 // Identity: deterministic display name from the session id hash + a NEUTRAL
@@ -262,8 +241,15 @@ let allRows = [], status = null, allNotes = [], demo = false;
 // settings is a real view now (the old header gear popover is gone).
 let view = 'inbox';           // inbox | metrics | fleet | sessions | settings
 let navPinned = false;        // Cmd+\ pins the nav rail as a fixed column
-let detailId = null;          // when set, the full-width session detail is showing (over the calling view)
-let detailFrom = 'inbox';     // which view Esc/back returns to
+// The session detail renders in ONE of two hosts through the same render
+// function (same component family, never forked): 'detailBody' is the
+// full-width overlay (entered from Sessions, or from Inbox via Enter / the
+// context menu; back breadcrumb + Esc return), 'inbPreview' is the Inbox
+// thread-detail pane (the second pane of the two-pane Inbox).
+let detailId = null;          // the session whose detail is showing (either host)
+let detailHostId = null;      // 'detailBody' | 'inbPreview' | null
+let detailFrom = 'inbox';     // which view Esc/back returns to from the overlay
+const overlayOpen = () => detailHostId === 'detailBody' && !!detailId;
 let selId = null;             // the selected session (drives detail + Atlas queue highlight)
 let theme = 'dark';           // dark | light
 let pins = new Set();
@@ -637,19 +623,17 @@ function digestHtml() {
 }
 
 // ============================================================
-// HEADER (shared, never swaps). Owns: brand, fleet digest, the needs-you hero,
-// and the quota chip (rendered ONLY above 80% per DESIGN.md), plus the Atlas
-// summon button and theme toggle. Fleet totals no longer live in the header;
-// their one home is the Metrics view / Atlas drawer (DESIGN.md), so the header
-// stays a routing surface, not a second metrics home.
+// HEADER (shared, never swaps). Owns: brand, the fleet digest (the ONE header
+// home for fleet counts, including the needs-you number), the quota chip
+// (rendered ONLY above 80% per DESIGN.md), the Atlas summon button, and the
+// theme toggle. The old ring/"needs you now" hero block is deleted: it was a
+// second home for the count the digest text already owns (one-owner rule).
+// Fleet totals do not live here either; their one home is the Metrics view,
+// summarized by the Atlas drawer.
 // ============================================================
 function renderHeader() {
   const r = rollups();
-  const { needYou, desk } = digestData();
   el('digest').innerHTML = digestHtml();
-  el('heroNum').textContent = needYou;
-  const denom = desk.length || 1;
-  el('heroShape').innerHTML = svgRing(100 * needYou / denom, hue('var(--s-need)'), 30);
   // Quota chip: DESIGN.md gives the header the quota signal ONLY when quota
   // exceeds 80 percent. Otherwise it is silent (Metrics / Atlas own it).
   const qp = r.quota && r.quota.primary;
@@ -692,7 +676,7 @@ function renderNav() {
   const un = unreadCount();
   rail.innerHTML = NAV.map((n) => {
     if (n.divider) return `<div class="nav-div"></div>`;
-    const active = (view === n.view && !detailId) ? 'on' : '';
+    const active = (view === n.view && !overlayOpen()) ? 'on' : '';
     const badge = (n.view === 'inbox' && un) ? `<span class="nav-badge">${un}</span>` : '';
     const kk = n.key ? `<span class="nav-key">${n.key}</span>` : '';
     return `<button class="nav-item ${active}" data-view="${n.view}" title="${esc(n.label)}${n.key ? ' (' + n.key + ')' : ''}">
@@ -710,15 +694,18 @@ function renderNav() {
 function setView(v) {
   if (!['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(v)) v = 'inbox';
   detailId = null;
+  detailHostId = null;
   view = v;
   if (window.humanctl) window.humanctl.setView(v);
   renderView();
 }
 function renderView() {
-  // Toggle detail overlay off; show the active view section.
-  el('detailWrap').classList.toggle('on', !!detailId);
+  // Toggle the full-width overlay; show the active view section otherwise.
+  // (The Inbox thread-detail pane is inside the inbox view itself, so it is
+  // NOT the overlay; Inbox.render() re-renders it below.)
+  el('detailWrap').classList.toggle('on', overlayOpen());
   document.querySelectorAll('.view').forEach((s) => s.classList.remove('on'));
-  if (!detailId) {
+  if (!overlayOpen()) {
     const sec = el('view-' + view);
     if (sec) sec.classList.add('on');
     if (view === 'inbox' && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
@@ -745,38 +732,58 @@ function openDetail(id, fromView) {
   detailFrom = fromView || view;
   selectSession(id);
   detailId = id;
+  detailHostId = 'detailBody';
   renderView();
   renderDetail();
   if (window.Atlas) window.Atlas.renderQueue();
 }
 function closeDetail() {
   detailId = null;
+  detailHostId = null;
   view = detailFrom || 'inbox';
   if (window.humanctl) window.humanctl.setView(view);
   renderView();
 }
+// The Inbox thread-detail pane: the SAME detail component rendered into the
+// Inbox's second pane (host 'inbPreview') instead of the full-width overlay.
+// Called by inbox.js whenever a thread is selected; never a fork.
+function renderThreadDetail(id) {
+  if (!byId.has(id)) return;
+  selectSession(id);
+  detailId = id;
+  detailHostId = 'inbPreview';
+  renderDetail();
+}
 
 // ============================================================
-// INBOX v2 lives in inbox.js (thread list + detail-launch). Sessions view and
-// session detail live here (they share the detail render function with Inbox).
+// INBOX v2 lives in inbox.js (thread list + selection). Sessions view and the
+// session detail live here; Inbox renders the same detail into its own pane
+// via renderThreadDetail above (one component family, two hosts, zero forks).
 // ============================================================
 
-// Session detail: the one component family for both Inbox and Sessions
-// (DESIGN.md: session state+reason owns the header chip; context fill owns the
-// detail meta; single-session chat owns the composer here). Reused, not forked.
+// Session detail: the one component family for both hosts (DESIGN.md: session
+// state+reason owns the header chip; context fill owns the detail meta;
+// single-session chat owns the composer here). The overlay host adds the back
+// breadcrumb; the Inbox pane host omits it (the thread list is beside it).
 function renderDetail() {
   const a = byId.get(detailId);
-  const wrap = el('detailBody');
+  const hostId = detailHostId || 'detailBody';
+  const wrap = el(hostId);
   if (!wrap || !a) return;
+  // One detail at a time: blank the other host so stale duplicate ids never
+  // linger in the DOM (el() targets by id).
+  const other = el(hostId === 'detailBody' ? 'inbPreview' : 'detailBody');
+  if (other) other.innerHTML = '';
+  const crumbBack = hostId === 'detailBody';
   const s = STATE[a.state], h = hue(s.hue);
   wrap.style.setProperty('--c-sel', h);
   const fromLabel = { inbox: 'Inbox', sessions: 'Sessions' }[detailFrom] || 'back';
   const t = inboxThreads.find((x) => x.sessionId === a.id);
   const stream = t ? t.items.slice().reverse().map(streamItemHtml).join('') : '';
 
-  wrap.innerHTML = `
+  const inner = `
     <div class="detail-crumb">
-      <button class="crumb-back" id="crumbBack">&#8592; ${esc(fromLabel)}</button>
+      ${crumbBack ? `<button class="crumb-back" id="crumbBack">&#8592; ${esc(fromLabel)}</button>` : ''}
       <span class="crumb-live" id="detailLive">${esc(liveIndicatorText(a))}</span>
       <button class="crumb-pin ${pins.has(a.id) ? 'on' : ''}" id="crumbPin" title="${pins.has(a.id) ? 'unpin session' : 'pin session'}" aria-label="${pins.has(a.id) ? 'unpin session' : 'pin session'}">&#128204; ${pins.has(a.id) ? 'Pinned' : 'Pin'}</button>
     </div>
@@ -806,10 +813,14 @@ function renderDetail() {
       <button class="disc-tog" id="discTog">Session details</button>
       <div class="disc-body" id="discBody" hidden></div>
     </div>`;
+  // The overlay host (#detailBody) already carries the .detail width wrapper;
+  // the Inbox pane wraps the same markup in one so both read identically.
+  wrap.innerHTML = crumbBack ? inner : `<div class="detail">${inner}</div>`;
 
-  el('crumbBack').addEventListener('click', closeDetail);
+  const back = el('crumbBack');
+  if (back) back.addEventListener('click', closeDetail);
   el('crumbPin').addEventListener('click', () => togglePin(a.id));
-  wireResumeSplit(a);
+  wireResumeSplit(a, wrap);
   wireAsk(a);
   const dtStream = el('dtStream');
   if (dtStream) dtStream.querySelectorAll('[data-retry-q]').forEach((b) => b.addEventListener('click', () => runAsk(a, b.dataset.retryQ)));
@@ -851,16 +862,18 @@ function resumeSplitHtml(a) {
     </div>
   </div>`;
 }
-function wireResumeSplit(a) {
-  const wrap = el('detailBody');
+function wireResumeSplit(a, wrap) {
   wrap.querySelectorAll('[data-dact]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); const m = el('resumeMenu'); if (m) m.hidden = true; runAction(b.dataset.dact, a); }));
-  const caret = el('resumeCaret');
-  const menu = el('resumeMenu');
-  if (caret && menu) {
-    caret.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
-    document.addEventListener('mousedown', (e) => { if (!menu.hidden && !menu.contains(e.target) && e.target !== caret) menu.hidden = true; }, { once: false });
-  }
+  const caret = wrap.querySelector('#resumeCaret');
+  const menu = wrap.querySelector('#resumeMenu');
+  if (caret && menu) caret.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
 }
+// One document-level closer for the resume dropdown (registered once, not per
+// render, so repaints never accumulate listeners).
+document.addEventListener('mousedown', (e) => {
+  const menu = el('resumeMenu');
+  if (menu && !menu.hidden && !menu.contains(e.target) && e.target.id !== 'resumeCaret') menu.hidden = true;
+});
 
 // Touched chips: repos + issue keys, sourced ONLY from the session reader's OWN
 // extracted refs (readDetail's linearRefs and its repo/cwd). NEVER from
@@ -1452,7 +1465,9 @@ function redrawChrome() {
 }
 function redrawActive() {
   redrawChrome();
-  if (detailId && byId.has(detailId)) renderDetail();
+  // The full-width overlay repaints alone; the Inbox view repaints its list AND
+  // its in-pane thread detail together via Inbox.render().
+  if (overlayOpen() && byId.has(detailId)) renderDetail();
   else if (view === 'inbox' && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
   else if (view === 'sessions') renderSessions();
   else if (view === 'metrics') renderMetrics();
@@ -1515,13 +1530,13 @@ document.addEventListener('keydown', (e) => {
     return;
   }
   if (window.Atlas && window.Atlas.isOpen()) { if (e.key === 'Escape') window.Atlas.close(); return; }
-  if (e.key === 'Escape' && detailId) { closeDetail(); return; }
+  if (e.key === 'Escape' && overlayOpen()) { closeDetail(); return; }
   if (e.key === 'a' || e.key === 'A') { if (window.Atlas) window.Atlas.open(); return; }
   if (e.key === '1') setView('inbox');
   else if (e.key === '2') setView('metrics');
   else if (e.key === '3') setView('fleet');
   else if (e.key === '4') setView('sessions');
-  else if (view === 'inbox' && !detailId && window.Inbox) {
+  else if (view === 'inbox' && !overlayOpen() && window.Inbox) {
     if (e.key === 'j') { e.preventDefault(); window.Inbox.move(1); }
     else if (e.key === 'k') { e.preventDefault(); window.Inbox.move(-1); }
     else if (e.key === 'Enter') { e.preventDefault(); window.Inbox.openSelected(); }
@@ -1558,7 +1573,7 @@ async function runInboxFast() {
     if (nt && nt.ok) allNotes = nt.notes || [];
     if (it && it.ok) inboxThreads = it.threads || [];
     renderNav();
-    if (view === 'inbox' && !detailId && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
+    if (view === 'inbox' && !overlayOpen() && window.Inbox) { window.Inbox.setData(inboxThreads, lastReadTs); window.Inbox.render(); }
     if (window.Atlas) window.Atlas.refresh();
   } finally {
     inboxFastRunning = false;
@@ -1643,7 +1658,7 @@ function applyExternalState(st) {
   navPinned = st.navPinned === true;
   applyTheme(); applyNavPinned();
   const v = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(st.view) ? st.view : view;
-  if (v !== view && !detailId) setView(v); else redrawActive();
+  if (v !== view && !overlayOpen()) setView(v); else redrawActive();
 }
 if (window.humanctl && window.humanctl.onStateChanged) window.humanctl.onStateChanged(applyExternalState);
 // The single idle poll: at rest this fires every 20s and returns early on an

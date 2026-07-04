@@ -11,7 +11,7 @@ Signal ownership:
 | Signal | Owner | Exception |
 |---|---|---|
 | Fleet digest (counts) | header | Atlas drawer reuses the same component |
-| What needs the human, ranked | Inbox list order | none |
+| What needs the human, ranked | Inbox list order | Atlas drawer may repeat the queue and digest because it is a summoned transient overlay, not an ambient surface |
 | Session state + reason | row chip in lists; header chip in detail | none |
 | Spend, tokens, quota | Metrics view (Atlas drawer summarizes) | header chip only when quota exceeds 80 percent |
 | Complete fleet | Sessions view | none |

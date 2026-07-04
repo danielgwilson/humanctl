@@ -27,12 +27,14 @@ information has exactly one home per screen; the design contract is
 the acceptance checklist for any UI change.
 
 - **Header** (always present, the frameless window's drag region). Owns the
-  fleet digest sentence ("N need you, M moving, ..."), the needs-you-now hero
-  count, the Atlas summon button, and the theme toggle. It renders the codex
-  quota chip ONLY when quota exceeds 80 percent; below that the chip is silent
-  and Metrics / Atlas own the number. Fleet spend and token totals do NOT live
-  in the header (that would be a second home); their owner is the Metrics view,
-  summarized in the Atlas drawer.
+  fleet digest sentence ("N need you, M moving, ..."), the header's ONE home for
+  fleet counts including the needs-you number (there is deliberately no ring or
+  hero count beside it: that would be a second home for a count the digest
+  already owns), plus the Atlas summon button and the theme toggle. It renders
+  the codex quota chip ONLY when quota exceeds 80 percent; below that the chip
+  is silent and Metrics / Atlas own the number. Fleet spend and token totals do
+  NOT live in the header either; their owner is the Metrics view, summarized in
+  the Atlas drawer.
 - **Nav rail** (hidden by default). A left hover hot-edge, 8px wide, whose
   vertical range starts BELOW the header so it never fights the window drag
   region. A hover of at least 150ms reveals the rail as an overlay; mouse-out
@@ -57,8 +59,12 @@ conveyed by a neutral built-in glyph shape, never by color.
 
 Inbox is message-centric: one thread per session, assembled from `humanctl
 note` posts, detected needs-you asks (the v3 reader's state transitions with
-their `stateReason`), and persisted ask-the-session Q&A. Two panes only: a
-thread list and a preview.
+their `stateReason`), and persisted ask-the-session Q&A. Two panes only: the
+thread list and the thread detail. Selecting a thread renders the FULL
+session-detail component into the second pane (the same component family as
+the full-width detail below, never a fork): the notes stream prominent at the
+top, then the AI summary block, the conversation tail, the quick responses +
+composer, the touched chips, and the session-details disclosure.
 
 Row anatomy is exactly three lines (DESIGN.md "Row anatomy"):
 
@@ -78,9 +84,10 @@ alpha). This search/filter/sort state is renderer ephemera, exempt from the
 command registry by the AGENTS.md invariant's exemption clause (it is transient
 UI state like scroll position, and touches no disk, process, or other session).
 
-Opening a thread shows the full-width session detail. A thread whose session has
-aged out of the recent scan cannot open detail (resume and reply need the live
-row); it is previewed in place instead, with an honest note.
+`Enter` (or the context menu's open) promotes the selected thread to the
+full-width session detail, entered from Inbox; `Esc` returns. A thread whose
+session has aged out of the recent scan cannot offer resume or reply (those need
+the live row); its pane shows the stream with an honest note instead.
 
 The empty state is honest: "No agent updates yet. Agents post here via
 `humanctl note`," with the CLI one-liner shown, never a fake zero-state graphic.
