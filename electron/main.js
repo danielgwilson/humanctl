@@ -21,7 +21,8 @@ const fs = require('fs');
 const os = require('os');
 const { execFile, execFileSync } = require('child_process');
 const { listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes, readNeedSignals, deriveNeedState, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL } = require('../lib/sessions');
-const { createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads, appendAskLog, isInboxRelevantChange } = require('../lib/commands');
+const { createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads, appendAskLog, isInboxRelevantChange, attachmentsDir } = require('../lib/commands');
+const { resolveHarnessIconPath, cachedIconPath } = require('../lib/harness-icons');
 
 let win = null;
 
@@ -216,6 +217,54 @@ function deepLinkApps() {
     };
   } catch { return { claude: false, codex: false }; }
 }
+
+// ---- harness icon extraction (PR-2 item 1) ----
+// Runtime-only, never committed: read the LOCALLY INSTALLED app's own icon
+// (lib/harness-icons.js resolves the .icns path via Info.plist
+// CFBundleIconFile, never a hardcoded filename), decode it with Electron's
+// nativeImage (the one piece that needs Electron, hence living here and not
+// in lib/), downscale to a UI-sized PNG, and cache the PNG under Electron
+// userData -- never the repo, never a ~/.humanctl watched path (DESIGN.md's
+// write/watch separation rule). ANY failure at any step (app not installed,
+// plist unreadable, icon file missing, decode failure, empty image) resolves
+// to null so the caller falls back to the built-in glyph silently; this
+// function itself never throws.
+const ICON_SIZE = 40; // CSS px; @2x handled by nativeImage's own scale factors
+const iconCache = new Map(); // harness -> data URL | null, populated once per app run
+function extractHarnessIcon(harness) {
+  if (iconCache.has(harness)) return iconCache.get(harness);
+  let dataUrl = null;
+  try {
+    const userDataDir = app.getPath('userData');
+    const cachePath = cachedIconPath(userDataDir, harness);
+    // Reuse a prior run's cached PNG when present; still re-derive from the
+    // source .icns if the cache is missing (first run, or userData was
+    // cleared), never from the repo or a watched dir either way.
+    if (fs.existsSync(cachePath)) {
+      const buf = fs.readFileSync(cachePath);
+      if (buf && buf.length) dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
+    }
+    if (!dataUrl) {
+      const resolved = resolveHarnessIconPath(harness);
+      if (resolved.ok) {
+        const img = nativeImage.createFromPath(resolved.path);
+        if (img && !img.isEmpty()) {
+          const resized = img.resize({ width: ICON_SIZE, height: ICON_SIZE, quality: 'best' });
+          const png = resized.toPNG();
+          if (png && png.length) {
+            try { fs.mkdirSync(path.dirname(cachePath), { recursive: true }); fs.writeFileSync(cachePath, png); } catch { /* cache is best-effort; still return the data URL below */ }
+            dataUrl = `data:image/png;base64,${png.toString('base64')}`;
+          }
+        }
+      }
+    }
+  } catch { dataUrl = null; } // any failure at all: silent fallback to the glyph
+  iconCache.set(harness, dataUrl);
+  return dataUrl;
+}
+function harnessIcons() {
+  return { 'claude-code': extractHarnessIcon('claude-code'), codex: extractHarnessIcon('codex') };
+}
 // The renderer names the session open in the dossier; only that file gets the
 // immediate append pump. `from` seeds the cursor at the page's line-aligned
 // end so nothing between the page read and this call is lost. Purely an
@@ -329,6 +378,15 @@ function markAllThreadsRead(ctx) {
 // so the renderer labels it explicitly. Cached by engine + mtime.
 const summaryCache = new Map();
 const SUMMARIZE_PROMPT = (ex, tail) => `Summarize the recent tail of an autonomous coding-agent session for an operator dashboard. In 1-2 plain sentences say what the agent is currently working on and its immediate next step. Be concrete and terse, no preamble. Respond directly with the summary only; do not use any tools.\n\nLatest user instruction: ${ex.lastUser || '(none)'}\n\nRecent blocks:\n${tail}`;
+// Always-on summary engine (PR-2 item 4): `auto: true` marks a call the
+// renderer's background engine made (unread AND needs-* threads only, see
+// runAutoSummaries in renderer.js) rather than the manual "Generate/Refresh AI
+// summary" button. Auto calls are budget-gated (dailyBudgetUSD, default from
+// summary-budget.js, configurable via app.set-state's summaryBudgetUSD) and,
+// on a persistent 401 (retried once already below), SKIP silently rather than
+// surfacing an error toast -- a skip must never count against the budget
+// (nothing was spent) and must never blank out an existing stale summary (the
+// caller keeps showing the old one with its age label).
 async function sessionSummarize(p) {
   const t = resolveTarget(p, ['path']);
   if (!t.ok) return t;
@@ -343,6 +401,12 @@ async function sessionSummarize(p) {
   const ex = d.lastExchange || {};
   const tail = (readBlocks(arg.path, { harness: arg.harness }).blocks || []).slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
   const prompt = SUMMARIZE_PROMPT(ex, tail);
+  if (arg.auto && engine === 'claude') {
+    const { wouldExceedBudget } = require('../lib/summary-budget');
+    const dailyBudgetUSD = Number.isFinite(readState().summaryBudgetUSD) ? readState().summaryBudgetUSD : undefined;
+    const check = wouldExceedBudget(prompt, dailyBudgetUSD);
+    if (check.exceeded) return { ok: false, paused: true, engine, spentUSD: check.spentUSD, dailyBudgetUSD: check.dailyBudgetUSD };
+  }
   const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
   let out;
   if (engine === 'codex') {
@@ -378,6 +442,14 @@ async function sessionSummarize(p) {
     if (/^failed to authenticate\b/i.test(out)) {
       await new Promise((r) => setTimeout(r, 2500));
       out = await runClaude();
+      // Still failing after the one retry: for an auto call this is a SKIP,
+      // not an error -- persistent auth trouble should not spam the UI with
+      // failures for a background engine the user never directly triggered,
+      // and (per the spec) a skip must never be counted against the budget
+      // (nothing was spent) and must not clobber a still-valid stale summary.
+      if (arg.auto && /^failed to authenticate\b/i.test(out)) {
+        return { ok: false, skipped: true, reason: '401-retry-exhausted', engine };
+      }
     }
   }
   const summary = out.slice(0, 600);
@@ -385,10 +457,15 @@ async function sessionSummarize(p) {
   // Both CLIs print auth failures to stdout and exit 0, so guard against
   // surfacing "Not logged in" as if it were a real summary.
   if (/\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated)\b/i.test(summary)) {
+    if (arg.auto) return { ok: false, skipped: true, reason: 'not-authenticated', engine };
     return { ok: false, error: `${engine} CLI is not authenticated: ${summary.slice(0, 140)}`, engine };
   }
   summaryCache.set(key, summary);
   if (summaryCache.size > 200) summaryCache.clear();
+  if (arg.auto && engine === 'claude') {
+    const { recordSpend } = require('../lib/summary-budget');
+    recordSpend(prompt, summary);
+  }
   return { ok: true, summary, engine };
 }
 
@@ -691,6 +768,7 @@ const registry = createRegistry({
   log: eventLog,
   handlers: {
     'app.status': (p) => ({ ok: true, status: Object.assign(accountStatus(p || {}), { version: APP_VERSION, apps: deepLinkApps() }) }),
+    'app.harness-icons': () => ({ ok: true, icons: harnessIcons() }),
     'session.detail': (p) => {
       // Same result shape the renderer has always consumed from sessions:read.
       const t = resolveTarget(p, ['path']);
@@ -730,6 +808,9 @@ const IPC_ROUTES = [
   ['app:commands', 'app.commands', () => ({})],
   ['sessions:list', 'sessions.list'],
   ['status:get', 'app.status'],
+  ['harness:icons', 'app.harness-icons', () => ({})],
+  ['pulse:pr-chip', 'pulse.pr-chip'],
+  ['summary:budget', 'summary.budget', (arg) => (arg && typeof arg === 'object' ? arg : {})],
   ['sessions:read', 'session.detail'],
   ['sessions:timeline', 'session.timeline'],
   ['session:summarize', 'session.summarize'],
@@ -758,6 +839,43 @@ for (const [channel, name, map] of IPC_ROUTES) {
 // it stays a direct IPC read the same way session:hot does; the exchange
 // itself is logged via the atlas.ask registry command above.
 ipcMain.handle('atlas:get-log', () => ({ ok: true, log: readAtlasLog(200) }));
+
+// Note-image thumbnails: a plain, sandboxed file read (not a mutation, not a
+// cross-session observation), the same direct-IPC-read pattern as
+// atlas:get-log above. Reads ONLY from attachmentsDir() -- resolved and
+// path.relative-checked so a crafted filename can never escape that one
+// directory -- and returns a data URL so the renderer never needs a raw
+// file:// path (which would need webSecurity changes to load in a
+// contextIsolation:true window). A note's own attachments array is the only
+// source of filenames the renderer ever passes here.
+ipcMain.handle('note:get-image', (_e, filename) => {
+  try {
+    const dir = attachmentsDir();
+    const name = path.basename(String(filename || ''));
+    const full = path.join(dir, name);
+    if (path.relative(dir, full).startsWith('..')) return { ok: false, error: 'invalid attachment path' };
+    const buf = fs.readFileSync(full);
+    const ext = path.extname(name).toLowerCase().replace('.', '') || 'png';
+    const mime = ext === 'jpg' ? 'jpeg' : ext;
+    return { ok: true, dataUrl: `data:image/${mime};base64,${buf.toString('base64')}` };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
+// Clicking a note-image thumbnail opens the full image in the OS default
+// viewer via the ALREADY-REGISTERED app.open-path command (the command
+// registry invariant: every action is one declared command, never a second
+// bespoke IPC channel for the same kind of action). This handler only
+// resolves a bare attachment filename to its real path within
+// attachmentsDir(), so the renderer never needs (or can forge) a raw
+// filesystem path; app.open-path's own handler does the actual shell.openPath.
+ipcMain.handle('note:resolve-attachment', (_e, filename) => {
+  try {
+    const dir = attachmentsDir();
+    const name = path.basename(String(filename || ''));
+    const full = path.join(dir, name);
+    if (path.relative(dir, full).startsWith('..') || !fs.existsSync(full)) return { ok: false, error: 'attachment not found' };
+    return { ok: true, path: full };
+  } catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+});
 
 // ---- control socket: the same registry, drivable from the CLI ----
 // Local-trust model (docs/commands.md): a 0600 unix socket under $HOME; any

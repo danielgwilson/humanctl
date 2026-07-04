@@ -87,7 +87,7 @@
       <span class="sbody">
         <span class="l1">${harnessGlyph(harnessOf(t))}<span class="nm">${esc(displayTitle(t))}</span><span class="when">${esc(whenOf(t) || '')}</span></span>
         <span class="l2"><span class="chip ${s.cls}"><span class="dt"></span>${esc(s.label)}</span><span class="msg">${esc(messageToHuman(t))}</span></span>
-        <span class="l3">${esc(repoBase(t))}</span>
+        <span class="l3">${esc(repoBase(t))}${prChipHtml(repoBase(t))}</span>
       </span>
     </div>`;
   }
@@ -168,7 +168,11 @@
 
   let lastListSig = null;
   function listSig(list) {
-    return list.map((t) => `${t.sessionId}:${t.lastTs}:${t.items.length}:${threadState(t)}:${t.sessionId === selThreadId ? 1 : 0}:${threadUnread(t) ? 1 : 0}`).join('|')
+    // PR chips land asynchronously from a cache-only lookup (prChipHtml, PR-2
+    // item 2) after the initial render, so their presence/label must be part
+    // of the signature or a chip landing after the first paint would never
+    // trigger the repaint that shows it.
+    return list.map((t) => `${t.sessionId}:${t.lastTs}:${t.items.length}:${threadState(t)}:${t.sessionId === selThreadId ? 1 : 0}:${threadUnread(t) ? 1 : 0}:${prChipHtml(repoBase(t))}`).join('|')
       + `#${filter.q}:${filter.state}:${filter.harness}:${filter.sort}`;
   }
   function renderList() {
@@ -225,8 +229,10 @@
         <div class="prev-meta"><h2>${esc(displayTitle(t))}</h2><div class="prev-sub">${esc(t.repo || 'no repo')}</div></div>
       </div>
       <div class="prev-note">this session is no longer in the recent scan; resume and reply are unavailable.</div>
-      <div class="tstream">${stream}</div>
+      <div class="tstream" id="inbFallbackStream">${stream}</div>
     </div>`;
+    const streamEl = el('inbFallbackStream');
+    if (streamEl) { wireThumbClicks(streamEl); hydrateThumbs(streamEl); }
   }
 
   function wireToolbar() {

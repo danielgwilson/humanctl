@@ -28,10 +28,13 @@ writing:
 | `skills.aggregate` | observation | yes | `maxAgeH, limit` |
 | `notes.list` | observation | yes | `limit` |
 | `inbox.threads` | observation | yes | `limit` |
-| `note.post` | action | yes | `message*, level, repo, session, agent, cwd` |
+| `note.post` | action | yes | `message*, level, repo, session, agent, cwd, images` (up to 4 image paths) |
 | `span.run` | observation | yes | `date, record` |
 | `pulse.run` | observation | yes | `repo, lane, fresh` |
+| `pulse.pr-chip` | observation | yes | `repo*` (cache-only: reads `~/.humanctl/pulse-cache.json`, zero spawns) |
+| `summary.budget` | observation | yes | `dailyBudgetUSD` (today's always-on-summary spend vs. budget) |
 | `app.commands` | observation | yes | (none) |
+| `app.harness-icons` | observation | no | (none) (runtime-extracted icons; app-only, needs `nativeImage`) |
 | `app.status` | observation | no | `maxAgeH, limit` |
 | `app.state` | observation | no | (none) |
 | `app.set-state` | action | no | `patch*` |
@@ -46,7 +49,7 @@ writing:
 | `session.resume` | action | no | `id*, harness, cwd` |
 | `session.open-app` | action | no | `id*, harness` |
 | `session.reveal` | action | no | `id, path` |
-| `session.summarize` | action | no | `id, path, harness, engine` |
+| `session.summarize` | action | no | `id, path, harness, engine, auto` (`auto: true` marks a call from the always-on background engine, budget-gated, silent 401-skip) |
 | `session.ask` | action | no | `id, path, harness, cwd, question*` |
 | `atlas.ask` | action | no | `question*, engine` |
 | `app.open-external` | action | no | `url*` |
@@ -67,10 +70,89 @@ loud, not silent.
 
 `lib/commands.js` carries a minimal plain-JS schema per command:
 `{ key: { type, required?, enum?, max? } }`. Types are `string`, `number`,
-`boolean`, `object`. Unknown params are rejected (a typo'd flag never
+`boolean`, `object`, `array`. Unknown params are rejected (a typo'd flag never
 silently no-ops). Free-text params (`message`, `question`) declare a `max`
 and are hard-truncated, never rejected, so a long paste degrades instead of
-failing outright.
+failing outright. Array params (`note.post`'s `images`) declare a `max` too,
+which caps the array length rather than truncating a string.
+
+## Note images
+
+`humanctl note --image <path>` (repeatable, max 4, png/jpg/gif/webp, <=10MB
+each) copies each valid image into `~/.humanctl/attachments/` under a fresh
+generated filename (never the caller's own path or filename, so a `/tmp`
+screenshot that later gets deleted does not silently break a note that
+already referenced it) and appends the generated filenames to the note's
+`attachments` array in `notes.jsonl`. A bad individual path (missing, wrong
+extension, oversized, unreadable) is skipped with a reason and reported back
+to the caller (`humanctl note` prints one line per skipped image to stderr);
+one bad `--image` never loses an otherwise-good note.
+
+`attachments/` is NOT on the `~/.humanctl` inbox watcher's allowlist
+(`isInboxRelevantChange`): the `notes.jsonl` write that references the new
+filenames already triggers the Inbox refresh, so watching the attachment
+files themselves would just be a second, redundant trigger for the same
+event, and per AGENTS.md's write/watch separation rule, every new
+system-written path must be an explicit, deliberate exclusion.
+
+The desktop app renders inline thumbnails in the notes stream (both the
+Inbox thread detail and the full session detail); clicking one opens the
+full image via the OS default viewer, routed through the already-registered
+`app.open-path` command after a small `note:resolve-attachment` IPC call
+resolves a bare filename to its real path within `attachments/` (the
+renderer never holds or can forge a raw filesystem path).
+
+## Harness icons
+
+`app.harness-icons` extracts each installed harness app's own icon at
+runtime: `lib/harness-icons.js` (pure, Electron-free, selftested without a
+display) reads the app bundle's `Info.plist` `CFBundleIconFile` key -- never
+a hardcoded `.icns` filename, since Claude ships `electron.icns` and Codex
+ships `icon.icns` -- and resolves it to a real, non-empty file under
+`Contents/Resources`. `electron/main.js` then does the one Electron-only
+step (`nativeImage.createFromPath` + downscale + `toPNG()`), caches the
+result under Electron `userData` (never the repo, never a `~/.humanctl`
+watched path), and returns a data URL. ANY failure at any step -- app not
+installed, unreadable plist, missing icon file, decode failure, empty image
+-- resolves to `null`, and the renderer falls back to the built-in neutral
+glyph silently. Fixture mode (`window.humanctl` absent) never calls this at
+all, so screenshots and the browser dev loop always show the built-in glyphs.
+
+## PR chips (cache-only contract)
+
+`pulse.pr-chip` reads ONLY the existing `~/.humanctl/pulse-cache.json` (the
+cache `lib/pulse.js` itself writes whenever a `humanctl pulse` run
+completes): zero network calls, zero `git`/`gh` process spawns, ever, from
+this command's call graph. A cache miss (no cache file, wrong config
+signature, the requested repo not present in the cached data, a degraded
+entry) returns `{ok: true, chip: null}`, never an error and never a trigger
+to go fetch fresh data -- refreshing the underlying cache happens only when
+`pulse.run` itself runs (manual `humanctl pulse`, a future Atlas-drawer
+refresh action, or a future scheduled run). When the cache entry is older
+than 10 minutes the chip still renders, with an honest age label ("2/3 PRs ·
+as of 14m") rather than silently implying live data.
+
+## Always-on AI summary + budget
+
+Unread threads in a needs-input/needs-approval state get a background
+summary automatically, reusing the exact same summarizer path as the manual
+"Generate/Refresh AI summary" button (`session.summarize`, haiku, the same
+anchored one-retry-then-give-up 401 handling documented in
+`docs/ask-session.md`), marked with `auto: true`. The refresh check
+piggybacks the renderer's EXISTING 20-second poll (no new timer): a thread
+qualifies for a fresh summary when it has none yet, or when at least 12 new
+substantive items have landed since its cached summary's timestamp.
+
+Budget is ONE authoritative unit: estimated dollars/day, computed live from
+the actual prompt and output text of each call, priced via `lib/pricing.js`'s
+real haiku rate table (`lib/summary-budget.js`). Default $1.00/day,
+configurable in Settings, persisted per calendar day in
+`~/.humanctl/summary-budget.json` (not inbox-watcher-relevant, same rule as
+attachments above) and reset at local midnight. At the cap, the engine pauses
+for the rest of the day and the header shows an honest "summary budget
+reached today" chip; a persistent 401 (after the one anchored retry) is a
+silent SKIP, never counted against the budget (nothing was spent) and never
+clobbering a still-valid stale summary.
 
 ## The event log
 
@@ -201,5 +283,20 @@ the ask-log round-trip (`appendAskLog`/`readAskLog`), the shell-v2 command
 declarations (`app.set-mode` deleted; `app.set-view`/`app.set-nav` added;
 the persistent-rail commands removed; `inbox.mark-read`, `atlas.ask`),
 the event log (entry shape, rotation at the byte boundary, a
-broken log directory degrading to a no-op), and a real control-socket
-round-trip (including the 0600 mode and stale-socket unlink).
+broken log directory degrading to a no-op), a real control-socket
+round-trip (including the 0600 mode and stale-socket unlink), and the PR-2
+surface: `app.harness-icons` registered app-only with an honest
+not-running error, `pulse.pr-chip`'s cache-only contract (a missing cache,
+a fresh hit matched case-insensitively by repo alias, a stale-but-present
+hit with an honest age, a degraded entry yielding no chip), `note.post`'s
+image handling (`storeNoteImages` copying a real file / skipping a missing
+one / skipping a non-image extension / capping at 4, and a full CLI-shaped
+round-trip through the registered command), the `attachments/` directory
+being excluded from `isInboxRelevantChange`, and `summary.budget` reflecting
+real recorded spend from `lib/summary-budget.js`.
+
+`npm run perf:logic-selftest` (see `docs/perf.md`) is a separate, CI-safe
+pure-logic selftest covering the watcher filter, the summary-budget math, and
+harness-icon path resolution in more depth than the checks above; it is not a
+substitute for the required LOCAL `npm run perf:selftest` gate, which drives
+a real Electron window and is not part of either selftest above.

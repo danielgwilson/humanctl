@@ -24,6 +24,10 @@ async function appendNote(message, flags) {
   // instead of tripping the registry's enum validation.
   let level = String(flagValue(flags, "level", "fyi") || "fyi").toLowerCase();
   if (!NOTE_LEVELS.has(level)) level = "fyi";
+  // --image is repeatable (max 4, enforced by note.post/postNote); paths are
+  // resolved relative to cwd here so a relative --image path behaves the way
+  // a shell user expects, matching how --repo/--cwd already work.
+  const images = multiFlagValues(flags, "image").map((p) => path.resolve(process.cwd(), String(p)));
   const result = await createRegistry().invoke("note.post", {
     message,
     level,
@@ -31,14 +35,21 @@ async function appendNote(message, flags) {
     session: flagValue(flags, "session", "") || flagValue(flags, "id", "") || undefined,
     agent: flagValue(flags, "agent", "") || process.env.HUMANCTL_AGENT || undefined,
     cwd: process.cwd(),
+    images: images.length ? images : undefined,
   }, { source: "cli-direct" });
   if (!result.ok) {
     console.error(`humanctl note failed: ${result.error}`);
     process.exitCode = 1;
     return;
   }
+  if (result.skippedImages && result.skippedImages.length) {
+    for (const s of result.skippedImages) console.error(`humanctl note: skipped image ${s.path} (${s.reason})`);
+  }
   if (hasFlag(flags, "json")) console.log(JSON.stringify(result.note));
-  else console.log(`noted (${result.note.level}): ${result.note.message}`);
+  else {
+    const attTxt = result.note.attachments && result.note.attachments.length ? ` [${result.note.attachments.length} image${result.note.attachments.length === 1 ? "" : "s"}]` : "";
+    console.log(`noted (${result.note.level}): ${result.note.message}${attTxt}`);
+  }
 }
 
 // Span of control: the computation lives in lib/span.js (shared with the
@@ -101,8 +112,11 @@ Usage:
   humanctl init [dir]
   humanctl status [dir] [--json]
 
-  humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] "message"
-    post a short aside/BTW to the human (shows in the humanctl desktop inbox)
+  humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] [--image path ...] "message"
+    post a short aside/BTW to the human (shows in the humanctl desktop inbox).
+    --image is repeatable (max 4, png/jpg/gif/webp, <=10MB each) for proof
+    screenshots; each is copied into ~/.humanctl/attachments/ and rendered
+    inline in the Inbox and thread detail.
 
   humanctl span [--date YYYY-MM-DD] [--record] [--json]
     daily span-of-control counts: interactive vs automation sessions touched,
