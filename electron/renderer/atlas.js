@@ -61,7 +61,7 @@
     return `<div class="atlas-chat">
       <div class="achat-thread" id="achatThread">${thread}${empty}</div>
       <div class="achat-in">
-        <input id="achatInput" type="text" maxlength="500" placeholder="Ask your chief of staff..." ${busy ? 'disabled' : ''} />
+        <input class="hc-input" id="achatInput" type="text" maxlength="500" placeholder="Ask your chief of staff..." aria-label="Ask your chief of staff" ${busy ? 'disabled' : ''} />
         <button id="achatSend" ${busy ? 'disabled' : ''}>Ask</button>
       </div>
     </div>`;
@@ -105,20 +105,45 @@
   }
   function refresh() { /* no ambient data in a chat-only drawer; nothing to refresh passively */ }
 
+  // a11y: remember what had focus before the drawer opened (normally the
+  // header's sidebar-toggle icon) so Esc / the close button / a scrim click
+  // all return focus there instead of dropping it to the document body.
+  let returnFocusTo = null;
+  function drawerFocusables() {
+    const root = el('atlasDrawer');
+    if (!root) return [];
+    return Array.from(root.querySelectorAll('button, input, [tabindex]:not([tabindex="-1"])')).filter((n) => !n.disabled && n.offsetParent !== null);
+  }
+  // Basic focus trap: while the drawer is open, Tab/Shift+Tab cycle within its
+  // own focusable elements instead of escaping into the view behind it.
+  function onDrawerKeydown(e) {
+    if (!open || e.key !== 'Tab') return;
+    const items = drawerFocusables();
+    if (!items.length) return;
+    const first = items[0], last = items[items.length - 1];
+    if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+    else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+  }
+
   function openDrawer() {
     if (open) return;
     open = true;
+    returnFocusTo = document.activeElement && document.activeElement !== document.body ? document.activeElement : el('btnRightRail');
     el('atlasDrawer').classList.add('on');
     el('atlasScrim').classList.add('on');
     render();
     const input = el('achatInput');
     if (input) input.focus();
+    document.addEventListener('keydown', onDrawerKeydown, true);
   }
   function close() {
     if (!open) return;
     open = false;
     el('atlasDrawer').classList.remove('on');
     el('atlasScrim').classList.remove('on');
+    document.removeEventListener('keydown', onDrawerKeydown, true);
+    if (returnFocusTo && document.contains(returnFocusTo)) { try { returnFocusTo.focus(); } catch { /* no longer focusable */ } }
+    returnFocusTo = null;
     if (onCloseCb) { try { onCloseCb(); } catch {} }
   }
   function isOpen() { return open; }

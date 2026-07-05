@@ -15,6 +15,21 @@
 
 // ---------- tiny utils ----------
 const el = (id) => document.getElementById(id);
+// Shared keyboard-activation helper for row-shaped elements with role="button"
+// (session rows, inbox threads): Enter or Space triggers the same action a
+// click would, and Space is prevented from also scrolling the list. Used by
+// renderer.js's Sessions rows and inbox.js's thread rows so both keyboard
+// activation paths stay identical rather than re-implemented per view.
+function wireRowActivation(nodeList) {
+  nodeList.forEach((r) => {
+    if (r.__kbBound) return;
+    r.__kbBound = true;
+    r.addEventListener('keydown', (e) => {
+      if (e.target !== r) return; // let inner focusable controls (pin button) handle their own keys
+      if (e.key === 'Enter' || e.key === ' ' || e.key === 'Spacebar') { e.preventDefault(); r.click(); }
+    });
+  });
+}
 const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function cssv(n) { return getComputedStyle(document.documentElement).getPropertyValue(n).trim(); }
@@ -797,8 +812,8 @@ function renderNav() {
     const active = (view === n.view && !overlayOpen()) ? 'on' : '';
     const badge = (n.view === 'inbox' && un) ? `<span class="nav-badge">${un}</span>` : '';
     const kk = n.key ? `<span class="nav-key">${n.key}</span>` : '';
-    return `<button class="nav-item ${active}" data-view="${n.view}" title="${esc(n.label)}${n.key ? ' (' + n.key + ')' : ''}">
-      <span class="nav-glyph">${n.glyph}</span>
+    return `<button class="nav-item ${active}" data-view="${n.view}" title="${esc(n.label)}${n.key ? ' (' + n.key + ')' : ''}" aria-label="${esc(n.label)}${un && n.view === 'inbox' ? ', ' + un + ' unread' : ''}" ${active ? 'aria-current="page"' : ''}>
+      <span class="nav-glyph" aria-hidden="true">${n.glyph}</span>
       <span class="nav-label">${esc(n.label)}</span>
       ${badge}${kk}
     </button>`;
@@ -835,17 +850,17 @@ function setThemePref(v) {
 function renderUserPicker() {
   const box = el('userPicker');
   if (!box || !userPickerOpen) return;
-  const seg = (id, opts, cur) => `<div class="seg2" id="${id}">${opts.map((o) => `<button data-val="${o[0]}" class="${o[0] === cur ? 'on' : ''}">${esc(o[1])}</button>`).join('')}</div>`;
+  const seg = (id, opts, cur, label) => `<div class="seg2" id="${id}" role="group" ${label ? `aria-label="${esc(label)}"` : ''}>${opts.map((o) => `<button data-val="${o[0]}" class="${o[0] === cur ? 'on' : ''}" aria-pressed="${o[0] === cur}">${esc(o[1])}</button>`).join('')}</div>`;
   box.innerHTML = `
     <div class="pk-sect">
       <div class="pk-l">Theme</div>
-      ${seg('pkTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref)}
+      ${seg('pkTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref, 'Theme')}
     </div>
     <hr />
     <div class="pk-sect">
       <div class="pk-l">Always-on summary budget</div>
       <div class="pk-row"><span class="sk">Daily (est USD)</span>
-        <input class="set-num" id="pkSumBudget" type="number" min="0.10" step="0.10" value="${esc(String(summaryBudgetUSD))}" style="width:76px" />
+        <input class="hc-input set-num" id="pkSumBudget" type="number" min="0.10" step="0.10" aria-label="Always-on summary daily budget in US dollars" value="${esc(String(summaryBudgetUSD))}" style="width:76px" />
       </div>
       ${summaryBudgetChip ? `<p class="note" style="margin:6px 0 0;font-size:10.5px;color:var(--ink4)">today: ${esc(fmtUSD(summaryBudgetChip.spentUSD))} of ${esc(fmtUSD(summaryBudgetChip.dailyBudgetUSD))}${summaryBudgetChip.paused ? ' -- paused' : ''}</p>` : ''}
     </div>
@@ -874,12 +889,21 @@ function openUserPicker() {
   userPickerOpen = true;
   renderUserPicker();
   document.addEventListener('click', onPickerOutsideClick);
+  // a11y: move focus into the popover (first focusable control) so keyboard
+  // users land inside it immediately, same contract as the CoS drawer and the
+  // context menu.
+  const first = box.querySelector('button, input, [tabindex]:not([tabindex="-1"])');
+  if (first) first.focus();
 }
 function closeUserPicker() {
   const box = el('userPicker');
+  const hadFocus = box && box.contains(document.activeElement);
   if (box) box.hidden = true;
   userPickerOpen = false;
   document.removeEventListener('click', onPickerOutsideClick);
+  // a11y: return focus to the trigger only if focus was actually inside the
+  // popover (an outside click that closes it should not steal focus back).
+  if (hadFocus) { const btn = el('navUserBtn'); if (btn) btn.focus(); }
 }
 function onPickerOutsideClick(e) {
   const box = el('userPicker');
@@ -1014,8 +1038,8 @@ function renderDetail() {
         <div class="dh-meta">
           <div class="dh-row1">
             <h1>${nameHtml(a)}</h1>
-            <span class="chip ${s.cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${s.label}</span>
-            ${a.tier !== 'hot' ? `<span class="chip c-idle"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
+            <span class="chip ${s.cls}" data-tip="${esc(stateTip(a))}" tabindex="0" role="status" aria-label="${esc(stateTip(a))}"><span class="dt" aria-hidden="true"></span>${s.label}</span>
+            ${a.tier !== 'hot' ? `<span class="chip c-idle" data-tip="${esc(stateTip(a))}" tabindex="0" role="status" aria-label="${esc(stateTip(a))}"><span class="dt" aria-hidden="true"></span>${esc(TIERS[a.tier].label)}</span>` : ''}
           </div>
           <div class="dh-sub">${a.stateReason ? esc(a.stateReason) + ' · ' : ''}${esc(a.when || '')}</div>
         </div>
@@ -1030,7 +1054,7 @@ function renderDetail() {
     </div>
     <div id="touchedChips"></div>
     <div class="detail-disc">
-      <button class="disc-tog" id="discTog">Session details</button>
+      <button class="disc-tog" id="discTog" aria-expanded="false" aria-controls="discBody">Session details</button>
       <div class="disc-body" id="discBody" hidden></div>
     </div>`;
   const inner = `<div class="detail-scroll">${scrollInner}</div>${askBlockHtml(a)}`;
@@ -1049,9 +1073,10 @@ function renderDetail() {
     wireThumbClicks(dtStream);
     hydrateThumbs(dtStream);
   }
-  el('discTog').addEventListener('click', () => {
+  el('discTog').addEventListener('click', (e) => {
     const body = el('discBody');
     body.hidden = !body.hidden;
+    e.currentTarget.setAttribute('aria-expanded', String(!body.hidden));
     if (!body.hidden) fillSessionDetails(a);
   });
   // Load the transcript + touched chips async, post-paint (perf: SLOs). The
@@ -1079,25 +1104,46 @@ function resumeSplitHtml(a) {
   const primaryAct = a.state === 'done' ? 'reveal' : ra.primary.act;
   return `<div class="resume-split">
     <button class="btn primary" data-dact="${primaryAct}">${esc(primaryLabel)}</button>
-    <button class="btn primary caret" id="resumeCaret" aria-label="more resume options">&#9662;</button>
-    <div class="resume-menu" id="resumeMenu" hidden>
-      ${ra.secondary ? `<button data-dact="${ra.secondary.act}">${esc(ra.secondary.label)}</button>` : ''}
-      <button data-dact="reveal">Reveal transcript</button>
-      <button data-dact="copy-id">Copy session id</button>
+    <button class="btn primary caret" id="resumeCaret" aria-label="more resume options" aria-haspopup="menu" aria-expanded="false">&#9662;</button>
+    <div class="resume-menu" id="resumeMenu" role="menu" aria-label="more resume options" hidden>
+      ${ra.secondary ? `<button data-dact="${ra.secondary.act}" role="menuitem">${esc(ra.secondary.label)}</button>` : ''}
+      <button data-dact="reveal" role="menuitem">Reveal transcript</button>
+      <button data-dact="copy-id" role="menuitem">Copy session id</button>
     </div>
   </div>`;
 }
+function closeResumeMenu(returnFocus) {
+  const caret = el('resumeCaret');
+  const menu = el('resumeMenu');
+  if (!menu || menu.hidden) return;
+  menu.hidden = true;
+  if (caret) caret.setAttribute('aria-expanded', 'false');
+  if (returnFocus && caret) caret.focus();
+}
 function wireResumeSplit(a, wrap) {
-  wrap.querySelectorAll('[data-dact]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); const m = el('resumeMenu'); if (m) m.hidden = true; runAction(b.dataset.dact, a); }));
+  wrap.querySelectorAll('[data-dact]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); closeResumeMenu(false); runAction(b.dataset.dact, a); }));
   const caret = wrap.querySelector('#resumeCaret');
   const menu = wrap.querySelector('#resumeMenu');
-  if (caret && menu) caret.addEventListener('click', (e) => { e.stopPropagation(); menu.hidden = !menu.hidden; });
+  if (caret && menu) {
+    caret.addEventListener('click', (e) => {
+      e.stopPropagation();
+      const willOpen = menu.hidden;
+      menu.hidden = !willOpen;
+      caret.setAttribute('aria-expanded', String(willOpen));
+      if (willOpen) { const first = menu.querySelector('[role="menuitem"]'); if (first) first.focus(); }
+    });
+    menu.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape') { e.preventDefault(); closeResumeMenu(true); }
+    });
+  }
 }
 // One document-level closer for the resume dropdown (registered once, not per
-// render, so repaints never accumulate listeners).
+// render, so repaints never accumulate listeners). Esc when focus is inside
+// the caret itself (menu not yet opened via click) also needs no special
+// handling since the menu is already hidden in that case.
 document.addEventListener('mousedown', (e) => {
   const menu = el('resumeMenu');
-  if (menu && !menu.hidden && !menu.contains(e.target) && e.target.id !== 'resumeCaret') menu.hidden = true;
+  if (menu && !menu.hidden && !menu.contains(e.target) && e.target.id !== 'resumeCaret') closeResumeMenu(false);
 });
 
 // Touched chips: repos + issue keys, sourced ONLY from the session reader's OWN
@@ -1297,7 +1343,7 @@ function askBlockHtml(a) {
     const qps = ASK_QUICK.map((q) => `<button class="ask-qp" data-ask-q="${esc(q)}" ${busy ? 'disabled' : ''}>${esc(q)}</button>`).join('');
     controls = `<div class="ask-ctl">${qps}</div>
     <div class="ask-in">
-      <input id="askInput" type="text" maxlength="500" placeholder="Ask this session anything..." value="${esc(askDraft.get(a.id) || '')}" ${busy ? 'disabled' : ''} />
+      <input class="hc-input" id="askInput" type="text" maxlength="500" placeholder="Ask this session anything..." aria-label="Ask this session anything" value="${esc(askDraft.get(a.id) || '')}" ${busy ? 'disabled' : ''} />
       <button id="askSend" ${busy ? 'disabled' : ''}>Ask</button>
     </div>`;
   }
@@ -1475,14 +1521,15 @@ function anatomyRow(a, dense) {
   const s = STATE[a.state], h = hue(s.hue);
   const unread = isUnread(a.id);
   const isPin = pins.has(a.id);
-  return `<div class="srow ${dense ? 'dense' : ''} ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}">
-    ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" tabindex="0"></span>` : `<span class="unread"></span>`}
+  const rowLabel = `${displayName(a)}, ${stateTip(a)}, ${messageToHuman(a)}${unread ? ', unread' : ''}`;
+  return `<div class="srow ${dense ? 'dense' : ''} ${a.id === selId ? 'sel' : ''} ${TIERS[a.tier].cls}" style="--c-sel:${h}" data-id="${esc(a.id)}" role="button" tabindex="0" aria-label="${esc(rowLabel)}">
+    ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" aria-hidden="true"></span>` : `<span class="unread" aria-hidden="true"></span>`}
     <span class="sbody">
       <span class="l1">${harnessGlyph(a.harness)}<span class="nm">${nameHtml(a)}</span><span class="when">${timeLadder(a)}</span></span>
-      <span class="l2"><span class="chip ${s.cls}"><span class="dt" data-tip="${esc(stateTip(a))}" tabindex="0"></span>${s.label}</span><span class="msg">${esc(messageToHuman(a))}</span></span>
+      <span class="l2"><span class="chip ${s.cls}" data-tip="${esc(stateTip(a))}"><span class="dt" aria-hidden="true"></span>${s.label}</span><span class="msg">${esc(messageToHuman(a))}</span></span>
       <span class="l3">${esc(cwdBase(a.cwd) || a.repo)}${prChipHtml(cwdBase(a.cwd) || a.repo)}</span>
     </span>
-    <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'}">&#128204;</button>
+    <button class="pinbtn ${isPin ? 'on' : ''}" data-pin="${esc(a.id)}" title="${isPin ? 'unpin' : 'pin'}" aria-label="${isPin ? 'unpin' : 'pin'} ${esc(displayName(a))}">&#128204;</button>
   </div>`;
 }
 function isUnread(id) {
@@ -1491,21 +1538,17 @@ function isUnread(id) {
   const last = lastReadTs[id] || 0;
   return t.items.some((it) => (Date.parse(it.ts) || 0) > last);
 }
+// The three filter/sort controls are the bespoke HcSelect component (0.16.1
+// controls + a11y pass), mounted onto these placeholder spans by
+// wireSessionsToolbar below. Native <select> is never used per DESIGN.md.
 function toolbarHtml(scope) {
   const f = scope === 'sessions' ? sessFilter : null;
   if (!f) return '';
-  const sorts = scope === 'sessions'
-    ? [['recent', 'recent'], ['state', 'state'], ['created', 'created'], ['title', 'title']]
-    : [];
   return `<div class="toolbar">
-    <input class="tb-search" id="sessSearch" type="text" placeholder="Search sessions..." value="${esc(f.q)}" />
-    <select class="tb-sel" id="sessState">
-      <option value="">all states</option>
-      <option value="need">needs input</option><option value="block">blocked</option>
-      <option value="work">running</option><option value="idle">stalled</option><option value="done">finished</option>
-    </select>
-    <select class="tb-sel" id="sessHarness"><option value="">all harnesses</option><option value="claude-code">claude</option><option value="codex">codex</option></select>
-    <select class="tb-sel" id="sessSort">${sorts.map((s) => `<option value="${s[0]}">${s[1]}</option>`).join('')}</select>
+    <input class="hc-input tb-search" id="sessSearch" type="text" placeholder="Search sessions..." aria-label="Search sessions" value="${esc(f.q)}" />
+    <span id="sessState"></span>
+    <span id="sessHarness"></span>
+    <span id="sessSort"></span>
   </div>`;
 }
 function renderSessions() {
@@ -1521,6 +1564,7 @@ function renderSessions() {
     <div class="srows" id="sessRows">${rows || `<div class="view-empty">no sessions in the last 72h.</div>`}</div>`;
   wireSessionsToolbar();
   const rowsBox = el('sessRows');
+  wireRowActivation(rowsBox.querySelectorAll('.srow'));
   rowsBox.querySelectorAll('.srow').forEach((r) => {
     r.addEventListener('click', (e) => { if (e.target.closest('[data-pin]')) return; openDetail(r.dataset.id, 'sessions'); });
     if (window.ContextMenu) r.addEventListener('contextmenu', (e) => { e.preventDefault(); window.ContextMenu.open(e, { type: 'session', agent: byId.get(r.dataset.id) }); });
@@ -1528,14 +1572,28 @@ function renderSessions() {
   rowsBox.querySelectorAll('[data-pin]').forEach((b) => b.addEventListener('click', (e) => { e.stopPropagation(); togglePin(b.dataset.pin); }));
 }
 function wireSessionsToolbar() {
-  const s = el('sessSearch'), st = el('sessState'), hh = el('sessHarness'), so = el('sessSort');
-  if (st) st.value = sessFilter.state;
-  if (hh) hh.value = sessFilter.harness;
-  if (so) so.value = sessFilter.sort;
+  const s = el('sessSearch');
   if (s) s.addEventListener('input', () => { sessFilter.q = s.value; renderSessionRows(); });
-  if (st) st.addEventListener('change', () => { sessFilter.state = st.value; renderSessionRows(); });
-  if (hh) hh.addEventListener('change', () => { sessFilter.harness = hh.value; renderSessionRows(); });
-  if (so) so.addEventListener('change', () => { sessFilter.sort = so.value; renderSessionRows(); });
+  if (window.HcSelect) {
+    const stHost = el('sessState');
+    if (stHost) HcSelect.create(stHost, {
+      ariaLabel: 'Filter by state', value: sessFilter.state,
+      options: [['', 'all states'], ['need', 'needs input'], ['block', 'blocked'], ['work', 'running'], ['idle', 'stalled'], ['done', 'finished']],
+      onChange: (v) => { sessFilter.state = v; renderSessionRows(); },
+    });
+    const hhHost = el('sessHarness');
+    if (hhHost) HcSelect.create(hhHost, {
+      ariaLabel: 'Filter by harness', value: sessFilter.harness,
+      options: [['', 'all harnesses'], ['claude-code', 'claude'], ['codex', 'codex']],
+      onChange: (v) => { sessFilter.harness = v; renderSessionRows(); },
+    });
+    const soHost = el('sessSort');
+    if (soHost) HcSelect.create(soHost, {
+      ariaLabel: 'Sort sessions', value: sessFilter.sort,
+      options: [['recent', 'recent'], ['state', 'state'], ['created', 'created'], ['title', 'title']],
+      onChange: (v) => { sessFilter.sort = v; renderSessionRows(); },
+    });
+  }
 }
 // Repaint only the rows on filter/sort change (search input keeps focus).
 function renderSessionRows() {
@@ -1546,6 +1604,7 @@ function renderSessionRows() {
   if (pinned.length) { rows += `<div class="grp-hd"><span class="gdot" style="background:var(--iris)"></span>Pinned<span class="gct">${pinned.length}</span></div>`; rows += pinned.map((a) => anatomyRow(a, true)).join(''); }
   rows += rest.map((a) => anatomyRow(a, true)).join('');
   rowsBox.innerHTML = rows || `<div class="view-empty">no sessions match.</div>`;
+  wireRowActivation(rowsBox.querySelectorAll('.srow'));
   rowsBox.querySelectorAll('.srow').forEach((r) => {
     r.addEventListener('click', (e) => { if (e.target.closest('[data-pin]')) return; openDetail(r.dataset.id, 'sessions'); });
     if (window.ContextMenu) r.addEventListener('contextmenu', (e) => { e.preventDefault(); window.ContextMenu.open(e, { type: 'session', agent: byId.get(r.dataset.id) }); });
@@ -1608,13 +1667,13 @@ function renderFleetPlaceholder() {
 // ============================================================
 function renderSettings() {
   const box = el('view-settings');
-  const seg = (id, opts, cur) => `<div class="seg2" id="${id}">${opts.map((o) => `<button data-val="${o[0]}" class="${o[0] === cur ? 'on' : ''}">${esc(o[1])}</button>`).join('')}</div>`;
+  const seg = (id, opts, cur, label) => `<div class="seg2" id="${id}" role="group" ${label ? `aria-label="${esc(label)}"` : ''}>${opts.map((o) => `<button data-val="${o[0]}" class="${o[0] === cur ? 'on' : ''}" aria-pressed="${o[0] === cur}">${esc(o[1])}</button>`).join('')}</div>`;
   const destSeg = (h) => {
     const avail = appAvailable(h);
     const cur = avail ? openPref[h] : 'terminal';
-    return `<div class="seg2" data-openseg="${h}">
-      <button data-dest="app" class="${cur === 'app' ? 'on' : ''}" ${avail ? '' : 'disabled'} title="${avail ? '' : 'no desktop app registered for this harness on this machine'}">Desktop app</button>
-      <button data-dest="terminal" class="${cur === 'terminal' ? 'on' : ''}">Terminal</button>
+    return `<div class="seg2" role="group" aria-label="Resume destination for ${esc(h)}" data-openseg="${h}">
+      <button data-dest="app" class="${cur === 'app' ? 'on' : ''}" aria-pressed="${cur === 'app'}" ${avail ? '' : 'disabled'} title="${avail ? '' : 'no desktop app registered for this harness on this machine'}">Desktop app</button>
+      <button data-dest="terminal" class="${cur === 'terminal' ? 'on' : ''}" aria-pressed="${cur === 'terminal'}">Terminal</button>
     </div>`;
   };
   box.innerHTML = `
@@ -1622,12 +1681,12 @@ function renderSettings() {
     <div class="settings">
       <div class="set-sect">
         <h4>Appearance</h4>
-        <div class="set-row"><span class="sk">Theme</span>${seg('setTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref)}</div>
+        <div class="set-row"><span class="sk">Theme</span>${seg('setTheme', [['light', 'Light'], ['dark', 'Dark'], ['system', 'System']], themePref, 'Theme')}</div>
       </div>
       <div class="set-sect">
         <h4>AI summary engine</h4>
         <p class="sub">Which local CLI generates the on-demand summary. It runs on your machine, through your own CLI auth.</p>
-        ${seg('setEngine', [['claude', 'Claude Code'], ['codex', 'Codex']], summarizer)}
+        ${seg('setEngine', [['claude', 'Claude Code'], ['codex', 'Codex']], summarizer, 'AI summary engine')}
         <p class="note">Only the "AI summary" and "Ask the session" actions send data off-device, through your own CLI auth. Claude asks leave no trace in the session; Codex asks write the marked question into the thread itself. Nothing else leaves your machine.</p>
       </div>
       <div class="set-sect">
@@ -1640,7 +1699,7 @@ function renderSettings() {
         <h4>Always-on AI summary</h4>
         <p class="sub">Unread threads that need you get a background summary automatically (haiku, same engine as the manual button), refreshed after roughly 12 new events. It pauses honestly for the rest of the day once it hits this budget; nothing is ever silently over-spent.</p>
         <div class="set-row"><span class="sk">Daily budget (est USD)</span>
-          <input class="set-num" id="setSumBudget" type="number" min="0.10" step="0.10" value="${esc(String(summaryBudgetUSD))}" />
+          <input class="hc-input set-num" id="setSumBudget" type="number" min="0.10" step="0.10" aria-label="Always-on summary daily budget in US dollars" value="${esc(String(summaryBudgetUSD))}" />
         </div>
         ${summaryBudgetChip ? `<p class="note">Today: ${esc(fmtUSD(summaryBudgetChip.spentUSD))} of ${esc(fmtUSD(summaryBudgetChip.dailyBudgetUSD))}${summaryBudgetChip.paused ? ' -- paused for the rest of today' : ''}.</p>` : ''}
       </div>
@@ -1933,14 +1992,37 @@ function toggleRightRail() {
 document.addEventListener('keydown', (e) => {
   // Cmd/Ctrl + \ toggles the pinned nav rail from anywhere.
   if ((e.metaKey || e.ctrlKey) && e.key === '\\') { e.preventDefault(); toggleNavPinned(); return; }
+  // a11y fix: Escape while focus sits inside an open overlay (the CoS
+  // drawer's chat input, the user picker) must close THAT overlay, not just
+  // blur the focused field beneath it -- checked before the blanket
+  // INPUT/TEXTAREA/SELECT/BUTTON blur guard below, which would otherwise
+  // swallow the keypress (blur the input, never reach the drawer-close
+  // branch) whenever an overlay's own composer/input has focus.
+  if (e.key === 'Escape' && window.Atlas && window.Atlas.isOpen()) { toggleRightRail(); return; }
+  if (e.key === 'Escape' && userPickerOpen) { closeUserPicker(); return; }
   if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA' || e.target.tagName === 'SELECT' || e.target.tagName === 'BUTTON')) {
-    if (e.key === 'Escape' && e.target.blur) e.target.blur();
-    return;
+    // Controls that manage their own Escape contract (the bespoke HcSelect
+    // trigger: close-and-return-focus-to-self) opt out of this blanket blur
+    // via data-esc-self; blurring here would undo their own trigger.focus()
+    // call a moment later in the same Escape keypress.
+    if (e.key === 'Escape' && e.target.blur && !e.target.closest('[data-esc-self]')) e.target.blur();
+    // a11y fix: only text-entry elements (INPUT/TEXTAREA/SELECT) need
+    // protection from the single-letter/number view-switch shortcuts below
+    // stealing a keystroke meant to be typed. A focused BUTTON never consumes
+    // printable characters, so single-letter/number shortcuts must still
+    // reach it (e.g. pressing "a" to open the CoS drawer while focus sits on
+    // the drawer's own toggle button, right after Esc returned focus there,
+    // must still work) -- EXCEPT Enter/Space, a button's own native
+    // activation keys, which must not also fall through to the Inbox
+    // j/k/Enter shortcuts below and double-fire.
+    if (e.target.tagName !== 'BUTTON' || e.key === 'Enter' || e.key === ' ') return;
   }
-  if (window.Atlas && window.Atlas.isOpen()) { if (e.key === 'Escape') toggleRightRail(); return; }
-  if (userPickerOpen && e.key === 'Escape') { closeUserPicker(); return; }
   if (e.key === 'Escape' && overlayOpen()) { closeDetail(); return; }
-  if (e.key === 'a' || e.key === 'A') { toggleRightRail(); return; }
+  // preventDefault: toggleRightRail() synchronously moves focus into the
+  // drawer's chat input (a11y: focus-moves-in-on-open), and without this the
+  // same "a" keypress that opened it also lands as a typed character in that
+  // now-focused field.
+  if (e.key === 'a' || e.key === 'A') { e.preventDefault(); toggleRightRail(); return; }
   if (e.key === '1') setView('inbox');
   else if (e.key === '2') setView('metrics');
   else if (e.key === '3') setView('fleet');

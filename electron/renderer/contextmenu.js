@@ -19,6 +19,7 @@
 (function () {
   let openFor = null;
   let hiIndex = -1;
+  let returnFocusTo = null; // the element focus returns to when the menu closes (a11y pass)
 
   function menuEl() { return el('ctxmenu'); }
 
@@ -89,7 +90,12 @@
   }
   function setHighlight(i, entries) {
     hiIndex = i;
-    menuEl().querySelectorAll('.ctxitem').forEach((n) => n.classList.toggle('hi', +n.dataset.i === i));
+    menuEl().querySelectorAll('.ctxitem').forEach((n) => {
+      const on = +n.dataset.i === i;
+      n.classList.toggle('hi', on);
+      n.tabIndex = on ? 0 : -1;
+      if (on) n.focus();
+    });
   }
   function runEntry(e) {
     close();
@@ -100,6 +106,10 @@
     if (!entries.length) return;
     openFor = { target, entries };
     hiIndex = -1;
+    // a11y: remember whatever had focus (e.g. the right-clicked row, now
+    // keyboard-focusable) so Esc/close can put focus back exactly there
+    // instead of dropping it to the document body.
+    returnFocusTo = document.activeElement && document.activeElement !== document.body ? document.activeElement : null;
     const m = menuEl();
     render(entries);
     m.hidden = false;
@@ -108,8 +118,19 @@
     const y = Math.min(evt.clientY, window.innerHeight - rect.height - 8);
     m.style.left = Math.max(4, x) + 'px';
     m.style.top = Math.max(4, y) + 'px';
+    // Move real DOM focus into the menu (first selectable item) so keyboard
+    // users driving this via Shift+F10/context-menu-key land somewhere
+    // sensible; mouse-opened menus still get keyboard nav to work immediately.
+    const selectable = entries.map((e2, i) => ({ e: e2, i })).filter((x) => !x.e.sep);
+    if (selectable.length) setHighlight(selectable[0].i, entries);
   }
-  function close() { openFor = null; hiIndex = -1; menuEl().hidden = true; }
+  function close() {
+    const wasOpen = !!openFor;
+    openFor = null; hiIndex = -1;
+    menuEl().hidden = true;
+    if (wasOpen && returnFocusTo && document.contains(returnFocusTo)) { try { returnFocusTo.focus(); } catch { /* element may no longer be focusable */ } }
+    returnFocusTo = null;
+  }
   function isOpen() { return !!openFor; }
 
   document.addEventListener('mousedown', (e) => { if (isOpen() && !menuEl().contains(e.target)) close(); });

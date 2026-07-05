@@ -88,11 +88,12 @@
     // an aged-out thread has no live row to reason over, so its dot just
     // names the state derived from the newest item's shape.
     const dotTip = a ? stateTip(a) : s.label;
-    return `<div class="srow ${t.sessionId === selThreadId ? 'sel' : ''} ${tierCls}" style="--c-sel:${cssvHue(s.hue)}" data-id="${esc(t.sessionId)}" title="${esc(t.repo || '')}">
-      ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" tabindex="0"></span>` : `<span class="unread"></span>`}
+    const rowLabel = `${displayTitle(t)}, ${dotTip}, ${messageToHuman(t)}${unread ? ', unread' : ''}`;
+    return `<div class="srow ${t.sessionId === selThreadId ? 'sel' : ''} ${tierCls}" style="--c-sel:${cssvHue(s.hue)}" data-id="${esc(t.sessionId)}" role="button" tabindex="0" aria-label="${esc(rowLabel)}" title="${esc(t.repo || '')}">
+      ${unread ? `<span class="unread tip-left on" data-tip="unread &middot; new since you last opened this" aria-hidden="true"></span>` : `<span class="unread" aria-hidden="true"></span>`}
       <span class="sbody">
         <span class="l1">${harnessGlyph(harnessOf(t))}<span class="nm">${esc(displayTitle(t))}</span><span class="when">${esc(whenOf(t) || '')}</span></span>
-        <span class="l2"><span class="chip ${s.cls}"><span class="dt" data-tip="${esc(dotTip)}" tabindex="0"></span>${esc(s.label)}</span><span class="msg">${esc(messageToHuman(t))}</span></span>
+        <span class="l2"><span class="chip ${s.cls}" data-tip="${esc(dotTip)}"><span class="dt" aria-hidden="true"></span>${esc(s.label)}</span><span class="msg">${esc(messageToHuman(t))}</span></span>
         <span class="l3">${esc(repoBase(t))}${prChipHtml(repoBase(t))}</span>
       </span>
     </div>`;
@@ -113,18 +114,15 @@
     return list.sort(cmp);
   }
 
+  // The three filter/sort controls are the bespoke HcSelect component (0.16.1
+  // controls + a11y pass), mounted onto these placeholder spans by
+  // wireToolbar below. Native <select> is never used per DESIGN.md.
   function toolbarHtml() {
     return `<div class="toolbar">
-      <input class="tb-search" id="inbSearch" type="text" placeholder="Search inbox..." value="${esc(filter.q)}" />
-      <select class="tb-sel" id="inbState">
-        <option value="">all states</option>
-        <option value="need">needs input</option><option value="block">blocked</option>
-        <option value="work">running</option><option value="idle">stalled</option><option value="done">finished</option>
-      </select>
-      <select class="tb-sel" id="inbHarness"><option value="">all harnesses</option><option value="claude-code">claude</option><option value="codex">codex</option></select>
-      <select class="tb-sel" id="inbSort">
-        <option value="recent">recent</option><option value="needs-first">needs first</option><option value="alpha">alpha</option>
-      </select>
+      <input class="hc-input tb-search" id="inbSearch" type="text" placeholder="Search inbox..." aria-label="Search inbox" value="${esc(filter.q)}" />
+      <span id="inbState"></span>
+      <span id="inbHarness"></span>
+      <span id="inbSort"></span>
     </div>`;
   }
 
@@ -193,6 +191,7 @@
       box.innerHTML = `<div class="view-empty">No agent updates match. Agents post here via <code>humanctl note</code>.</div>`;
     } else {
       box.innerHTML = list.map(threadRowHtml).join('');
+      wireRowActivation(box.querySelectorAll('.srow'));
       box.querySelectorAll('.srow').forEach((r) => r.addEventListener('click', () => selectThread(r.dataset.id)));
       if (window.ContextMenu) box.querySelectorAll('.srow').forEach((r) => r.addEventListener('contextmenu', (e) => { e.preventDefault(); window.ContextMenu.open(e, { type: 'inbox-thread', thread: threads.find((t) => t.sessionId === r.dataset.id) }); }));
     }
@@ -242,14 +241,28 @@
   }
 
   function wireToolbar() {
-    const s = el('inbSearch'), st = el('inbState'), hh = el('inbHarness'), so = el('inbSort');
-    if (st) st.value = filter.state;
-    if (hh) hh.value = filter.harness;
-    if (so) so.value = filter.sort;
+    const s = el('inbSearch');
     if (s) s.addEventListener('input', () => { filter.q = s.value; renderList(); });
-    if (st) st.addEventListener('change', () => { filter.state = st.value; renderList(); });
-    if (hh) hh.addEventListener('change', () => { filter.harness = hh.value; renderList(); });
-    if (so) so.addEventListener('change', () => { filter.sort = so.value; renderList(); });
+    if (window.HcSelect) {
+      const stHost = el('inbState');
+      if (stHost) HcSelect.create(stHost, {
+        ariaLabel: 'Filter by state', value: filter.state,
+        options: [['', 'all states'], ['need', 'needs input'], ['block', 'blocked'], ['work', 'running'], ['idle', 'stalled'], ['done', 'finished']],
+        onChange: (v) => { filter.state = v; renderList(); },
+      });
+      const hhHost = el('inbHarness');
+      if (hhHost) HcSelect.create(hhHost, {
+        ariaLabel: 'Filter by harness', value: filter.harness,
+        options: [['', 'all harnesses'], ['claude-code', 'claude'], ['codex', 'codex']],
+        onChange: (v) => { filter.harness = v; renderList(); },
+      });
+      const soHost = el('inbSort');
+      if (soHost) HcSelect.create(soHost, {
+        ariaLabel: 'Sort inbox threads', value: filter.sort,
+        options: [['recent', 'recent'], ['needs-first', 'needs first'], ['alpha', 'alpha']],
+        onChange: (v) => { filter.sort = v; renderList(); },
+      });
+    }
     const mar = el('btnMarkAllRead');
     if (mar) mar.addEventListener('click', markAllRead);
   }

@@ -61,9 +61,50 @@ Existing tokens are law: Space Grotesk display, JetBrains Mono labels/metadata, 
 - All committed screenshots use synthetic fixture data only.
 - No real session titles, paths, transcripts, or personal data in code, fixtures, docs, or commit messages.
 
+## Bespoke controls and accessibility (hardline, 0.16.1)
+
+No native or OS-default interactive control ships in this app. Every
+interactive element is bespoke, tokenized, keyboard-navigable, ARIA-labeled,
+carries a visible focus ring, and meets an adequate hit target. Specifically:
+
+- No bare `<select>`. Filter and sort dropdowns are the shared `HcSelect`
+  component (`electron/renderer/hc-select.js`): a button trigger plus a
+  popover listbox styled in the same panel language as the context menu and
+  the user picker (panel2 background, radius, rule, hover), never the OS's
+  own control chrome.
+- No native context menu and no native tooltip where a bespoke one already
+  exists (`contextmenu.js`'s custom menu; the `[data-tip]` pure-CSS tooltip).
+- Every interactive control is keyboard-operable: buttons and the bespoke
+  select use native `<button>` semantics; anything else that is clickable
+  (session/inbox rows, custom dropdowns) carries `role`, `tabindex="0"`, and
+  Enter/Space activation, plus an `aria-label` that summarizes what a sighted
+  user reads visually (state, title, the message to the human).
+- Every focusable element shows a visible `:focus-visible` ring (one shared
+  rule in the `a11y-base` stylesheet, `index.html`); no interactive element
+  relies on hover alone to reveal itself to a keyboard user (a control that is
+  `opacity:0` until hover must also reveal on `:focus-visible`).
+- Every overlay (the chief-of-staff drawer, the user/settings picker, the
+  context menu) moves focus in on open, closes and returns focus to its
+  trigger on Esc or an outside interaction, and the drawer keeps a basic focus
+  trap (Tab/Shift+Tab cycle within it while open).
+- Hit targets are at least ~28px in the smaller dimension for anything a
+  pointer or touch is expected to activate, even where the visible glyph is
+  smaller (padding-box sizing, not a visual resize).
+- Text and essential UI meet WCAG AA contrast against every surface it can
+  render on in this app (4.5:1 body text, 3:1 large text/essential UI
+  elements); the muted `--ink3`/`--ink4` tokens are calibrated against the
+  darkest/lightest surface in each theme, not just the page background.
+- Transitions and animations are gated behind `prefers-reduced-motion:
+  reduce` (one rule, `a11y-base`), never per-component.
+
+UI PRs that touch any interactive control must keyboard-test it (Tab to it,
+operate it without a mouse) and state the contrast ratio for any new or
+changed text/background pairing.
+
 ## Process rules for UI changes
 
 1. Register commands before wiring UI (see AGENTS.md CommandRegistry invariant).
 2. Every UI PR attaches full-app screenshots of all views in both themes (fixture mode).
 3. Every UI PR states, per new visible element: what signal it shows and why it owns it here (one-owner audit).
 4. perf:selftest must pass; new timers, watchers, or pollers require a line in the PR body declaring their cadence and lifecycle.
+5. UI PRs touching interactive controls must keyboard-test and check contrast (see "Bespoke controls and accessibility" above).
