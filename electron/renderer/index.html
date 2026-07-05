@@ -11,7 +11,7 @@
   /* canvas, dark-first premium near-black */
   --bg:#0a0c10; --bg2:#0d1016; --panel:#141821; --panel2:#171c26;
   --rule:#222836; --rule2:#2b3444;
-  --ink:#eef1f6; --ink2:#a7b0bf; --ink3:#727b8c; --ink4:#4a5364;
+  --ink:#eef1f6; --ink2:#a7b0bf; --ink3:#8b93a3; --ink4:#7d89a0;
   --iris:#8b89f7; --iris-dim:#6f6ddb;
   --disp:'Space Grotesk',-apple-system,system-ui,sans-serif;
   --mono:'JetBrains Mono',ui-monospace,Menlo,monospace;
@@ -38,7 +38,7 @@
 }
 body.light{
   --bg:#f4f5f8; --bg2:#eceef3; --panel:#ffffff; --panel2:#f7f8fb; --rule:#e2e6ee; --rule2:#d3d9e4;
-  --ink:#12151c; --ink2:#454c5a; --ink3:#6c7484; --ink4:#9aa2b1;
+  --ink:#12151c; --ink2:#454c5a; --ink3:#5c6373; --ink4:#5f6674;
 }
 *{box-sizing:border-box}
 html,body{margin:0}
@@ -71,6 +71,37 @@ svg{display:block}
 .srow.drift, .qrow.drift{ opacity:.55; }
 .srow.archived{ opacity:.4; }
 .srow.drift:hover, .qrow.drift:hover, .srow.archived:hover{ opacity:.85; }
+</style>
+
+<!-- ===== A11Y BASE (0.16.1): one visible focus ring for every interactive
+     element, everywhere, plus the reduced-motion gate and native-control
+     resets. DESIGN.md's new "no OS-default controls" rule leans on this: a
+     single :focus-visible contract so a bespoke component never has to
+     reinvent its own ring. Keyboard focus only (mouse/touch clicks never show
+     it), via :focus-visible, which every target browser here supports. ===== -->
+<style id="a11y-base">
+:focus{ outline:none; }
+:focus-visible{
+  outline:2px solid var(--iris); outline-offset:2px; border-radius:4px;
+}
+/* Rows, chips, and other flat elements the ring would otherwise clip against
+   sit close enough to the ring color already (border-radius above matches
+   their own radius in most cases); tighten offset where the element already
+   carries a visible border so the ring reads as one continuous frame instead
+   of two nested boxes. */
+.srow:focus-visible, .nav-item:focus-visible, .ctxitem:focus-visible,
+.pk-item:focus-visible, .resume-menu button:focus-visible{ outline-offset:-2px; }
+button, .btn, [role="button"], [tabindex]{ -webkit-tap-highlight-color:transparent; }
+/* Every interactive control gets an honest minimum hit target (a11y pass:
+   "hit targets at least ~28px in the smaller dimension"), even where its
+   visible glyph is smaller. Padding-box sizing keeps the visual size intact;
+   this only guarantees the clickable/tappable box beneath it. */
+.icon-btn, .crumb-pin, .atlas-hd .close, .disc-tog{ min-width:28px; min-height:28px; }
+.pinbtn{ display:inline-flex; align-items:center; justify-content:center; width:28px; height:28px; }
+
+@media (prefers-reduced-motion: reduce){
+  *, *::before, *::after{ animation:none !important; transition:none !important; }
+}
 </style>
 
 <!-- ===== SHELL LAYOUT (shell v2: nav rail overlay + one active view + detail overlay + Atlas drawer) ===== -->
@@ -212,15 +243,50 @@ body.light .pk-item:hover{ color:#fff; }
 .view-empty{ padding:var(--s6) var(--s5); font-family:var(--mono); font-size:12px; color:var(--ink3); line-height:1.6; }
 .view-empty code{ background:var(--panel2); border-radius:4px; padding:1px 6px; }
 
+/* ---------- STANDARDIZED INPUT BASE (0.16.1 controls + a11y pass). One
+   shared contract for every text/number/search field in the app (toolbar
+   search, ask/chat composers, budget numbers): consistent height, padding,
+   radius, border, and placeholder color, so no field is styled ad hoc.
+   :focus-visible carries the ring (see a11y-base above); the border-color
+   change on focus is additional, not a replacement for the ring. Native
+   number spinners are killed in favor of the plain field (no ugly OS
+   up/down arrows breaking the app's flat surface language). ---------- */
+.hc-input{ height:30px; font-family:var(--disp); font-size:12.5px; color:var(--ink); background:var(--bg2);
+  border:1px solid var(--rule2); border-radius:var(--r1); padding:0 10px; outline:none; }
+.hc-input:focus{ border-color:var(--iris); }
+.hc-input::placeholder{ color:var(--ink4); }
+.hc-input[type="number"]::-webkit-outer-spin-button,
+.hc-input[type="number"]::-webkit-inner-spin-button{ -webkit-appearance:none; margin:0; }
+.hc-input[type="number"]{ -moz-appearance:textfield; }
+
 /* toolbar (compact search + filters + sort; renderer ephemera) */
 .toolbar{ flex:0 0 auto; display:flex; align-items:center; gap:var(--s2); padding:var(--s2) var(--s5); border-bottom:1px solid var(--rule); flex-wrap:wrap; }
-.tb-search{ flex:1 1 200px; min-width:120px; font-family:var(--disp); font-size:12.5px; color:var(--ink);
-  background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:6px 10px; outline:none; }
-.tb-search:focus{ border-color:var(--iris); }
-.tb-search::placeholder{ color:var(--ink4); }
-.tb-sel{ font-family:var(--mono); font-size:10px; color:var(--ink2); background:var(--bg2); border:1px solid var(--rule2);
-  border-radius:var(--r1); padding:6px 8px; cursor:pointer; outline:none; }
-.tb-sel:focus{ border-color:var(--iris); }
+.tb-search{ flex:1 1 200px; min-width:120px; }
+
+/* ---------- BESPOKE SELECT (replaces every native <select> per DESIGN.md's
+   "no OS-default controls" rule). A button trigger + an absolutely
+   positioned popover listbox, styled to match contextmenu.js / the user
+   picker's panel language (same panel2 bg, radius, rule, shadow, hover).
+   Full keyboard + ARIA contract lives in the shared hc-select.js component;
+   this is purely presentation. ---------- */
+.hc-select{ position:relative; display:inline-flex; }
+.hc-select-trigger{ height:30px; display:inline-flex; align-items:center; gap:6px; font-family:var(--mono); font-size:10px;
+  color:var(--ink2); background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:0 8px 0 10px;
+  cursor:pointer; white-space:nowrap; }
+.hc-select-trigger:hover{ color:var(--ink); border-color:var(--ink4); }
+.hc-select.open .hc-select-trigger{ border-color:var(--iris); color:var(--ink); }
+.hc-select-trigger .hcs-val{ overflow:hidden; text-overflow:ellipsis; }
+.hc-select-trigger .hcs-caret{ flex:0 0 auto; width:9px; height:9px; color:var(--ink4); transition:transform .12s; }
+.hc-select.open .hcs-caret{ transform:rotate(180deg); color:var(--ink2); }
+.hc-select-pop{ position:fixed; z-index:80; min-width:160px; max-height:280px; overflow-y:auto; background:var(--panel2);
+  border:1px solid var(--rule2); border-radius:var(--r2); box-shadow:0 16px 40px -8px rgba(0,0,0,.55); padding:4px; }
+.hc-select-pop[hidden]{ display:none; }
+.hcs-opt{ display:flex; align-items:center; gap:8px; font-family:var(--disp); font-size:12.5px; color:var(--ink);
+  padding:7px 10px; border-radius:6px; cursor:pointer; white-space:nowrap; }
+.hcs-opt:hover, .hcs-opt.hi{ background:var(--iris); color:#0a0c10; }
+body.light .hcs-opt:hover, body.light .hcs-opt.hi{ color:#fff; }
+.hcs-opt .hcs-check{ flex:0 0 auto; width:12px; height:12px; opacity:0; }
+.hcs-opt[aria-selected="true"] .hcs-check{ opacity:1; }
 
 /* three-line rows (shared by Inbox + Sessions). No avatars, no context bars. */
 .srows{ flex:1 1 auto; overflow-y:auto; }
@@ -233,8 +299,16 @@ body.light .pk-item:hover{ color:#fff; }
 .srow.dense{ padding:var(--s2) var(--s5); }
 .srow:hover{ background:var(--panel); }
 .srow.sel{ background:var(--panel2); border-left-color:var(--c-sel); }
-.srow .unread{ width:7px; height:7px; border-radius:50%; background:transparent; margin-top:5px; }
+.srow .unread{ width:7px; height:7px; border-radius:50%; background:transparent; margin-top:5px; position:relative; }
 .srow .unread.on{ background:var(--iris); }
+/* The unread dot is only tabbable (tabindex=0) when it is actually "on"
+   (real informational content, per the dot-tooltip a11y pass): its own box is
+   7px, too small to carry a legible focus ring on its own, so the ring is
+   drawn on an invisible padded hit area centered on the dot instead of on the
+   dot's true edges. */
+.srow .unread[tabindex]::before{ content:''; position:absolute; inset:-7px; border-radius:50%; }
+.srow .unread[tabindex]:focus-visible{ outline:none; }
+.srow .unread[tabindex]:focus-visible::before{ outline:2px solid var(--iris); outline-offset:1px; }
 .srow .sbody{ min-width:0; display:flex; flex-direction:column; gap:3px; }
 .srow.dense .sbody{ gap:2px; }
 .srow .l1{ display:flex; align-items:center; gap:var(--s2); min-width:0; }
@@ -248,8 +322,12 @@ body.light .pk-item:hover{ color:#fff; }
 .prchip.c-done{ color:var(--s-done); }
 .srow .pinbtn{ opacity:0; background:transparent; border:0; cursor:pointer; font-size:11px; line-height:1; padding:0;
   filter:grayscale(1) opacity(.75); transition:opacity .12s; align-self:flex-start; margin-top:2px; }
-.srow:hover .pinbtn{ opacity:.5; }
+.srow:hover .pinbtn, .srow .pinbtn:focus-visible{ opacity:.5; }
 .srow .pinbtn.on, .srow:hover .pinbtn.on{ opacity:1; filter:none; }
+/* a11y: an opacity:0 control is unreachable for keyboard/screen-reader users
+   until they tab onto it, at which point it must actually be visible enough
+   to see the focus ring land somewhere real, not on an invisible 24px box. */
+.srow .pinbtn:focus-visible{ opacity:1; filter:none; }
 
 /* Inbox two-pane shell. The detail pane hosts the SAME .detail component the
    full-width overlay renders (renderer.js renderDetail, host 'inbPreview'),
@@ -291,9 +369,7 @@ body.light .pk-item:hover{ color:#fff; }
 .seg2 button.on{ background:var(--iris); color:#0a0c10; }
 body.light .seg2 button.on{ color:#fff; }
 .seg2 button:disabled{ opacity:.35; cursor:default; }
-.set-num{ font-family:var(--mono); font-size:12px; color:var(--ink); background:var(--panel2); border:1px solid var(--rule2); border-radius:var(--r1);
-  padding:6px 10px; width:100px; }
-.set-num:focus{ outline:none; border-color:var(--iris); }
+.set-num{ font-family:var(--mono); font-size:12px; background:var(--panel2); width:100px; }
 
 /* stat list (Metrics' Resources section: spend/tokens/quota, one owner) */
 .gstats{ display:flex; flex-direction:column; border:1px solid var(--rule); border-radius:var(--r2); background:var(--panel); overflow:hidden; }
@@ -444,9 +520,8 @@ body.light .resume-menu button:hover{ color:#fff; }
 .ask-qp:hover{ color:var(--ink); border-color:var(--ink4); }
 .ask-qp:disabled{ opacity:.4; cursor:default; }
 .ask-in{ flex:0 0 auto; display:flex; gap:var(--s2); margin-top:var(--s2); }
-.ask-in input{ flex:1 1 auto; min-width:0; font-family:var(--disp); font-size:12.5px; color:var(--ink); background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:7px 10px; outline:none; }
+.ask-in input{ flex:1 1 auto; min-width:0; }
 .ask-in input:focus{ border-color:var(--s-done); }
-.ask-in input::placeholder{ color:var(--ink4); }
 .ask-in input:disabled{ opacity:.5; }
 .ask-in button{ font-family:var(--mono); font-size:10.5px; letter-spacing:.04em; color:var(--s-done); background:transparent; border:1px solid color-mix(in srgb, var(--s-done) 45%, transparent); border-radius:var(--r1); padding:7px 14px; cursor:pointer; transition:.12s; }
 .ask-in button:hover{ background:color-mix(in srgb, var(--s-done) 12%, transparent); }
@@ -512,8 +587,7 @@ body.light #atlasScrim{ background:rgba(30,36,48,.14); }
 .achat-x .a.err{ border-left-color:var(--s-block); color:var(--ink2); }
 .achat-x .meta{ font-family:var(--mono); font-size:9px; color:var(--ink4); padding-left:var(--s2); }
 .achat-in{ display:flex; gap:6px; margin-top:var(--s3); flex:0 0 auto; }
-.achat-in input{ flex:1 1 auto; min-width:0; font-family:var(--disp); font-size:12px; color:var(--ink); background:var(--bg2); border:1px solid var(--rule2); border-radius:var(--r1); padding:7px 9px; outline:none; }
-.achat-in input:focus{ border-color:var(--iris); }
+.achat-in input{ flex:1 1 auto; min-width:0; }
 .achat-in button{ font-family:var(--mono); font-size:10px; color:var(--iris); background:transparent; border:1px solid var(--iris-dim); border-radius:var(--r1); padding:6px 12px; cursor:pointer; }
 .achat-in button:disabled{ opacity:.4; cursor:default; }
 .achat-empty{ font-family:var(--mono); font-size:10.5px; color:var(--ink4); line-height:1.6; }
@@ -579,8 +653,9 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 ::-webkit-scrollbar{ width:8px; height:8px; }
 ::-webkit-scrollbar-thumb{ background:var(--rule2); border-radius:8px; }
 ::-webkit-scrollbar-track{ background:transparent; }
-
-@media (prefers-reduced-motion: reduce){ *{ animation:none !important; transition:none !important; } }
+/* prefers-reduced-motion is declared once, in the a11y-base stylesheet above
+   (loaded right after tokens, ahead of every component style here), so every
+   transition/animation in this file is already gated by it. */
 </style>
 </head>
 <body>
@@ -632,11 +707,14 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 <nav class="nav-rail" id="navRail" aria-label="views"></nav>
 
 <!-- user / settings picker popover (anchored at the foot of the nav strip) -->
-<div class="picker" id="userPicker" hidden role="menu" aria-label="user and settings"></div>
+<!-- role="group" (not "menu"): this popover mixes toggle buttons and a number
+     input, which a real menu's assistive-tech contract does not expect to
+     contain (a menu's children must be menuitems). -->
+<div class="picker" id="userPicker" hidden role="group" aria-label="Theme and settings"></div>
 
 <!-- chief-of-staff drawer (summonable right overlay; key a or the header icon). Chat only. -->
 <div id="atlasScrim"></div>
-<aside id="atlasDrawer" aria-label="Chief of staff">
+<aside id="atlasDrawer" aria-label="Chief of staff" role="dialog" aria-modal="true">
   <div class="atlas-hd"><span class="glyph">&#129517;</span><span class="ttl">Chief of staff</span>
     <button class="close" id="atlasClose" aria-label="close chief-of-staff chat">&times;</button>
   </div>
@@ -652,6 +730,7 @@ body.light .ctxitem:hover, body.light .ctxitem.hi{ color:#fff; }
 <!-- No build step: plain script tags, dependency order. renderer.js owns shared
      state/utils/views/detail; atlas.js the summonable drawer; inbox.js the Inbox
      v2 view; contextmenu.js the custom menu; boot.js calls load() last. -->
+<script src="./hc-select.js"></script>
 <script src="./renderer.js"></script>
 <script src="./atlas.js"></script>
 <script src="./inbox.js"></script>
