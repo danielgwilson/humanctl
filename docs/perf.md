@@ -69,13 +69,13 @@ real perf regression routinely breaks, checkable without a renderer:
 - `isInboxRelevantChange` (the watcher filter that fixed and now guards
   against the events.jsonl feedback loop reopening, including the PR-2
   additions: `attachments/`, `pulse-cache.json`, `summary-budget.json`).
-- The always-on summary budget math (`lib/summary-budget.js`): estimate
+- The always-on summary budget math (`lib/summary-budget.ts`): estimate
   scaling, daily accumulation, daily reset, the honest pre-check, and the
   paused-at-cap boundary.
-- Harness icon path resolution (`lib/harness-icons.js`): pure filesystem
+- Harness icon path resolution (`lib/harness-icons.ts`): pure filesystem
   logic (Info.plist read, `.icns` resolution with/without extension, honest
   failure shape for an unknown or uninstalled harness).
-- The PR chip cache-only contract (`lib/commands.js` `prChip`): honest
+- The PR chip cache-only contract (`lib/commands.ts` `prChip`): honest
   cache-miss, stale-age labeling, degraded-entry handling, all with zero
   process spawns (there is no spawn in the function's call graph to mock).
 

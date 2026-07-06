@@ -135,7 +135,7 @@ and Sessions. Top to bottom:
 - Touched chips: repos and issue keys, sourced only from the session reader's
   own extracted refs (`extractIssueKeys` and the transcript-mentioned
   repo/working-directory paths, via `readDetail`'s `linearRefs`), never from
-  `lib/pulse.js`. They fill in asynchronously after the first paint.
+  `lib/pulse.ts`. They fill in asynchronously after the first paint.
 - Session details disclosure: cwd, ids, context %, tokens, engine.
 
 ## Sessions view (the complete fleet)
@@ -200,7 +200,7 @@ A session's state is derived from real signals, never fabricated. Since v3 the
 state axis reads the CONTENT of the transcript tail, not just who spoke last: a
 2026-07 ground-truth audit of 60 real sessions graded the old
 lastRole-plus-decay heuristic at 36% precision, and the failure modes it found
-drive the rules below. The reader (`lib/sessions.js`) classifies every row and
+drive the rules below. The reader (`lib/sessions.ts`) classifies every row and
 attaches `state`, `stateReason`, and `tier`; the renderer overlays notes on top
 and owns no classification logic or time constants of its own.
 
@@ -252,9 +252,9 @@ resume-pattern mining over the full local session history:
 
 Within tiers the reader sorts needs-you first, then session depth (message
 count), then recency, following the mining's odds ratios (depth 2.23, age 1.82,
-question-tail 1.46). `TIER_HOT_MS` and `TIER_DRIFT_MS` live in `lib/sessions.js`
+question-tail 1.46). `TIER_HOT_MS` and `TIER_DRIFT_MS` live in `lib/sessions.ts`
 and are the single source; `NEED_DECAY_MS` remains as an alias equal to the hot
-tier for `lib/pulse.js` consumers. Explicit notes (`blocked`, `review`) do not
+tier for `lib/pulse.ts` consumers. Explicit notes (`blocked`, `review`) do not
 decay.
 
 ## Live dossier timeline (honest truncation + sub-2s appends)
@@ -347,7 +347,7 @@ Both harnesses record real token usage, so the fleet numbers are real, not
 estimated:
 
 - Claude logs `message.usage` (input / output / cache) plus the model per
-  assistant turn, so spend is computed from `pricing.js` and shown as an
+  assistant turn, so spend is computed from `pricing.ts` and shown as an
   API-equivalent value (both harnesses are usually plan-billed, so it is framed
   as "what this would cost at API rates", not a literal bill). Claude exposes
   no rate-limit/window field anywhere in its transcripts, confirmed absent (not
@@ -368,7 +368,7 @@ anymore (the header owns nothing but brand and the drawer toggle).
 ## Command registry
 
 Everything the app can do that mutates durable state, spawns a process, or
-observes another session is a registered command (`lib/commands.js`), invocable
+observes another session is a registered command (`lib/commands.ts`), invocable
 from the UI (IPC), from the CLI against the running app (a control socket), and
 logged as one event line in `~/.humanctl/events.jsonl`. The view switch
 (`app.set-view`), the nav pin (`app.set-nav`), the chief-of-staff drawer toggle
@@ -482,7 +482,7 @@ runtime, and notarizes via Apple's notary service. Without a cert installed,
 
 No build step, no bundler. The renderer is plain HTML and JS.
 
-- `lib/sessions.js` is the reader. It scans `~/.codex/sessions` and
+- `lib/sessions.ts` is the reader. It scans `~/.codex/sessions` and
   `~/.claude/projects`, reads each transcript by bounded slices, and returns
   metadata, a per-session context map (`readBlocks`), and real token usage
   (`readUsage`, cached by mtime). Bounded reads past the 12MB cap are
@@ -494,16 +494,16 @@ No build step, no bundler. The renderer is plain HTML and JS.
   issue refs, generated HTML files, skills used, reasoning effort, and ultracode
   flag (Claude logs these; Codex exposes effort/quota, not skills, and we never
   fake the gap). It never writes and never makes a network call.
-- `lib/pricing.js` holds approximate public token prices, used only for a local
+- `lib/pricing.ts` holds approximate public token prices, used only for a local
   spend estimate (always labeled "est"). It is the single place to update.
-- `electron/main.js` owns the window, watches the session dirs (fs.watch) to
+- `electron/main.ts` owns the window, watches the session dirs (fs.watch) to
   push live updates (debounced for the list, immediate cursor-fed appends for
   the hot session), exposes read-only IPC, persists local UI state (view, nav
   pin, theme, pins, summary engine, selection, cached AI summaries, lastReadTs)
   under userData, migrates any legacy `mode` key forward to the new `view` key
   on read, and runs the opt-in `session:summarize` and `session:ask` through the
   user's own CLIs.
-- `electron/preload.js` is the locked bridge: a small, explicit set of calls, no
+- `electron/preload.ts` is the locked bridge: a small, explicit set of calls, no
   direct fs, no network.
 - `electron/renderer/` is the UI: `renderer.js` owns shared state/utils, the
   nav rail, the views, and the session detail; `atlas.js` the summonable drawer;

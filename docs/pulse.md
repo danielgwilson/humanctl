@@ -17,7 +17,7 @@ pulse shows whether the work graph and local reality agree.
 | Work authority | `linear issue query --team <team> --state <state> --json` (one call per configured team and state) | issue identifier, title, state, priority, url, updatedAt |
 | Execution | `git worktree list --porcelain` + `for-each-ref` + `status` per configured repo, plus a cheap per-worktree last-edit probe (gitdir index and root dir mtimes) | branches, worktree paths, dirty state, ahead/behind, last commit age, last edit age |
 | Proof | `gh pr list -R <owner/repo> --state open --json ...` plus a bounded `--state merged` list | PR state, draft flag, review decision, checks rollup |
-| Attempts | `lib/sessions.js` (bounded reads of local Codex and Claude Code transcripts) | session activity, last role, issue references, mentioned worktree paths and branch names |
+| Attempts | `lib/sessions.ts` (bounded reads of local Codex and Claude Code transcripts) | session activity, last role, issue references, mentioned worktree paths and branch names |
 | Escalations | `~/.humanctl/notes.jsonl` | blocked / review / done notes |
 
 Worktrees always come from git, never from configuration: agent harnesses

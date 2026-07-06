@@ -51,7 +51,7 @@ Existing tokens are law: Space Grotesk display, JetBrains Mono labels/metadata, 
 
 - Cold open to interactive: under 1500 ms on fixture data.
 - Click to paint (row select, view switch): under 100 ms.
-- Idle: zero self-triggered refresh; only the declared poll cadence may cause work. Files the system writes must never live under directories the system watches. lib/commands.js isInboxRelevantChange is the current enforcement point; extend it whenever a new system-written file is introduced.
+- Idle: zero self-triggered refresh; only the declared poll cadence may cause work. Files the system writes must never live under directories the system watches. lib/commands.ts isInboxRelevantChange is the current enforcement point; extend it whenever a new system-written file is introduced.
 - DOM rebuilds are signature-gated: unchanged data must not rebuild.
 - Heap: steady state after 20 refresh cycles must not grow monotonically.
 
