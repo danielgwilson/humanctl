@@ -8,8 +8,19 @@
 // so this stays a zero-new-runtime-dependency tool -- it never ships in
 // package.json `dependencies`, and now it does not need a devDependency
 // either. Node's global `fetch` covers the CDP HTTP endpoint the same way.
-
-function getPageTarget(port = 9222) {
+//
+// Port discovery: run.js launches Electron with
+// `--remote-debugging-port=0` (kernel-assigned ephemeral port, immune to
+// collisions with any other Electron/Chromium instance on the machine) and
+// reads the actual `ws://` endpoint straight out of the child's own stderr
+// ("DevTools listening on ws://..."). That means the harness always attaches
+// to a URL its own child process just reported, never a guess -- there is no
+// scenario where it discovers and attaches to a ghost/unrelated Electron
+// instance. getPageTarget's `/json/list` HTTP fetch below is kept only as a
+// fallback for a caller that already knows a fixed port (e.g. manual
+// debugging via HUMANCTL_PERF_PORT); it is no longer the primary discovery
+// path for perf:selftest itself.
+function getPageTarget(port) {
   return fetch(`http://localhost:${port}/json/list`)
     .then((r) => r.json())
     .then((list) => {
