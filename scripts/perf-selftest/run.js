@@ -67,10 +67,15 @@ async function main() {
     console.error('[perf:selftest] electron is not installed (run `npm install` first). This is a LOCAL pre-release gate, not a CI check -- see docs/perf.md.');
     process.exit(1);
   }
+  const mainEntry = path.join(REPO_ROOT, 'dist', 'electron', 'main.js');
+  if (!fs.existsSync(mainEntry)) {
+    console.error('[perf:selftest] dist/electron/main.js not found. Run `npm run build:lib` first (the perf:selftest npm script does this for you).');
+    process.exit(1);
+  }
 
   const t0Spawn = Date.now();
   const child = spawn(electronBin, [
-    path.join(REPO_ROOT, 'electron', 'main.js'),
+    path.join(REPO_ROOT, 'dist', 'electron', 'main.js'),
     `--remote-debugging-port=${CDP_PORT}`,
     `--user-data-dir=${scratchUserData}`,
   ], {

@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.16.2",
+  "version": "0.16.3",
   "description": "A control plane for the human bottleneck.",
   "main": "dist/electron/main.js",
   "bin": {
@@ -26,7 +26,7 @@
     "pulse:selftest": "tsx lib/pulse.selftest.ts",
     "reader:selftest": "tsx lib/reader.selftest.ts",
     "commands:selftest": "tsx lib/commands.selftest.ts",
-    "perf:selftest": "node scripts/perf-selftest/run.js",
+    "perf:selftest": "npm run build:lib && node scripts/perf-selftest/run.js",
     "perf:logic-selftest": "tsx scripts/perf-selftest/logic.selftest.ts",
     "desktop": "npm run build:lib && electron dist/electron/main.js",
     "renderer": "python3 -m http.server 4173 --directory electron/renderer",
