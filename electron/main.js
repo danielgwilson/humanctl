@@ -64,6 +64,22 @@ function writeState(next) {
   try { fs.writeFileSync(statePath(), JSON.stringify(clean, null, 2)); return true; } catch { return false; }
 }
 
+// MIGRATION SPIKE (spike/electron-vite-shadcn): behind HUMANCTL_VITE, load
+// the electron-vite React/Tailwind/shadcn renderer instead of the static
+// electron/renderer/. This is the ONLY change to main.js for the spike: the
+// preload bridge, IPC routes, and every backend module below are untouched.
+// HUMANCTL_VITE=1 with HUMANCTL_VITE_DEV_URL set loads the vite dev server
+// (fast loop, HMR); HUMANCTL_VITE=1 alone loads the `electron-vite build`
+// output at electron/renderer-vite/dist-electron-vite/renderer/index.html
+// (the packaging proof). Neither path touches the old renderer/, which stays
+// the default and stays fully intact for side-by-side comparison.
+const VITE_RENDERER_DIST = path.join(__dirname, 'renderer-vite', 'dist-electron-vite', 'renderer', 'index.html');
+function rendererTarget() {
+  if (!process.env.HUMANCTL_VITE) return { file: path.join(__dirname, 'renderer', 'index.html') };
+  if (process.env.HUMANCTL_VITE_DEV_URL) return { url: process.env.HUMANCTL_VITE_DEV_URL };
+  return { file: VITE_RENDERER_DIST };
+}
+
 function createWindow() {
   win = new BrowserWindow({
     width: 1240,
@@ -81,7 +97,9 @@ function createWindow() {
       sandbox: false,
     },
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
+  const target = rendererTarget();
+  if (target.url) win.loadURL(target.url);
+  else win.loadFile(target.file);
 
   win.once('ready-to-show', () => { win.show(); win.focus(); });
 
