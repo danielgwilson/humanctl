@@ -66,7 +66,7 @@ codex exec resume <thread-uuid> --skip-git-repo-check \
 ## Reader protection (the sentinel contract)
 
 Persisted probe turns must never change what humanctl believes about a
-session. `lib/sessions.js` enforces this for the paths that persist (Codex
+session. `lib/sessions.ts` enforces this for the paths that persist (Codex
 always; Claude only if a future fork path is used):
 
 - `isBoilerplate` treats `[humanctl btw]`-prefixed user text as
@@ -86,9 +86,9 @@ Covered by fixtures in `npm run pulse:selftest`.
 ## Persistence (the Inbox btw thread)
 
 Every ask exchange (question, answer, engine, timestamp) is appended to
-`~/.humanctl/asks/<sessionId>.jsonl` by `electron/main.js`'s
+`~/.humanctl/asks/<sessionId>.jsonl` by `electron/main.ts`'s
 `sessionAskPersisted` wrapper around `sessionAsk`, using the same
-`appendAskLog`/`readAskLog` helpers `lib/commands.js` exposes for the
+`appendAskLog`/`readAskLog` helpers `lib/commands.ts` exposes for the
 `inbox.threads` command. This is independent of the renderer's own
 `state.json` copy (`asks`, used for the Focus dossier's compact thread and
 capped in memory): the jsonl log is the durable record the Inbox surfaces and

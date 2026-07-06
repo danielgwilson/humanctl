@@ -2,14 +2,14 @@
 
 Every mutation of durable state, every process spawn, and every cross-session
 observation `humanctl` performs is a registered command: declared once in
-`lib/commands.js`, invocable from the desktop UI (IPC routed through the
+`lib/commands.ts`, invocable from the desktop UI (IPC routed through the
 registry), from the CLI against the running app (a control socket), and
 logged as one event line. Renderer-only ephemera (hover, selection, scroll
 position) are exempt; nothing that touches disk, a process, or another
 session is.
 
 `CommandRegistry >= control API >= CLI >= UI`: the registry is the only
-choke point. The IPC channels in `electron/main.js` are thin adapters onto
+choke point. The IPC channels in `electron/main.ts` are thin adapters onto
 `registry.invoke(name, params, { source: 'ipc' })`; the control socket calls
 the same `invoke`; the CLI bridge (`humanctl app ...`) calls it too, either
 over the socket or, for commands marked `direct`, in-process.
@@ -60,7 +60,7 @@ process; `kind: observation` only reads. `direct: yes` means the command is
 implemented purely over `lib/` (no Electron), so the CLI can still answer it
 from disk when the desktop app is not running.
 
-Adding a command means adding one entry to `COMMANDS` in `lib/commands.js`
+Adding a command means adding one entry to `COMMANDS` in `lib/commands.ts`
 (name, kind, desc, params) before wiring any UI or CLI surface to it. A
 command with no handler fails honestly (`"only available through the running
 desktop app"`) rather than silently doing nothing, so an incomplete wire-up is
@@ -68,7 +68,7 @@ loud, not silent.
 
 ## Param validation
 
-`lib/commands.js` carries a minimal plain-JS schema per command:
+`lib/commands.ts` carries a minimal plain-JS schema per command:
 `{ key: { type, required?, enum?, max? } }`. Types are `string`, `number`,
 `boolean`, `object`, `array`. Unknown params are rejected (a typo'd flag never
 silently no-ops). Free-text params (`message`, `question`) declare a `max`
@@ -105,11 +105,11 @@ renderer never holds or can forge a raw filesystem path).
 ## Harness icons
 
 `app.harness-icons` extracts each installed harness app's own icon at
-runtime: `lib/harness-icons.js` (pure, Electron-free, selftested without a
+runtime: `lib/harness-icons.ts` (pure, Electron-free, selftested without a
 display) reads the app bundle's `Info.plist` `CFBundleIconFile` key -- never
 a hardcoded `.icns` filename, since Claude ships `electron.icns` and Codex
 ships `icon.icns` -- and resolves it to a real, non-empty file under
-`Contents/Resources`. `electron/main.js` then does the one Electron-only
+`Contents/Resources`. `electron/main.ts` then does the one Electron-only
 step (`nativeImage.createFromPath` + downscale + `toPNG()`), caches the
 result under Electron `userData` (never the repo, never a `~/.humanctl`
 watched path), and returns a data URL. ANY failure at any step -- app not
@@ -121,7 +121,7 @@ all, so screenshots and the browser dev loop always show the built-in glyphs.
 ## PR chips (cache-only contract)
 
 `pulse.pr-chip` reads ONLY the existing `~/.humanctl/pulse-cache.json` (the
-cache `lib/pulse.js` itself writes whenever a `humanctl pulse` run
+cache `lib/pulse.ts` itself writes whenever a `humanctl pulse` run
 completes): zero network calls, zero `git`/`gh` process spawns, ever, from
 this command's call graph. A cache miss (no cache file, wrong config
 signature, the requested repo not present in the cached data, a degraded
@@ -144,8 +144,8 @@ qualifies for a fresh summary when it has none yet, or when at least 12 new
 substantive items have landed since its cached summary's timestamp.
 
 Budget is ONE authoritative unit: estimated dollars/day, computed live from
-the actual prompt and output text of each call, priced via `lib/pricing.js`'s
-real haiku rate table (`lib/summary-budget.js`). Default $1.00/day,
+the actual prompt and output text of each call, priced via `lib/pricing.ts`'s
+real haiku rate table (`lib/summary-budget.ts`). Default $1.00/day,
 configurable in Settings, persisted per calendar day in
 `~/.humanctl/summary-budget.json` (not inbox-watcher-relevant, same rule as
 attachments above) and reset at local midnight. At the cap, the engine pauses
@@ -221,7 +221,7 @@ first.
     humanctl app list-commands [--json]
 
 Lists every registered command. Asks the running app first (its answer is
-the live truth for that build); falls back to the local `lib/commands.js`
+the live truth for that build); falls back to the local `lib/commands.ts`
 declarations, which are the same table by construction, when the app is not
 running.
 
@@ -246,7 +246,7 @@ Examples:
 Dispatch order: `humanctl app` predates the registry and still launches a
 legacy source-checkout workspace UI when its first argument is not
 `list-commands`, `invoke`, or a registered command name (see `launchApp` in
-`bin/humanctl.js`); this keeps `humanctl app [dir]` behaving exactly as
+`bin/humanctl.ts`); this keeps `humanctl app [dir]` behaving exactly as
 before for anyone still using it.
 
 All three forms try the control socket first. If nothing is listening:
@@ -271,7 +271,7 @@ socket path; the one exception (`inbox.threads` proving the `note.post` ->
 thread-assembly join end to end) writes through the real `note.post` path
 and truncates its own appended line back off `~/.humanctl/notes.jsonl` in a
 `finally` block, verified byte-identical before/after (a pre-existing quirk
-in `lib/sessions.js`, tracked separately, means `readNotes()` cannot be
+in `lib/sessions.ts`, tracked separately, means `readNotes()` cannot be
 sandboxed by swapping `process.env.HOME` after the module's first
 `require()`, unlike the `controlDir()`-based writers). Covers: the
 `COMMANDS` table shape, param validation (required / unknown / enum / type /
@@ -293,7 +293,7 @@ image handling (`storeNoteImages` copying a real file / skipping a missing
 one / skipping a non-image extension / capping at 4, and a full CLI-shaped
 round-trip through the registered command), the `attachments/` directory
 being excluded from `isInboxRelevantChange`, and `summary.budget` reflecting
-real recorded spend from `lib/summary-budget.js`.
+real recorded spend from `lib/summary-budget.ts`.
 
 `npm run perf:logic-selftest` (see `docs/perf.md`) is a separate, CI-safe
 pure-logic selftest covering the watcher filter, the summary-budget math, and
