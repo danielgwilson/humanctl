@@ -1,5 +1,3 @@
-'use strict';
-
 // humanctl pulse: read-only reconciliation of four sources of truth (Linear
 // issues, local git worktrees, GitHub PRs + checks, agent sessions) plus the
 // notes inbox into one answer: what is true, who owns the next move, and what
@@ -14,7 +12,7 @@
 //   visible degraded marker.
 // - Worktrees come from `git worktree list --porcelain`, never from config.
 // - The one join key across sources is the issue-key token (TEAM-123),
-//   extracted by lib/sessions.js extractIssueKeys. Linear branchName equality
+//   extracted by lib/sessions.ts extractIssueKeys. Linear branchName equality
 //   is explicitly rejected: Linear generates feature/team-123-title-slug and
 //   real branches never match it.
 // - Sessions also join by cwd containment and by bounded transcript evidence
@@ -25,11 +23,12 @@
 // - Each reconciled unit lands in exactly one lane (first match in priority
 //   order). Units matching no lane go to diagnostics, never dropped.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { execFile } = require('child_process');
-const sessionsLib = require('./sessions');
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { execFile } from 'child_process';
+import * as sessionsLib from './sessions';
+import type { SessionRow } from './sessions';
 
 const SUBPROCESS_TIMEOUT_MS = 10000;
 const CACHE_TTL_MS = 120 * 1000;
@@ -40,10 +39,11 @@ const DEFAULT_STALE_HOURS = 24;
 // the session reader when present so the two surfaces never fork the
 // threshold; since needs-you v3 it equals the reader's hot tier (24h,
 // docs/desktop.md), which the fallback mirrors.
-const NEED_DECAY_MS = sessionsLib.NEED_DECAY_MS || 24 * 60 * 60 * 1000;
+export const NEED_DECAY_MS = sessionsLib.NEED_DECAY_MS || 24 * 60 * 60 * 1000;
 
-const LANE_KEYS = ['needsYou', 'readyForReview', 'blockedOnAgent', 'stale', 'missingOwner', 'verified'];
-const LANE_LABELS = {
+const LANE_KEYS = ['needsYou', 'readyForReview', 'blockedOnAgent', 'stale', 'missingOwner', 'verified'] as const;
+type LaneKey = typeof LANE_KEYS[number];
+export const LANE_LABELS: Record<LaneKey, string> = {
   needsYou: 'needs-you',
   readyForReview: 'ready-for-review',
   blockedOnAgent: 'blocked-on-agent',
@@ -52,33 +52,52 @@ const LANE_LABELS = {
   verified: 'verified',
 };
 
-function globalDir() {
+function globalDir(): string {
   return path.join(os.homedir(), '.humanctl');
 }
 
-function expandHome(p) {
+function expandHome(p: string): string {
   if (!p) return p;
   return p === '~' ? os.homedir() : p.startsWith('~/') ? path.join(os.homedir(), p.slice(2)) : p;
 }
 
 // ---- config -----------------------------------------------------------------
 
-function loadConfig(configPath) {
+export interface RepoConfig {
+  name: string;
+  path: string;
+  github: string | null;
+}
+
+export interface LinearConfig {
+  workspace: string | null;
+  assignee: string | null;
+  teams: string[];
+  states: string[];
+}
+
+export interface PulseConfig {
+  staleHours: number;
+  repos: RepoConfig[];
+  linear: LinearConfig | null;
+}
+
+export function loadConfig(configPath?: string): { config: PulseConfig | null; error: string | null } {
   const file = configPath || path.join(globalDir(), 'pulse.json');
-  let raw;
+  let raw: string;
   try { raw = fs.readFileSync(file, 'utf8'); } catch {
     return { config: null, error: `no config at ${file}; see docs/pulse.md for the schema` };
   }
-  let parsed;
+  let parsed: any;
   try { parsed = JSON.parse(raw); } catch (e) {
-    return { config: null, error: `config at ${file} is not valid JSON: ${e.message}` };
+    return { config: null, error: `config at ${file} is not valid JSON: ${(e as Error).message}` };
   }
-  const repos = Array.isArray(parsed.repos)
+  const repos: RepoConfig[] = Array.isArray(parsed.repos)
     ? parsed.repos
-        .filter((r) => r && r.name && r.path)
-        .map((r) => ({ name: String(r.name), path: expandHome(String(r.path)), github: r.github ? String(r.github) : null }))
+        .filter((r: any) => r && r.name && r.path)
+        .map((r: any) => ({ name: String(r.name), path: expandHome(String(r.path)), github: r.github ? String(r.github) : null }))
     : [];
-  const linear = parsed.linear && typeof parsed.linear === 'object'
+  const linear: LinearConfig | null = parsed.linear && typeof parsed.linear === 'object'
     ? {
         workspace: parsed.linear.workspace ? String(parsed.linear.workspace) : null,
         assignee: parsed.linear.assignee ? String(parsed.linear.assignee) : null,
@@ -94,9 +113,15 @@ function loadConfig(configPath) {
 
 // ---- subprocess helper --------------------------------------------------------
 
+interface RunResult {
+  ok: boolean;
+  stdout: string;
+  reason: string | null;
+}
+
 // Never rejects. ok:false carries a short human-readable reason. Callers must
 // still shape-validate stdout even when ok:true: exit codes are untrusted.
-function run(cmd, args, opts = {}) {
+function run(cmd: string, args: string[], opts: { timeoutMs?: number } = {}): Promise<RunResult> {
   return new Promise((resolve) => {
     execFile(
       cmd,
@@ -104,9 +129,9 @@ function run(cmd, args, opts = {}) {
       { timeout: opts.timeoutMs || SUBPROCESS_TIMEOUT_MS, maxBuffer: 16 << 20, encoding: 'utf8' },
       (error, stdout, stderr) => {
         if (error) {
-          let reason;
-          if (error.code === 'ENOENT') reason = `${cmd} not found on PATH`;
-          else if (error.killed || error.signal === 'SIGTERM') reason = `${cmd} timed out after ${Math.round((opts.timeoutMs || SUBPROCESS_TIMEOUT_MS) / 1000)}s`;
+          let reason: string;
+          if ((error as NodeJS.ErrnoException).code === 'ENOENT') reason = `${cmd} not found on PATH`;
+          else if ((error as any).killed || (error as any).signal === 'SIGTERM') reason = `${cmd} timed out after ${Math.round((opts.timeoutMs || SUBPROCESS_TIMEOUT_MS) / 1000)}s`;
           else reason = String(stderr || error.message || 'failed').trim().replace(/\s+/g, ' ').slice(0, 200);
           resolve({ ok: false, stdout: String(stdout || ''), reason });
           return;
@@ -118,9 +143,9 @@ function run(cmd, args, opts = {}) {
 }
 
 // Tiny bounded-concurrency map; zero deps.
-function mapLimit(items, limit, fn) {
+function mapLimit<T, R>(items: T[], limit: number, fn: (item: T, index: number) => Promise<R>): Promise<R[]> {
   return new Promise((resolve) => {
-    const results = new Array(items.length);
+    const results: R[] = new Array(items.length);
     let next = 0;
     let active = 0;
     const step = () => {
@@ -131,7 +156,7 @@ function mapLimit(items, limit, fn) {
         active += 1;
         Promise.resolve()
           .then(() => fn(items[i], i))
-          .then((r) => { results[i] = r; }, () => { results[i] = undefined; })
+          .then((r) => { results[i] = r; }, () => { results[i] = undefined as unknown as R; })
           .then(() => { active -= 1; step(); });
       }
     };
@@ -141,9 +166,27 @@ function mapLimit(items, limit, fn) {
 
 // ---- git adapter ---------------------------------------------------------------
 
-function parseWorktreePorcelain(text) {
-  const out = [];
-  let cur = null;
+export interface Worktree {
+  path: string;
+  head: string | null;
+  branch: string | null;
+  detached: boolean;
+  locked: boolean;
+  prunable: boolean;
+  bare: boolean;
+  isPrimary?: boolean;
+  repo?: string;
+  lastCommitMs?: number | null;
+  ahead?: number | null;
+  behind?: number | null;
+  upstreamGone?: boolean;
+  lastEditMs?: number | null;
+  dirty?: boolean | null;
+}
+
+export function parseWorktreePorcelain(text: string): Worktree[] {
+  const out: Worktree[] = [];
+  let cur: Worktree | null = null;
   for (const line of text.split('\n')) {
     if (line.startsWith('worktree ')) {
       cur = { path: line.slice(9), head: null, branch: null, detached: false, locked: false, prunable: false, bare: false };
@@ -160,7 +203,9 @@ function parseWorktreePorcelain(text) {
   return out;
 }
 
-function parseUpstreamTrack(track) {
+interface UpstreamTrack { ahead: number | null; behind: number | null; gone: boolean }
+
+export function parseUpstreamTrack(track: string): UpstreamTrack {
   if (!track) return { ahead: 0, behind: 0, gone: false };
   if (track === '[gone]') return { ahead: null, behind: null, gone: true };
   const ahead = /ahead (\d+)/.exec(track);
@@ -182,12 +227,12 @@ function parseUpstreamTrack(track) {
 // Honest limit: pure editor edits with zero git activity can escape this
 // probe, so it only ever ADDS recency, never proves deadness on its own;
 // commit age and joined-session activity are the other staleness inputs.
-function worktreeEditMtime(wtPath, now) {
+function worktreeEditMtime(wtPath: string, now: number): number | null {
   let newest = 0;
   try {
     const dotGit = path.join(wtPath, '.git');
     const st = fs.statSync(dotGit);
-    let indexPath = null;
+    let indexPath: string | null = null;
     if (st.isDirectory()) {
       indexPath = path.join(dotGit, 'index'); // primary checkout
     } else {
@@ -207,7 +252,15 @@ function worktreeEditMtime(wtPath, now) {
   return newest ? Math.min(newest, now) : null; // future mtimes are clock noise, not activity
 }
 
-async function collectGitRepo(repo, staleHours, now) {
+interface GitRepoResult {
+  name: string;
+  github: string | null;
+  path: string;
+  worktrees: Worktree[] | null;
+  degraded: string | null;
+}
+
+async function collectGitRepo(repo: RepoConfig, staleHours: number, now: number): Promise<GitRepoResult> {
   const wtRes = await run('git', ['-C', repo.path, 'worktree', 'list', '--porcelain']);
   if (!wtRes.ok) {
     return { name: repo.name, github: repo.github, path: repo.path, worktrees: null, degraded: `${repo.name}: git worktree list failed (${wtRes.reason})` };
@@ -218,7 +271,7 @@ async function collectGitRepo(repo, staleHours, now) {
   // One for-each-ref per repo covers last-commit age and ahead/behind for every
   // local branch, instead of two extra subprocesses per worktree.
   const refRes = await run('git', ['-C', repo.path, 'for-each-ref', 'refs/heads', '--format=%(refname:short)%09%(committerdate:unix)%09%(upstream:track)']);
-  const branchInfo = {};
+  const branchInfo: Record<string, { lastCommitMs: number | null } & UpstreamTrack> = {};
   if (refRes.ok) {
     for (const line of refRes.stdout.split('\n')) {
       if (!line.trim()) continue;
@@ -258,10 +311,10 @@ async function collectGitRepo(repo, staleHours, now) {
     // already proves activity, and skipping there keeps the probe budget on
     // the worktrees where it can change the answer.
     w.lastEditMs = null;
-    const commitFresh = Number.isFinite(w.lastCommitMs) && now - w.lastCommitMs <= staleMs;
+    const commitFresh = Number.isFinite(w.lastCommitMs) && now - (w.lastCommitMs as number) <= staleMs;
     if (!commitFresh) w.lastEditMs = worktreeEditMtime(w.path, now);
-    const recentCommit = w.lastCommitMs === null || now - w.lastCommitMs <= statusWindowMs;
-    const recentEdit = Number.isFinite(w.lastEditMs) && now - w.lastEditMs <= staleMs;
+    const recentCommit = w.lastCommitMs === null || now - (w.lastCommitMs as number) <= statusWindowMs;
+    const recentEdit = Number.isFinite(w.lastEditMs) && now - (w.lastEditMs as number) <= staleMs;
     if (w.isPrimary || recentCommit || recentEdit) {
       const st = await run('git', ['-C', w.path, 'status', '--porcelain', '--untracked-files=no']);
       w.dirty = st.ok ? st.stdout.trim().length > 0 : null;
@@ -278,8 +331,25 @@ async function collectGitRepo(repo, staleHours, now) {
 const GH_OPEN_FIELDS = 'number,title,body,headRefName,isDraft,reviewDecision,statusCheckRollup,updatedAt,url';
 const GH_MERGED_FIELDS = 'number,title,headRefName,updatedAt,url,mergedAt';
 
-function parsePrArray(stdout, label) {
-  let parsed;
+export interface PullRequest {
+  number: number;
+  title: string;
+  body?: string;
+  headRefName: string;
+  isDraft?: boolean;
+  reviewDecision?: string | null;
+  statusCheckRollup?: any[];
+  updatedAt?: string;
+  mergedAt?: string;
+  url: string;
+  checks?: string;
+  updatedAtMs?: number | null;
+  mergedAtMs?: number | null;
+  repo?: string;
+}
+
+function parsePrArray(stdout: string, label: string): { prs: PullRequest[] | null; reason: string | null } {
+  let parsed: any;
   try { parsed = JSON.parse(stdout); } catch {
     return { prs: null, reason: `${label}: gh output was not JSON (${stdout.trim().slice(0, 80) || 'empty'})` };
   }
@@ -288,7 +358,7 @@ function parsePrArray(stdout, label) {
 }
 
 // Summarize a statusCheckRollup array: passing / failing / pending / none.
-function summarizeChecks(rollup) {
+export function summarizeChecks(rollup: any[] | undefined): 'none' | 'failing' | 'pending' | 'passing' {
   if (!Array.isArray(rollup) || rollup.length === 0) return 'none';
   let pending = false;
   for (const c of rollup) {
@@ -299,7 +369,14 @@ function summarizeChecks(rollup) {
   return pending ? 'pending' : 'passing';
 }
 
-async function collectGhRepo(repo) {
+interface GhRepoResult {
+  name: string;
+  open: PullRequest[] | null;
+  merged: PullRequest[] | null;
+  degraded: string | null;
+}
+
+async function collectGhRepo(repo: RepoConfig): Promise<GhRepoResult> {
   if (!repo.github) return { name: repo.name, open: null, merged: null, degraded: `${repo.name}: no github remote configured` };
   const [openRes, mergedRes] = await Promise.all([
     run('gh', ['pr', 'list', '-R', repo.github, '--state', 'open', '--limit', '50', '--json', GH_OPEN_FIELDS]),
@@ -308,7 +385,7 @@ async function collectGhRepo(repo) {
   if (!openRes.ok) return { name: repo.name, open: null, merged: null, degraded: `${repo.name}: gh pr list failed (${openRes.reason})` };
   const open = parsePrArray(openRes.stdout, repo.name);
   if (open.reason) return { name: repo.name, open: null, merged: null, degraded: open.reason };
-  let merged = { prs: [], reason: null };
+  let merged: { prs: PullRequest[] | null; reason: string | null } = { prs: [], reason: null };
   if (mergedRes.ok) merged = parsePrArray(mergedRes.stdout, repo.name);
   else merged = { prs: null, reason: `${repo.name}: gh merged list failed (${mergedRes.reason})` };
   // Merged PRs only power stale-worktree cleanup detection; a failure there
@@ -319,7 +396,18 @@ async function collectGhRepo(repo) {
 
 // ---- linear adapter -------------------------------------------------------------
 
-function normalizeIssue(node, queryState) {
+export interface LinearIssue {
+  identifier: string;
+  title: string;
+  url: string | null;
+  priority: number | null;
+  priorityLabel: string | null;
+  stateName: string | null;
+  queryState: string;
+  updatedAtMs: number | null;
+}
+
+function normalizeIssue(node: any, queryState: string): LinearIssue {
   return {
     identifier: String(node.identifier || '').toUpperCase(),
     title: node.title || '',
@@ -332,9 +420,9 @@ function normalizeIssue(node, queryState) {
   };
 }
 
-async function collectLinearIssues(linearCfg) {
+async function collectLinearIssues(linearCfg: LinearConfig | null): Promise<{ issues: LinearIssue[] | null; degraded: string | null }> {
   if (!linearCfg || !linearCfg.teams.length) return { issues: null, degraded: 'not configured' };
-  const calls = [];
+  const calls: { team: string; state: string }[] = [];
   for (const team of linearCfg.teams) for (const state of linearCfg.states) calls.push({ team, state });
   const results = await mapLimit(calls, 4, async (c) => {
     const args = ['issue', 'query', '--team', c.team, '--state', c.state, '--json', '--no-pager'];
@@ -344,20 +432,20 @@ async function collectLinearIssues(linearCfg) {
     if (!res.ok) return { error: `linear query (${c.team}/${c.state}) failed: ${res.reason}` };
     // Shape validation is the real gate: linear v2 exits 0 on unknown options,
     // auth failures, and help dumps, so the exit code proves nothing.
-    let parsed;
+    let parsed: any;
     try { parsed = JSON.parse(res.stdout); } catch {
       return { error: `linear output was not JSON (${c.team}/${c.state}): ${res.stdout.trim().replace(/\s+/g, ' ').slice(0, 80) || 'empty'}` };
     }
     if (!parsed || typeof parsed !== 'object' || !Array.isArray(parsed.nodes)) {
       return { error: `linear output missing nodes array (${c.team}/${c.state})` };
     }
-    return { nodes: parsed.nodes.map((n) => normalizeIssue(n, c.state)) };
+    return { nodes: parsed.nodes.map((n: any) => normalizeIssue(n, c.state)) };
   });
-  const issues = [];
-  const errors = [];
+  const issues: LinearIssue[] = [];
+  const errors: string[] = [];
   for (const r of results) {
-    if (!r || r.error) errors.push(r ? r.error : 'linear query failed');
-    else issues.push(...r.nodes);
+    if (!r || (r as any).error) errors.push(r ? (r as any).error : 'linear query failed');
+    else issues.push(...(r as any).nodes);
   }
   // All-or-nothing: partial issue truth would misfile units into missing-owner,
   // so any failed call degrades the whole source.
@@ -367,7 +455,7 @@ async function collectLinearIssues(linearCfg) {
 
 // ---- sessions adapter -----------------------------------------------------------
 
-function cwdWithin(cwd, root) {
+function cwdWithin(cwd: string | undefined | null, root: string | undefined | null): boolean {
   if (!cwd || !root) return false;
   return cwd === root || cwd.startsWith(root.endsWith(path.sep) ? root : root + path.sep);
 }
@@ -375,29 +463,34 @@ function cwdWithin(cwd, root) {
 // Branch names solid enough to serve as transcript-evidence tokens: never the
 // default branch, and long enough that a match in prose is a real reference
 // rather than a common word.
-function evidenceBranch(branch) {
+function evidenceBranch(branch: string | null | undefined): boolean {
   return !!branch && branch !== 'main' && branch !== 'master' && branch.length >= 8;
 }
 
-function collectSessions(config, gitRepos) {
+interface SessionsCollectResult {
+  rows: SessionRow[] | null;
+  degraded: string | null;
+}
+
+function collectSessions(config: PulseConfig, gitRepos: GitRepoResult[]): SessionsCollectResult {
   const haveDirs = sessionsLib.HARNESSES.some((h) => fs.existsSync(h.dir));
   if (!haveDirs) return { rows: null, degraded: 'no session directories found (no Codex or Claude Code logs on this machine)' };
-  let rows;
+  let rows: SessionRow[];
   try {
     rows = sessionsLib.listRecent({ maxAgeH: Math.max(72, config.staleHours * 2), limit: 200 });
   } catch (e) {
-    return { rows: null, degraded: `session scan failed: ${e.message}` };
+    return { rows: null, degraded: `session scan failed: ${(e as Error).message}` };
   }
-  const roots = [];
-  const nonPrimaryRoots = [];
-  const branchTokens = new Set();
+  const roots: string[] = [];
+  const nonPrimaryRoots: string[] = [];
+  const branchTokens = new Set<string>();
   for (const repo of config.repos) roots.push(repo.path);
   for (const g of gitRepos) {
     if (!g.worktrees) continue;
     for (const w of g.worktrees) {
       roots.push(w.path);
       if (!w.isPrimary) nonPrimaryRoots.push(w.path);
-      if (evidenceBranch(w.branch)) branchTokens.add(w.branch);
+      if (evidenceBranch(w.branch)) branchTokens.add(w.branch as string);
     }
   }
   const tokens = [...branchTokens];
@@ -429,33 +522,33 @@ function collectSessions(config, gitRepos) {
 
 // ---- notes adapter --------------------------------------------------------------
 
-function collectNotes() {
+function collectNotes(): { notes: import('./sessions').NoteRecord[] | null; degraded: string | null } {
   if (!fs.existsSync(sessionsLib.NOTES_FILE)) return { notes: [], degraded: null }; // never posted a note: empty truth, not a failure
   try {
     return { notes: sessionsLib.readNotes({ limit: 200 }), degraded: null };
   } catch (e) {
-    return { notes: null, degraded: `notes read failed: ${e.message}` };
+    return { notes: null, degraded: `notes read failed: ${(e as Error).message}` };
   }
 }
 
 // ---- cache -----------------------------------------------------------------------
 
-function cachePath() {
+function cachePath(): string {
   return path.join(globalDir(), 'pulse-cache.json');
 }
 
-function cacheSignature(config) {
+function cacheSignature(config: PulseConfig): string {
   return JSON.stringify({
     repos: config.repos.map((r) => `${r.name}:${r.github || ''}`),
     linear: config.linear ? { w: config.linear.workspace, t: config.linear.teams, s: config.linear.states, a: config.linear.assignee } : null,
   });
 }
 
-function readCache(config, now) {
-  let parsed;
+function readCache(config: PulseConfig, now: number): { gh?: GhRepoResult[]; linear?: { issues: LinearIssue[] | null; degraded: string | null } } {
+  let parsed: any;
   try { parsed = JSON.parse(fs.readFileSync(cachePath(), 'utf8')); } catch { return {}; }
   if (!parsed || parsed.signature !== cacheSignature(config)) return {};
-  const out = {};
+  const out: any = {};
   for (const source of ['gh', 'linear']) {
     const entry = parsed[source];
     if (entry && Number.isFinite(entry.at) && now - entry.at < CACHE_TTL_MS && entry.data !== undefined) out[source] = entry.data;
@@ -463,13 +556,13 @@ function readCache(config, now) {
   return out;
 }
 
-function writeCache(config, now, ghData, linearData) {
+function writeCache(config: PulseConfig, now: number, ghData: GhRepoResult[] | null, linearData: { issues: LinearIssue[] | null; degraded: string | null } | null): void {
   const dir = globalDir();
   try { fs.mkdirSync(dir, { recursive: true }); } catch { return; }
   // Merge with still-valid entries so refreshing one source does not evict the
   // other mid-TTL.
-  const record = { signature: cacheSignature(config) };
-  let existing = null;
+  const record: any = { signature: cacheSignature(config) };
+  let existing: any = null;
   try { existing = JSON.parse(fs.readFileSync(cachePath(), 'utf8')); } catch { existing = null; }
   if (existing && existing.signature === record.signature) {
     for (const source of ['gh', 'linear']) {
@@ -491,13 +584,22 @@ function writeCache(config, now, ghData, linearData) {
 
 // ---- collection -------------------------------------------------------------------
 
-async function collect(config, opts = {}) {
+export interface CollectedData {
+  now: number;
+  gitRepos: GitRepoResult[];
+  ghRepos: GhRepoResult[];
+  linear: { issues: LinearIssue[] | null; degraded: string | null };
+  sessions: SessionsCollectResult;
+  notes: { notes: import('./sessions').NoteRecord[] | null; degraded: string | null };
+}
+
+export async function collect(config: PulseConfig, opts: { now?: number; fresh?: boolean } = {}): Promise<CollectedData> {
   const now = opts.now || Date.now();
   const cached = opts.fresh ? {} : readCache(config, now);
 
   const gitPromise = mapLimit(config.repos, 3, (repo) => collectGitRepo(repo, config.staleHours, now));
-  const ghPromise = cached.gh ? Promise.resolve(cached.gh) : mapLimit(config.repos, 3, collectGhRepo);
-  const linearPromise = cached.linear ? Promise.resolve(cached.linear) : collectLinearIssues(config.linear);
+  const ghPromise: Promise<GhRepoResult[]> = cached.gh ? Promise.resolve(cached.gh) : mapLimit(config.repos, 3, collectGhRepo);
+  const linearPromise: Promise<{ issues: LinearIssue[] | null; degraded: string | null }> = cached.linear ? Promise.resolve(cached.linear) : collectLinearIssues(config.linear);
   const notes = collectNotes();
 
   const [gitRepos, ghRepos, linear] = await Promise.all([gitPromise, ghPromise, linearPromise]);
@@ -510,7 +612,7 @@ async function collect(config, opts = {}) {
 
 // ---- reconcile (pure over collected inputs) -----------------------------------------
 
-function firstKey(text) {
+function firstKey(text: string): string | null {
   const keys = sessionsLib.extractIssueKeys(text);
   return keys.length ? keys[0] : null;
 }
@@ -519,27 +621,40 @@ function firstKey(text) {
 // through (OCTOBER-2025, SBOM-20260225 on the real fleet). A token whose
 // number reads as a year or longer never mints a work unit on its own; it can
 // still join when Linear knows it as a real issue identifier.
-function dateLikeKey(key) {
+function dateLikeKey(key: string): boolean {
   const num = key.slice(key.indexOf('-') + 1);
   return /^(19|20)\d{2}$/.test(num) || num.length >= 6;
 }
 
-function firstMintableKey(text, knownKeys) {
+function firstMintableKey(text: string, knownKeys: Set<string>): string | null {
   for (const key of sessionsLib.extractIssueKeys(text)) {
     if (knownKeys.has(key) || !dateLikeKey(key)) return key;
   }
   return null;
 }
 
-function relAge(ms, now) {
+function relAge(ms: number | null, now: number): string | null {
   if (!Number.isFinite(ms)) return null;
-  const h = (now - ms) / 3.6e6;
+  const h = (now - (ms as number)) / 3.6e6;
   if (h < 1) return `${Math.max(1, Math.round(h * 60))}m`;
   if (h < 48) return `${Math.round(h)}h`;
   return `${Math.round(h / 24)}d`;
 }
 
-function makeUnit(id) {
+interface WorkUnit {
+  id: string;
+  keyed: string | null;
+  issue: LinearIssue | null;
+  worktrees: Worktree[];
+  prs: PullRequest[];
+  mergedPrs: PullRequest[];
+  sessions: SessionRow[];
+  notes: (import('./sessions').NoteRecord & { tsMs: number })[];
+  repoNames: Set<string>;
+  joins: ('explicit' | 'inferred')[];
+}
+
+function makeUnit(id: string): WorkUnit {
   return {
     id,
     keyed: null,
@@ -557,12 +672,12 @@ function makeUnit(id) {
 // A note is open while it is a blocked/review escalation, fresher than the
 // needs-you decay window, and no later done note closed the same session (or
 // the same cwd when the note carries no session id).
-function computeOpenNotes(notes, now) {
-  const open = [];
-  const doneAfter = []; // {ts, session, cwd}
-  const sorted = [...notes].sort((a, b) => Date.parse(b.ts || 0) - Date.parse(a.ts || 0));
+export function computeOpenNotes(notes: import('./sessions').NoteRecord[], now: number): (import('./sessions').NoteRecord & { tsMs: number })[] {
+  const open: (import('./sessions').NoteRecord & { tsMs: number })[] = [];
+  const doneAfter: { ts: number; session: string; cwd: string }[] = []; // {ts, session, cwd}
+  const sorted = [...notes].sort((a, b) => Date.parse(String(b.ts) || '0') - Date.parse(String(a.ts) || '0'));
   for (const note of sorted) {
-    const ts = Date.parse(note.ts || 0);
+    const ts = Date.parse(String(note.ts) || '0');
     if (!Number.isFinite(ts)) continue;
     if (note.level === 'done') { doneAfter.push({ ts, session: note.session || '', cwd: note.cwd || '' }); continue; }
     if (note.level !== 'blocked' && note.level !== 'review') continue;
@@ -578,31 +693,43 @@ function computeOpenNotes(notes, now) {
 // footer metadata (mode lines, pr-links) rewrites the file, which the audit
 // caught aging 7-week-dead threads as hours old. Fall back to mtime only for
 // rows that do not carry the field (older callers, synthetic fixtures).
-function sessionActivityMs(s) {
+function sessionActivityMs(s: SessionRow): number {
   return Number.isFinite(s.lastActiveMs) ? s.lastActiveMs : s.ageMs;
 }
 
-function reconcile(collected, config) {
+export interface ReconcileResult {
+  lanes: Record<LaneKey, any[]>;
+  diagnostics: any[];
+  degraded: {
+    git: string | null;
+    gh: string | null;
+    linear: string | null;
+    sessions: string | null;
+    notes: string | null;
+  };
+}
+
+export function reconcile(collected: CollectedData, config: PulseConfig): ReconcileResult {
   const now = collected.now;
   const staleMs = config.staleHours * 3.6e6;
-  const unitsByKey = new Map();
-  const units = [];
-  const diagnostics = [];
+  const unitsByKey = new Map<string, WorkUnit>();
+  const units: WorkUnit[] = [];
+  const diagnostics: any[] = [];
 
   // Who the ball is with, per the session reader's contract: v3 rows carry a
   // content-shaped state ('need' means the tail actually asks for you) and an
   // attention tier; rows without one fall back to the lastRole + decay
   // heuristic. Pulse consumes the reader's verdict, never reimplements it.
-  const sessionWaits = (s) => (s.state
+  const sessionWaits = (s: SessionRow) => (s.state
     ? (s.state === 'need' && s.tier !== 'archived')
     : (s.lastRole === 'assistant' && now - sessionActivityMs(s) <= NEED_DECAY_MS));
-  const sessionWorking = (s) => (s.state
+  const sessionWorking = (s: SessionRow) => (s.state
     ? (s.state === 'work' && s.tier === 'hot')
     : (s.lastRole !== 'assistant' && now - sessionActivityMs(s) <= NEED_DECAY_MS));
 
   const degraded = {
-    git: null,
-    gh: null,
+    git: null as string | null,
+    gh: null as string | null,
     linear: collected.linear.degraded,
     sessions: collected.sessions.degraded,
     notes: collected.notes.degraded,
@@ -613,22 +740,22 @@ function reconcile(collected, config) {
   if (ghDegraded.length) degraded.gh = ghDegraded.join('; ');
   const ghDegradedRepos = new Set(collected.ghRepos.filter((r) => r.degraded).map((r) => r.name));
 
-  const unitFor = (key) => {
-    if (unitsByKey.has(key)) return unitsByKey.get(key);
+  const unitFor = (key: string): WorkUnit => {
+    if (unitsByKey.has(key)) return unitsByKey.get(key) as WorkUnit;
     const u = makeUnit(key);
     u.keyed = key;
     unitsByKey.set(key, u);
     units.push(u);
     return u;
   };
-  const localUnit = (id) => {
+  const localUnit = (id: string): WorkUnit => {
     const u = makeUnit(id);
     units.push(u);
     return u;
   };
 
   // 1) Work authority: one unit per Linear issue.
-  const knownIssueKeys = new Set();
+  const knownIssueKeys = new Set<string>();
   if (collected.linear.issues) {
     for (const issue of collected.linear.issues) {
       if (!issue.identifier) continue;
@@ -642,14 +769,14 @@ function reconcile(collected, config) {
   // 2) Execution: worktrees from git (never from config). The clean primary
   // checkout sitting on main with nothing unpushed is healthy baseline, not a
   // work unit; everything else is real local state worth reconciling.
-  const unitByRepoBranch = new Map(); // `${repo}:${branch}` -> unit
+  const unitByRepoBranch = new Map<string, WorkUnit>(); // `${repo}:${branch}` -> unit
   for (const repo of collected.gitRepos) {
     if (!repo.worktrees) continue;
     for (const w of repo.worktrees) {
       const onDefault = w.branch === 'main' || w.branch === 'master';
-      if (w.isPrimary && onDefault && w.dirty === false && !(w.ahead > 0)) continue;
+      if (w.isPrimary && onDefault && w.dirty === false && !((w.ahead ?? 0) > 0)) continue;
       const key = firstMintableKey(w.branch || '', knownIssueKeys) || firstMintableKey(path.basename(w.path), knownIssueKeys);
-      let u;
+      let u: WorkUnit;
       if (key) {
         u = unitFor(key);
         u.joins.push('explicit');
@@ -677,10 +804,10 @@ function reconcile(collected, config) {
       pr.repo = repo.name;
       const headKey = firstMintableKey(pr.headRefName || '', knownIssueKeys);
       const textKey = sessionsLib.extractIssueKeys(`${pr.title || ''} ${pr.body || ''}`).find((k) => unitsByKey.has(k)) || null;
-      let u = null;
+      let u: WorkUnit;
       if (headKey) { u = unitFor(headKey); u.joins.push('explicit'); }
-      else if (textKey) { u = unitsByKey.get(textKey); u.joins.push('explicit'); }
-      else if (unitByRepoBranch.has(`${repo.name}:${pr.headRefName}`)) { u = unitByRepoBranch.get(`${repo.name}:${pr.headRefName}`); u.joins.push('inferred'); }
+      else if (textKey) { u = unitsByKey.get(textKey) as WorkUnit; u.joins.push('explicit'); }
+      else if (unitByRepoBranch.has(`${repo.name}:${pr.headRefName}`)) { u = unitByRepoBranch.get(`${repo.name}:${pr.headRefName}`) as WorkUnit; u.joins.push('inferred'); }
       else { u = localUnit(`pr:${repo.name}#${pr.number}`); u.joins.push('explicit'); }
       u.prs.push(pr);
       u.repoNames.add(repo.name);
@@ -709,11 +836,11 @@ function reconcile(collected, config) {
   // A session that reaches a repo but no unit still counts: if it is fresh it
   // mints its own session-evidence unit so a live decision ask can never hide
   // in a diagnostic, otherwise it lands in diagnostics.
-  const unattachedByRepo = new Map();
+  const unattachedByRepo = new Map<string, { sessions: number }>();
   let outOfScope = 0;
   if (collected.sessions.rows) {
-    const wtByPath = new Map(); // worktree path -> { w, repoName }
-    const repoByPath = new Map(); // primary checkout path -> repo name
+    const wtByPath = new Map<string, { w: Worktree; repoName: string }>(); // worktree path -> { w, repoName }
+    const repoByPath = new Map<string, string>(); // primary checkout path -> repo name
     for (const repo of collected.gitRepos) if (repo.worktrees) for (const w of repo.worktrees) wtByPath.set(w.path, { w, repoName: repo.name });
     for (const repo of config.repos) repoByPath.set(repo.path, repo.name);
 
@@ -728,7 +855,7 @@ function reconcile(collected, config) {
       const titleKeys = sessionsLib.extractIssueKeys(`${s.title || ''} ${s.customTitle || ''} ${s.cwd || ''}`).filter((k) => unitsByKey.has(k));
       if (titleKeys.length) {
         for (const k of titleKeys) {
-          const u = unitsByKey.get(k);
+          const u = unitsByKey.get(k) as WorkUnit;
           u.sessions.push(s);
           u.joins.push('explicit');
           if (s.inScope) for (const repo of collected.gitRepos) if (repo.worktrees && repo.worktrees.some((w) => cwdWithin(s.cwd, w.path))) u.repoNames.add(repo.name);
@@ -737,8 +864,8 @@ function reconcile(collected, config) {
       }
       if (!s.inScope && !s.ancestorScope) { outOfScope += 1; continue; }
       // b. cwd containment: deepest worktree that contains the session cwd.
-      let best = null;
-      let bestRepo = null;
+      let best: Worktree | null = null;
+      let bestRepo: string | null = null;
       if (s.inScope) {
         for (const repo of collected.gitRepos) {
           if (!repo.worktrees) continue;
@@ -746,11 +873,11 @@ function reconcile(collected, config) {
             if (cwdWithin(s.cwd, w.path) && (!best || w.path.length > best.path.length)) { best = w; bestRepo = repo.name; }
           }
         }
-        const owner = best && units.find((u) => u.worktrees.includes(best));
+        const owner = best && units.find((u) => u.worktrees.includes(best as Worktree));
         if (owner) {
           owner.sessions.push(s);
           owner.joins.push('inferred');
-          owner.repoNames.add(bestRepo);
+          owner.repoNames.add(bestRepo as string);
           continue;
         }
       }
@@ -760,8 +887,8 @@ function reconcile(collected, config) {
       // fans out across units on evidence alone.
       const ev = s.workRefs || { roots: [], tokens: [] };
       const evRoots = (ev.roots || []).slice().sort((a, b) => b.length - a.length);
-      let evUnit = null;
-      let evRepo = null;
+      let evUnit: WorkUnit | null = null;
+      let evRepo: string | null = null;
       for (const root of evRoots) {
         const hit = wtByPath.get(root);
         if (hit && !hit.w.isPrimary) {
@@ -781,14 +908,14 @@ function reconcile(collected, config) {
       if (evUnit) {
         evUnit.sessions.push(s);
         evUnit.joins.push('inferred');
-        evUnit.repoNames.add(evRepo);
+        evUnit.repoNames.add(evRepo as string);
         continue;
       }
       // d. corroborated body keys, capped against orchestrator fan-out.
       const bodyKeys = (s.issueKeys || []).filter((k) => unitsByKey.has(k));
       if (bodyKeys.length && bodyKeys.length <= SESSION_KEY_FANOUT_CAP) {
         for (const k of bodyKeys) {
-          const u = unitsByKey.get(k);
+          const u = unitsByKey.get(k) as WorkUnit;
           u.sessions.push(s);
           u.joins.push('explicit');
           if (s.inScope) for (const repo of collected.gitRepos) if (repo.worktrees && repo.worktrees.some((w) => cwdWithin(s.cwd, w.path))) u.repoNames.add(repo.name);
@@ -799,10 +926,10 @@ function reconcile(collected, config) {
       // path evidence naming the repo's primary checkout or one of its
       // worktrees. Ancestor cwd alone is NOT a join: sibling projects under
       // the same parent dir must not attach to a repo they never touched.
-      let repoName = bestRepo || (config.repos.find((r) => cwdWithin(s.cwd, r.path)) || {}).name || null;
+      let repoName: string | null = bestRepo || (config.repos.find((r) => cwdWithin(s.cwd, r.path)) || { name: null as unknown as string }).name || null;
       if (!repoName) {
         for (const root of evRoots) {
-          const hit = wtByPath.get(root) || (repoByPath.has(root) ? { repoName: repoByPath.get(root) } : null);
+          const hit = wtByPath.get(root) || (repoByPath.has(root) ? { repoName: repoByPath.get(root) as string } : null);
           if (hit) { repoName = hit.repoName; break; }
         }
       }
@@ -829,7 +956,7 @@ function reconcile(collected, config) {
   // an open note that joins nothing still surfaces as its own needs-you unit.
   const openNotes = collected.notes.notes ? computeOpenNotes(collected.notes.notes, now) : [];
   for (const note of openNotes) {
-    let target = null;
+    let target: WorkUnit | undefined;
     if (note.session) target = units.find((u) => u.sessions.some((s) => s.id === note.session));
     if (!target) {
       const key = firstKey(note.message || '');
@@ -846,13 +973,13 @@ function reconcile(collected, config) {
   }
 
   // ---- evidence and lanes ----
-  const lanes = { needsYou: [], readyForReview: [], blockedOnAgent: [], stale: [], missingOwner: [], verified: [] };
+  const lanes: Record<LaneKey, any[]> = { needsYou: [], readyForReview: [], blockedOnAgent: [], stale: [], missingOwner: [], verified: [] };
 
   for (const u of units) {
-    const activity = [];
-    for (const w of u.worktrees) if (Number.isFinite(w.lastCommitMs)) activity.push(w.lastCommitMs);
-    for (const w of u.worktrees) if (Number.isFinite(w.lastEditMs)) activity.push(w.lastEditMs);
-    for (const p of u.prs) if (Number.isFinite(p.updatedAtMs)) activity.push(p.updatedAtMs);
+    const activity: number[] = [];
+    for (const w of u.worktrees) if (Number.isFinite(w.lastCommitMs)) activity.push(w.lastCommitMs as number);
+    for (const w of u.worktrees) if (Number.isFinite(w.lastEditMs)) activity.push(w.lastEditMs as number);
+    for (const p of u.prs) if (Number.isFinite(p.updatedAtMs)) activity.push(p.updatedAtMs as number);
     for (const s of u.sessions) if (Number.isFinite(sessionActivityMs(s))) activity.push(sessionActivityMs(s));
     for (const n of u.notes) if (Number.isFinite(n.tsMs)) activity.push(n.tsMs);
     const lastActivityMs = activity.length ? Math.max(...activity) : null;
@@ -877,20 +1004,20 @@ function reconcile(collected, config) {
     const linearBlind = !!degraded.linear;
     const ghBlind = [...u.repoNames].some((r) => ghDegradedRepos.has(r)) || (!!degraded.gh && u.repoNames.size === 0);
 
-    const degradedSources = [];
+    const degradedSources: string[] = [];
     if (linearBlind) degradedSources.push('linear');
     if (ghBlind) degradedSources.push('gh');
     if (degraded.sessions) degradedSources.push('sessions');
     if (degraded.notes) degradedSources.push('notes');
     if (degraded.git && [...u.repoNames].some((r) => collected.gitRepos.some((g) => g.name === r && g.degraded))) degradedSources.push('git');
 
-    let lane = null;
-    let next = null;
+    let lane: LaneKey | null = null;
+    let next: { action: string; ref: string | null } | null = null;
 
     if (openNote || needsYouSession) {
       lane = 'needsYou';
       if (openNote) next = { action: `answer the ${openNote.level} note`, ref: openNote.cwd || (needsYouSession && needsYouSession.cwd) || null };
-      else next = { action: 'respond to the waiting session', ref: needsYouSession.cwd || needsYouSession.path };
+      else next = { action: 'respond to the waiting session', ref: (needsYouSession as SessionRow).cwd || (needsYouSession as SessionRow).path };
     } else if (reviewablePr) {
       lane = 'readyForReview';
       next = { action: `review PR #${reviewablePr.number}${reviewablePr.checks === 'none' ? ' (no checks configured)' : ''}`, ref: reviewablePr.url };
@@ -899,7 +1026,7 @@ function reconcile(collected, config) {
       next = { action: `checks failing on PR #${failingPr.number}: investigate or restart the agent`, ref: failingPr.url };
     } else if (cleanupWt) {
       lane = 'stale';
-      const merged = u.mergedPrs.find((p) => p.headRefName === cleanupWt.branch);
+      const merged = u.mergedPrs.find((p) => p.headRefName === cleanupWt.branch) as PullRequest;
       next = { action: `PR #${merged.number} merged: remove the worktree`, ref: cleanupWt.path };
     } else if ((hasExecution || hasProof) && !isFresh) {
       lane = 'stale';
@@ -910,7 +1037,7 @@ function reconcile(collected, config) {
       next = { action: 'local work with no reconciled issue: link it to an issue or file one', ref: (u.worktrees[0] && u.worktrees[0].path) || (u.prs[0] && u.prs[0].url) || (u.sessions[0] && u.sessions[0].cwd) || null };
     } else if (issueKnown && !hasExecution && !hasProof && !degraded.sessions && !degraded.git) {
       lane = 'missingOwner';
-      next = { action: 'started in the tracker but no local execution or PR found: delegate or start it', ref: u.issue.url };
+      next = { action: 'started in the tracker but no local execution or PR found: delegate or start it', ref: (u.issue as LinearIssue).url };
     } else if ((issueKnown || linearBlind) && (hasExecution || hasProof) && isFresh) {
       lane = 'verified';
       next = null;
@@ -980,7 +1107,7 @@ function reconcile(collected, config) {
 
 // ---- output -----------------------------------------------------------------------
 
-function headerLine(lanes, degraded) {
+export function headerLine(lanes: Record<LaneKey, any[]>, degraded: ReconcileResult['degraded']): string {
   const parts = [
     `${lanes.needsYou.length} need${lanes.needsYou.length === 1 ? 's' : ''} you`,
     `${lanes.readyForReview.length} ready for review`,
@@ -998,9 +1125,9 @@ function headerLine(lanes, degraded) {
 // how much more there is. Counts in the header and --json are never capped.
 const HUMAN_LANE_CAP = 15;
 
-function renderHuman(result, out = console.log) {
+function renderHuman(result: ReconcileResult, out: (s: string) => void = console.log): void {
   out(headerLine(result.lanes, result.degraded));
-  const order = ['needsYou', 'readyForReview', 'blockedOnAgent', 'stale', 'missingOwner', 'verified'];
+  const order: LaneKey[] = ['needsYou', 'readyForReview', 'blockedOnAgent', 'stale', 'missingOwner', 'verified'];
   for (const laneKey of order) {
     const all = result.lanes[laneKey];
     if (!all.length) continue;
@@ -1036,7 +1163,7 @@ function renderHuman(result, out = console.log) {
 
 // ---- entry ------------------------------------------------------------------------
 
-const LANE_FLAG_MAP = {
+const LANE_FLAG_MAP: Record<string, LaneKey> = {
   'needs-you': 'needsYou',
   'ready-for-review': 'readyForReview',
   'blocked-on-agent': 'blockedOnAgent',
@@ -1046,8 +1173,8 @@ const LANE_FLAG_MAP = {
   verified: 'verified',
 };
 
-function filterResult(result, { repo, lane }) {
-  const lanes = {};
+function filterResult(result: ReconcileResult, { repo, lane }: { repo?: string; lane?: string }): ReconcileResult {
+  const lanes: Record<LaneKey, any[]> = {} as Record<LaneKey, any[]>;
   for (const key of LANE_KEYS) {
     let items = result.lanes[key];
     if (repo) items = items.filter((i) => i.executionRef && i.executionRef.repo === repo);
@@ -1057,7 +1184,20 @@ function filterResult(result, { repo, lane }) {
   return { ...result, lanes };
 }
 
-async function runPulse(flags, io = {}) {
+export interface RunPulseFlags {
+  config?: string;
+  lane?: string;
+  repo?: string;
+  fresh?: boolean;
+  json?: boolean;
+}
+
+export interface RunPulseIo {
+  out?: (s: string) => void;
+  err?: (s: string) => void;
+}
+
+export async function runPulse(flags: RunPulseFlags, io: RunPulseIo = {}): Promise<number> {
   const out = io.out || console.log;
   const err = io.err || console.error;
   const { config, error } = loadConfig(flags.config);
@@ -1093,17 +1233,3 @@ async function runPulse(flags, io = {}) {
   }
   return 0;
 }
-
-module.exports = {
-  runPulse,
-  reconcile,
-  collect,
-  loadConfig,
-  summarizeChecks,
-  parseWorktreePorcelain,
-  parseUpstreamTrack,
-  computeOpenNotes,
-  headerLine,
-  NEED_DECAY_MS,
-  LANE_LABELS,
-};

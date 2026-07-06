@@ -1,38 +1,40 @@
 {
   "name": "humanctl",
-  "version": "0.16.1",
+  "version": "0.16.2",
   "description": "A control plane for the human bottleneck.",
-  "main": "electron/main.js",
+  "main": "dist/electron/main.js",
   "bin": {
-    "humanctl": "bin/humanctl.js"
+    "humanctl": "dist/bin/humanctl.js"
   },
   "files": [
     ".agents/",
-    "bin/",
-    "lib/",
+    "dist/bin/",
+    "dist/lib/",
     "docs/",
     "README.md",
     "LICENSE"
   ],
   "scripts": {
     "dev": "next dev --turbopack",
-    "build": "next build",
+    "build": "next build && npm run build:lib",
+    "build:lib": "tsup",
+    "typecheck": "tsc -p tsconfig.backend.json --noEmit",
     "start": "next start",
     "lint": "eslint .",
-    "cli:init": "node ./bin/humanctl.js init .",
-    "cli:status": "node ./bin/humanctl.js status .",
-    "pulse:selftest": "node lib/pulse.selftest.js",
-    "reader:selftest": "node lib/reader.selftest.js",
-    "commands:selftest": "node lib/commands.selftest.js",
+    "cli:init": "node ./dist/bin/humanctl.js init .",
+    "cli:status": "node ./dist/bin/humanctl.js status .",
+    "pulse:selftest": "tsx lib/pulse.selftest.ts",
+    "reader:selftest": "tsx lib/reader.selftest.ts",
+    "commands:selftest": "tsx lib/commands.selftest.ts",
     "perf:selftest": "node scripts/perf-selftest/run.js",
-    "perf:logic-selftest": "node scripts/perf-selftest/logic.selftest.js",
-    "desktop": "electron electron/main.js",
+    "perf:logic-selftest": "tsx scripts/perf-selftest/logic.selftest.ts",
+    "desktop": "npm run build:lib && electron dist/electron/main.js",
     "renderer": "python3 -m http.server 4173 --directory electron/renderer",
-    "desktop:sessions": "node lib/sessions.js",
-    "app:build": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
-    "app:dmg": "CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
+    "desktop:sessions": "tsx lib/sessions.ts",
+    "app:build": "npm run build:lib && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
+    "app:dmg": "npm run build:lib && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
     "app:install": "npm run app:build && npm run perf:selftest && bash scripts/install-app.sh",
-    "app:release": "electron-builder --mac dmg --config.mac.notarize=true",
+    "app:release": "npm run build:lib && electron-builder --mac dmg --config.mac.notarize=true",
     "notch:generate": "cd attic/notch/macos && xcodegen generate",
     "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
     "notch:open": "pkill -x HumanctlNotch || true && open -a ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
@@ -43,8 +45,9 @@
     "productName": "humanctl",
     "asar": true,
     "files": [
-      "electron/**/*",
-      "lib/**/*",
+      "dist/electron/**/*",
+      "electron/renderer/**/*",
+      "electron/assets/**/*",
       "package.json",
       "!node_modules/**/*"
     ],
@@ -95,6 +98,8 @@
     "electron-builder": "^26.15.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.1.6",
-    "typescript": "5.9.3"
+    "tsup": "^8.5.1",
+    "tsx": "^4.23.0",
+    "typescript": "^5.9.3"
   }
 }

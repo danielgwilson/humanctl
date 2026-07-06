@@ -1,18 +1,20 @@
-'use strict';
-
 // Cross-harness session reader shared by the humanctl desktop app and CLI.
 // Read-only. Scans local Codex + Claude Code session transcripts and returns
 // recent-session metadata. Never writes, never transmits. Huge transcripts are
 // read by bounded head/tail slices, never fully loaded.
 
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { execFileSync } = require('child_process');
-const { priceFor, contextWindowFor, AS_OF } = require('./pricing');
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { execFileSync } from 'child_process';
+import { priceFor, contextWindowFor, AS_OF } from './pricing';
+
+export type Harness = 'codex' | 'claude-code';
+export type SessionState = 'need' | 'work' | 'done' | 'idle' | 'block';
+export type SessionTier = 'hot' | 'drifting' | 'archived';
 
 const HOME = os.homedir();
-const HARNESSES = [
+const HARNESSES: { name: Harness; dir: string }[] = [
   { name: 'codex', dir: path.join(HOME, '.codex', 'sessions') },
   { name: 'claude-code', dir: path.join(HOME, '.claude', 'projects') },
 ];
@@ -26,8 +28,8 @@ const TAIL_BYTES = 128 * 1024; // enough for current state
 // new-year boundary, since minYear is the cutoff's own year). This avoids
 // statting thousands of archived transcripts on every scan. Safe for Claude too,
 // whose project dirs are never named as bare 4-digit years.
-function walkJsonl(dir, out, minYear) {
-  let ents;
+function walkJsonl(dir: string, out: string[], minYear?: number): void {
+  let ents: fs.Dirent[];
   try { ents = fs.readdirSync(dir, { withFileTypes: true }); } catch { return; }
   for (const e of ents) {
     const p = path.join(dir, e.name);
@@ -38,7 +40,7 @@ function walkJsonl(dir, out, minYear) {
   }
 }
 
-function readSlice(file, bytes, fromEnd) {
+function readSlice(file: string, bytes: number, fromEnd: boolean): string {
   try {
     const { size } = fs.statSync(file);
     const len = Math.min(bytes, size);
@@ -51,22 +53,22 @@ function readSlice(file, bytes, fromEnd) {
   } catch { return ''; }
 }
 
-const parse = (line) => { try { return JSON.parse(line); } catch { return null; } };
+const parse = (line: string): Record<string, any> | null => { try { return JSON.parse(line); } catch { return null; } };
 
 // "Ask the session" probes prefix their injected user turn with this sentinel.
 // Claude asks run with --no-session-persistence and write nothing, but Codex
 // asks always append into the real rollout (and a future Claude fork path
 // would persist too), so persisted probe turns must read as non-substantive:
 // never a title, never lastUserText, never a state flip. See docs/ask-session.md.
-const BTW_SENTINEL = '[humanctl btw]';
+export const BTW_SENTINEL = '[humanctl btw]';
 const BTW_RE = /^\[humanctl btw\]/;
 
-function isBoilerplate(t) {
+function isBoilerplate(t: string | null | undefined): boolean {
   if (!t) return true;
   return /^# AGENTS\.md|^<INSTRUCTIONS|^<skill|^<environment_context|^<subagent|^<turn_aborted|^<channel|^<local-command|^<task-notification|^<command-message|^<command-name|^<system-reminder|^This session is being continued|^Caveat: The messages below|^\[Request interrupted|^\[Request\]|^\[humanctl btw\]/.test(t);
 }
 
-function textOf(content, claude) {
+function textOf(content: unknown, claude: boolean): string {
   if (Array.isArray(content)) {
     return content
       .map((x) => (x && (claude ? x.type === 'text' : true) ? (x.text || '') : ''))
@@ -80,8 +82,8 @@ function textOf(content, claude) {
 // automation and hide them by default. Newer Codex versions also stamp
 // session_meta with thread_source ("user" / "subagent" / "automation"), which
 // catches scheduled automation runs directly, without the prompt-shape check
-// in metaFor. bin/humanctl.js span mirrors these semantics; keep them in sync.
-function isCodexAutomation(meta) {
+// in metaFor. bin/humanctl.ts span mirrors these semantics; keep them in sync.
+function isCodexAutomation(meta: Record<string, any> | null | undefined): boolean {
   if (!meta) return false;
   if (meta.parent_thread_id) return true;
   if (meta.agent_role || meta.agent_nickname) return true;
@@ -91,16 +93,24 @@ function isCodexAutomation(meta) {
   return false;
 }
 
+interface MetaResult {
+  cwd: string;
+  title: string;
+  customTitle: string;
+  automation: boolean;
+}
+
 // metaFor + lastRole each read a slice of every recent file on every scan.
 // They only change when the file changes, so memoize by (path, mtime, size).
 // This is what keeps the main thread from re-parsing ~1300 transcripts per tick.
-const metaCache = new Map();
-const roleCache = new Map();
+const metaCache = new Map<string, MetaResult>();
+const roleCache = new Map<string, string>();
 
-function metaFor(file, harness, st) {
+function metaFor(file: string, harness: Harness, st?: fs.Stats | null): MetaResult {
   if (st === undefined) { try { st = fs.statSync(file); } catch { st = null; } }
   const ckey = st ? `${file}:${st.mtimeMs}:${st.size}` : file;
-  if (metaCache.has(ckey)) return metaCache.get(ckey);
+  const cached = metaCache.get(ckey);
+  if (cached) return cached;
   const head = readSlice(file, HEAD_BYTES, false).split('\n');
   let cwd = '';
   let title = '';
@@ -138,17 +148,18 @@ function metaFor(file, harness, st) {
     (/^Automation:/i.test(title) && /Automation ID:/i.test(title)) ||
     /^Summarize the recent tail of an autonomous coding-agent session/i.test(title)
   )) automation = true;
-  const res = { cwd, title, customTitle, automation };
+  const res: MetaResult = { cwd, title, customTitle, automation };
   metaCache.set(ckey, res);
   if (metaCache.size > 1500) metaCache.clear();
   return res;
 }
 
-function lastRole(file, harness, st) {
+function lastRole(file: string, harness: Harness, st?: fs.Stats | null): string {
   if (st === undefined) { try { st = fs.statSync(file); } catch { st = null; } }
   const ckey = st ? `${file}:${st.mtimeMs}:${st.size}` : file;
-  if (roleCache.has(ckey)) return roleCache.get(ckey);
-  const tail = readSlice(file, TAIL_BYTES, true).split('\n').map(parse).filter(Boolean);
+  const cached = roleCache.get(ckey);
+  if (cached !== undefined) return cached;
+  const tail = readSlice(file, TAIL_BYTES, true).split('\n').map(parse).filter(Boolean) as Record<string, any>[];
   let role = 'unknown';
   for (let i = tail.length - 1; i >= 0; i--) {
     const o = tail[i];
@@ -180,7 +191,7 @@ function lastRole(file, harness, st) {
 
 // Strong ask patterns: decision- or handoff-shaped phrases scanned over the
 // whole final assistant message. Sourced from the audit's true needs-you tails.
-const ASK_STRONG = [
+const ASK_STRONG: [RegExp, string][] = [
   [/\bsay the word\b/i, 'awaiting your go-ahead'],
   [/\bsay ["'`]/i, 'awaiting your go-ahead'],
   [/\byour call\b/i, 'awaiting your decision'],
@@ -199,7 +210,7 @@ const ASK_STRONG = [
 ];
 // Soft ask patterns: offer-shaped phrases that only count near the very end of
 // the message (mid-message offers are usually already resolved by the tail).
-const ASK_SOFT = [
+const ASK_SOFT: [RegExp, string][] = [
   [/\bwant me to\b/i, 'offers you a next step'],
   [/\bshould i\b/i, 'asks which way to go'],
   [/\bshall i\b/i, 'asks which way to go'],
@@ -223,11 +234,11 @@ const FUTURE_GUARD_RE = /\b(i'?ll|i will|when (it|this|that)|once (it|this|that)
 const DONE_RE = /\b(merged|shipped|deployed|released|published|landed|killed|completed?|finished|done and (pushed|merged)|all (checks )?green)\b/i;
 const DONE_WINDOW = 300;
 
-function sentenceAround(text, index) {
+function sentenceAround(text: string, index: number): string {
   const start = Math.max(text.lastIndexOf('.', index), text.lastIndexOf('!', index), text.lastIndexOf('?', index), text.lastIndexOf('\n', index)) + 1;
   return text.slice(start, index);
 }
-function matchAsk(list, text) {
+function matchAsk(list: [RegExp, string][], text: string): string | null {
   for (const [re, reason] of list) {
     const m = re.exec(text);
     if (!m) continue;
@@ -240,7 +251,7 @@ function matchAsk(list, text) {
 // Classify the final assistant message: ask-shaped (returns the reason string),
 // or null. Question rule: the message, or its last non-empty line within the
 // final ~300 chars, ends with a question mark aimed at the reader.
-function askShapeOf(text) {
+export function askShapeOf(text: string | null | undefined): string | null {
   if (!text) return null;
   const t = String(text).trim();
   const strong = matchAsk(ASK_STRONG, t);
@@ -253,7 +264,7 @@ function askShapeOf(text) {
   if (lines.length && /\?$/.test(lines[lines.length - 1].replace(/[\s"'`)\]*_]+$/, ''))) return 'asks you a question';
   return null;
 }
-function doneShapeOf(text) {
+export function doneShapeOf(text: string | null | undefined): boolean {
   if (!text) return false;
   return DONE_RE.test(String(text).trim().slice(-DONE_WINDOW));
 }
@@ -264,20 +275,38 @@ function doneShapeOf(text) {
 // commands (/model, /effort) are excluded from both the event stream and the
 // last-activity timestamp: an appended footer must never make a dead thread
 // look alive, and a trailing /model must never mask a pending assistant ask.
-const NEED_TAIL_BYTES = { 'claude-code': 512 * 1024, codex: 3 * 1024 * 1024 };
-const needCache = new Map();
+const NEED_TAIL_BYTES: Record<'claude-code' | 'codex', number> = { 'claude-code': 512 * 1024, codex: 3 * 1024 * 1024 };
+
+export interface NeedSignals {
+  lastKind: 'user' | 'assistant' | 'interrupt' | 'unknown';
+  interrupted: boolean;
+  inFlight: boolean;
+  lastAssistantText: string;
+  lastUserText: string;
+  lastActiveMs: number | null;
+  userCount: number;
+  assistantCount: number;
+  toolCount: number;
+  wholeFile: boolean;
+  msgCountEst: number;
+}
+
+const needCache = new Map<string, NeedSignals>();
 const INTERRUPT_RE = /^\[Request interrupted by user/;
 
-function readNeedSignals(file, harness, st) {
+type TlEvent = { kind: 'user' | 'assistant' | 'tool' | 'interrupt'; text?: string; ts: number | null };
+
+export function readNeedSignals(file: string, harness: Harness | string, st?: fs.Stats | null): NeedSignals {
   if (st === undefined) { try { st = fs.statSync(file); } catch { st = null; } }
   const ckey = st ? `${file}:${st.mtimeMs}:${st.size}` : file;
-  if (needCache.has(ckey)) return needCache.get(ckey);
+  const cached = needCache.get(ckey);
+  if (cached) return cached;
   const claude = harness === 'claude-code' || file.includes('/.claude/');
   const sliceBytes = NEED_TAIL_BYTES[claude ? 'claude-code' : 'codex'];
   const wholeFile = !st || st.size <= sliceBytes;
   const lines = readSlice(file, sliceBytes, true).split('\n');
   if (!wholeFile && lines.length) lines.shift(); // drop the possibly-partial first tail line
-  const events = []; // { kind: 'user'|'assistant'|'tool'|'interrupt', text?, ts }
+  const events: TlEvent[] = [];
   // Probe pair-drop: a persisted "ask the session" turn is a sentinel-prefixed
   // user message plus the answer the model gave it (and any tool noise between).
   // Dropping only the user line is not enough: the probe's ANSWER would still
@@ -296,7 +325,7 @@ function readNeedSignals(file, harness, st) {
       const m = o.message;
       if (!m || !m.role) continue;
       if (m.role === 'user') {
-        if (Array.isArray(m.content) && m.content.some((x) => x && x.type === 'tool_result')) { if (!probeSkip) events.push({ kind: 'tool', ts: tsv }); continue; }
+        if (Array.isArray(m.content) && m.content.some((x: any) => x && x.type === 'tool_result')) { if (!probeSkip) events.push({ kind: 'tool', ts: tsv }); continue; }
         const t = genuineUserText(m.content).trim();
         if (!t) continue;
         if (INTERRUPT_RE.test(t)) { probeSkip = false; events.push({ kind: 'interrupt', ts: tsv }); continue; }
@@ -308,7 +337,7 @@ function readNeedSignals(file, harness, st) {
         if (probeSkip) continue;
         const t = assistantText(m.content).trim();
         if (t) events.push({ kind: 'assistant', text: t, ts: tsv });
-        if (Array.isArray(m.content) && m.content.some((x) => x && x.type === 'tool_use')) events.push({ kind: 'tool', ts: tsv });
+        if (Array.isArray(m.content) && m.content.some((x: any) => x && x.type === 'tool_use')) events.push({ kind: 'tool', ts: tsv });
       }
     } else {
       const p = o.payload || o;
@@ -350,7 +379,7 @@ function readNeedSignals(file, harness, st) {
   let lastAssistantText = '';
   let lastUserText = '';
   let userCount = 0, assistantCount = 0, toolCount = 0;
-  let lastActiveMs = null;
+  let lastActiveMs: number | null = null;
   for (const e of events) {
     if (e.kind === 'assistant' && e.text) { lastAssistantText = e.text; assistantCount++; }
     else if (e.kind === 'user') { if (e.text) lastUserText = e.text; userCount++; }
@@ -358,14 +387,14 @@ function readNeedSignals(file, harness, st) {
     if (e.ts != null) lastActiveMs = e.ts; // events are in file order; keep the last stamped one
   }
   // Walk back past tool noise to the last conversational event.
-  let lastKind = 'unknown';
+  let lastKind: NeedSignals['lastKind'] = 'unknown';
   for (let i = events.length - 1; i >= 0; i--) {
     const k = events[i].kind;
     if (k === 'tool') continue;
     lastKind = k;
     break;
   }
-  const res = {
+  const res: NeedSignals = {
     lastKind,                       // 'user' | 'assistant' | 'interrupt' | 'unknown'
     interrupted: lastKind === 'interrupt',
     inFlight: events.length > 0 && events[events.length - 1].kind === 'tool',
@@ -387,15 +416,23 @@ function readNeedSignals(file, harness, st) {
   return res;
 }
 
+export interface NeedDerivation {
+  state: SessionState;
+  reason: string;
+  tier: SessionTier;
+  lastActiveMs: number;
+  msgCountEst: number;
+}
+
 // The state axis. Returns { state, reason, tier, lastActiveMs, msgCountEst }.
 // Notes (blocked / review / done) overlay on top of this in the consumers that
 // have them (the renderer); this is the session-content verdict alone.
-function deriveNeedState(sig, st, now) {
+export function deriveNeedState(sig: NeedSignals, st: fs.Stats | null | undefined, now: number): NeedDerivation {
   const lastActiveMs = sig.lastActiveMs || (st ? st.mtimeMs : now);
   const idleMs = now - lastActiveMs;
-  const tier = idleMs <= TIER_HOT_MS ? 'hot' : idleMs <= TIER_DRIFT_MS ? 'drifting' : 'archived';
+  const tier: SessionTier = idleMs <= TIER_HOT_MS ? 'hot' : idleMs <= TIER_DRIFT_MS ? 'drifting' : 'archived';
   const ask = askShapeOf(sig.lastAssistantText);
-  let state = 'idle';
+  let state: SessionState = 'idle';
   let reason = 'no waiting signal';
   if (sig.interrupted) {
     state = 'need';
@@ -422,38 +459,79 @@ function deriveNeedState(sig, st, now) {
 // follow-up, and no tool activity: the shape of `claude -p` probes, including
 // humanctl's own summarizer. The freshness guard keeps a genuinely new
 // interactive session visible while it is still plausibly live.
-function isClaudeOneShot(sig, st, now) {
+export function isClaudeOneShot(sig: NeedSignals, st: fs.Stats | null | undefined, now: number): boolean {
   if (!sig.wholeFile) return false;
   if (st && now - st.mtimeMs <= FRESH_MS) return false;
   return sig.userCount <= 1 && sig.assistantCount <= 2 && sig.toolCount === 0 && !sig.interrupted;
 }
 
-function relAge(ms) {
+function relAge(ms: number): string {
   const h = (Date.now() - ms) / 3.6e6;
   if (h < 1) return Math.max(1, Math.round(h * 60)) + 'm';
   if (h < 48) return Math.round(h) + 'h';
   return Math.round(h / 24) + 'd';
 }
 
+export interface SessionRow {
+  harness: Harness;
+  id: string;
+  cwd: string;
+  repo: string;
+  title: string;
+  customTitle: string;
+  lastRole: string;
+  state: SessionState;
+  stateReason: string;
+  tier: SessionTier;
+  lastActiveMs: number;
+  msgCountEst: number;
+  ageMs: number;
+  age: string;
+  sizeBytes: number;
+  path: string;
+  // enriched fields (withUsage: true)
+  contextPct?: number | null;
+  costUSD?: number | null;
+  apiEquivUSD?: number | null;
+  totalTokens?: number;
+  lastUser?: string;
+  prevAgent?: string;
+  reasoningEffort?: string | null;
+  ultracode?: boolean;
+  model?: string;
+  inScope?: boolean;
+  ancestorScope?: boolean;
+  issueKeys?: string[];
+  workRefs?: { roots: string[]; tokens: string[] };
+  _uuid?: string;
+}
+
+export interface ListRecentOpts {
+  maxAgeH?: number;
+  limit?: number;
+  withUsage?: boolean;
+  includeAutomation?: boolean;
+}
+
 // The tree walk + per-file meta/role reads are the expensive part, and are
 // identical whether or not usage is requested. Cache the base row list for a
 // short window so listSessions + getStatus in the same refresh pay it once, not
 // twice. Per-file work underneath is already mtime-memoized (metaCache/roleCache).
-const scanCache = new Map(); // key -> { at, rows }
+const scanCache = new Map<string, { at: number; rows: SessionRow[] }>();
 const SCAN_TTL_MS = 1500;
-function baseScan(maxAgeH, limit, includeAutomation) {
+function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): SessionRow[] {
   const key = `${maxAgeH}:${limit}:${!!includeAutomation}`;
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < SCAN_TTL_MS) return hit.rows;
   const cutoff = Date.now() - maxAgeH * 3.6e6;
   const minYear = new Date(cutoff).getFullYear();
-  const rows = [];
+  const rows: SessionRow[] = [];
   for (const h of HARNESSES) {
-    const files = [];
+    const files: string[] = [];
     walkJsonl(h.dir, files, minYear);
     for (const file of files) {
       if (file.includes('/subagents/') || file.includes('/workflows/')) continue; // child agents
-      let st;
+      let st: fs.Stats;
       try { st = fs.statSync(file); } catch { continue; }
       if (st.mtimeMs < cutoff) continue;
       const { cwd, title, customTitle, automation } = metaFor(file, h.name, st);
@@ -487,7 +565,7 @@ function baseScan(maxAgeH, limit, includeAutomation) {
   // Display order: tier first, then needs-you, then session depth, then
   // recency. Depth and recency weights follow the resume-mining odds ratios
   // (depth 2.23 > age 1.82 > question-tail 1.46).
-  const TIER_RANK = { hot: 0, drifting: 1, archived: 2 };
+  const TIER_RANK: Record<SessionTier, number> = { hot: 0, drifting: 1, archived: 2 };
   rows.sort((a, b) => b.ageMs - a.ageMs);
   const out = rows.slice(0, limit);
   out.sort((a, b) =>
@@ -506,10 +584,11 @@ function baseScan(maxAgeH, limit, includeAutomation) {
 // failure (no sqlite3, locked DB, schema drift) just leaves customTitle unset.
 const CODEX_STATE_DB = path.join(HOME, '.codex', 'state_5.sqlite');
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
-const codexTitleCache = new Map(); // `${uuid}:${dbMtime}` -> title ('' if none)
-function applyCodexTitles(rows) {
-  let dbm; try { dbm = fs.statSync(CODEX_STATE_DB).mtimeMs; } catch { return; }
-  const need = [];
+const codexTitleCache = new Map<string, string>(); // `${uuid}:${dbMtime}` -> title ('' if none)
+function applyCodexTitles(rows: SessionRow[]): void {
+  let dbm: number;
+  try { dbm = fs.statSync(CODEX_STATE_DB).mtimeMs; } catch { return; }
+  const need: string[] = [];
   for (const r of rows) {
     const m = String(r.id).match(UUID_RE);
     if (!m) continue;
@@ -519,7 +598,7 @@ function applyCodexTitles(rows) {
     else need.push(r._uuid);
   }
   if (!need.length) return;
-  let qrows = [];
+  let qrows: { id: string; title: string }[] = [];
   try {
     const inList = need.map((u) => `'${u}'`).join(','); // uuids are hex, safe to inline
     const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', CODEX_STATE_DB,
@@ -527,7 +606,7 @@ function applyCodexTitles(rows) {
       { timeout: 4000, encoding: 'utf8', maxBuffer: 8 << 20 });
     qrows = raw.trim() ? JSON.parse(raw) : [];
   } catch { qrows = []; }
-  const found = {};
+  const found: Record<string, string> = {};
   for (const q of qrows) { const t = String(q.title || '').replace(/\s+/g, ' ').trim().slice(0, 120); if (t) found[q.id] = t; }
   for (const u of need) codexTitleCache.set(`${u}:${dbm}`, found[u] || '');
   for (const r of rows) if (r._uuid && found[r._uuid]) r.customTitle = found[r._uuid];
@@ -535,7 +614,7 @@ function applyCodexTitles(rows) {
 }
 
 // Public: recent top-level sessions across harnesses (excludes subagent/workflow children).
-function listRecent(opts = {}) {
+export function listRecent(opts: ListRecentOpts = {}): SessionRow[] {
   const out = baseScan(opts.maxAgeH || 72, opts.limit || 40, opts.includeAutomation);
   if (opts.withUsage) {
     for (const r of out) {
@@ -577,18 +656,21 @@ function listRecent(opts = {}) {
 // the cap reports the cut explicitly (truncated + skippedHeadBytes).
 const MAX_READ = 12 * 1024 * 1024;
 const MAX_BLOCKS = 4000; // keep the DOM sane on very long sessions
-const KINDS = ['user', 'assistant', 'thinking', 'tool-call', 'tool-result', 'meta'];
+export const KINDS = ['user', 'assistant', 'thinking', 'tool-call', 'tool-result', 'meta'] as const;
+export type BlockKind = typeof KINDS[number];
 
-const estTokens = (s) => Math.max(1, Math.ceil((s || '').length / 4));
-const previewOf = (s) => (s || '').replace(/\s+/g, ' ').trim().slice(0, 120);
+const estTokens = (s: string | null | undefined) => Math.max(1, Math.ceil((s || '').length / 4));
+const previewOf = (s: string | null | undefined) => (s || '').replace(/\s+/g, ' ').trim().slice(0, 120);
 
-function arrText(content) {
+function arrText(content: unknown): string {
   if (Array.isArray(content)) return content.map((x) => (x && (x.text || x.thinking)) || '').join(' ');
   return typeof content === 'string' ? content : '';
 }
 
+interface RawBlock { kind: string; text: string }
+
 // Return an array of {kind, text} for one transcript line (may be empty).
-function blocksForLine(o, claude) {
+function blocksForLine(o: Record<string, any>, claude: boolean): RawBlock[] {
   if (claude) {
     const msg = o.message || {};
     const role = msg.role;
@@ -599,7 +681,7 @@ function blocksForLine(o, claude) {
       return [{ kind: 'assistant', text: content }];
     }
     if (!Array.isArray(content)) return [];
-    const out = [];
+    const out: RawBlock[] = [];
     for (const item of content) {
       if (!item) continue;
       if (item.type === 'thinking') out.push({ kind: 'thinking', text: item.thinking || '' });
@@ -631,22 +713,36 @@ function blocksForLine(o, claude) {
   return [];
 }
 
-function readBlocks(file, opts = {}) {
+export interface SessionBlock {
+  kind: BlockKind;
+  tokens: number;
+  preview: string;
+}
+
+export interface ReadBlocksResult {
+  id: string;
+  harness: Harness | string;
+  blocks: SessionBlock[];
+  truncated: boolean;
+  skippedHeadBytes: number;
+}
+
+export function readBlocks(file: string, opts: { harness?: Harness | string } = {}): ReadBlocksResult {
   const harness = opts.harness || (file.includes('/.claude/') ? 'claude-code' : 'codex');
   const claude = harness === 'claude-code';
   let size = 0;
-  try { size = fs.statSync(file).size; } catch {}
+  try { size = fs.statSync(file).size; } catch { /* size stays 0 */ }
   const fromEnd = size > MAX_READ;
   const lines = readSlice(file, MAX_READ, fromEnd).split('\n');
   if (fromEnd && lines.length) lines.shift(); // drop the partial first line of a tail slice
-  const blocks = [];
+  const blocks: SessionBlock[] = [];
   for (const ln of lines) {
     if (!ln) continue;
     const o = parse(ln);
     if (!o) continue;
     for (const b of blocksForLine(o, claude)) {
       if (!b.text) continue;
-      blocks.push({ kind: KINDS.includes(b.kind) ? b.kind : 'meta', tokens: estTokens(b.text), preview: previewOf(b.text) });
+      blocks.push({ kind: (KINDS as readonly string[]).includes(b.kind) ? (b.kind as BlockKind) : 'meta', tokens: estTokens(b.text), preview: previewOf(b.text) });
     }
   }
   let truncated = fromEnd;
@@ -688,14 +784,22 @@ const TL_PAGE_EVENTS = 30;                  // substantive events per page targe
 const TL_PREVIEW_CHARS = 240;
 const TL_APPEND_MAX = 8 * 1024 * 1024;      // a bigger delta gets a full re-read
 
-function readBytesRaw(file, start, len) {
+function readBytesRaw(file: string, start: number, len: number): Buffer {
   const fd = fs.openSync(file, 'r');
   try {
     const buf = Buffer.alloc(len);
     const n = fs.readSync(fd, buf, 0, len, start);
-    return n === len ? buf : buf.subarray(0, n);
+    return (n === len ? buf : buf.subarray(0, n)) as Buffer;
   } finally { fs.closeSync(fd); }
 }
+
+interface TlMeta {
+  customTitle?: string;
+  model?: string;
+  effort?: string;
+}
+
+type TlRawEvent = { k: 'user' | 'assistant' | 'interrupt' | 'probe' | 'tool'; t?: string; ts: number | null };
 
 // One parsed transcript line -> raw timeline events. Substantive semantics
 // mirror readNeedSignals (boilerplate filtered, ask-the-session probes marked
@@ -703,17 +807,17 @@ function readBytesRaw(file, start, len) {
 // per-event timestamps are kept for display. Claude custom-title lines and
 // Codex turn_context markers surface through `meta`, never as events, so a
 // rename or a model switch in appended bytes is still picked up.
-function tlEventsForLine(o, claude, meta) {
+function tlEventsForLine(o: Record<string, any>, claude: boolean, meta: TlMeta): TlRawEvent[] {
   const ts0 = o.timestamp ? Date.parse(o.timestamp) : NaN;
   const ts = Number.isFinite(ts0) ? ts0 : null;
-  const out = [];
+  const out: TlRawEvent[] = [];
   if (claude) {
     if (o.type === 'custom-title' && o.customTitle && meta) meta.customTitle = String(o.customTitle);
     const m = o.message;
     if (!m || !m.role) return out;
     if (m.model && meta) meta.model = m.model;
     if (m.role === 'user') {
-      if (Array.isArray(m.content) && m.content.some((x) => x && x.type === 'tool_result')) { out.push({ k: 'tool', ts }); return out; }
+      if (Array.isArray(m.content) && m.content.some((x: any) => x && x.type === 'tool_result')) { out.push({ k: 'tool', ts }); return out; }
       const t = genuineUserText(m.content).trim();
       if (!t) return out;
       if (INTERRUPT_RE.test(t)) { out.push({ k: 'interrupt', ts }); return out; }
@@ -723,7 +827,7 @@ function tlEventsForLine(o, claude, meta) {
     } else if (m.role === 'assistant') {
       const t = assistantText(m.content).trim();
       if (t) out.push({ k: 'assistant', t: clip(t, TL_PREVIEW_CHARS), ts });
-      if (Array.isArray(m.content) && m.content.some((x) => x && x.type === 'tool_use')) out.push({ k: 'tool', ts });
+      if (Array.isArray(m.content) && m.content.some((x: any) => x && x.type === 'tool_use')) out.push({ k: 'tool', ts });
     }
     return out;
   }
@@ -764,8 +868,8 @@ function tlEventsForLine(o, claude, meta) {
   return out;
 }
 
-function tlParseText(text, claude, meta) {
-  const raw = [];
+function tlParseText(text: string, claude: boolean, meta: TlMeta): TlRawEvent[] {
+  const raw: TlRawEvent[] = [];
   for (const ln of text.split('\n')) {
     if (!ln) continue;
     const o = parse(ln);
@@ -775,14 +879,16 @@ function tlParseText(text, claude, meta) {
   return raw;
 }
 
+export type TimelineEvent = { k: 'user' | 'assistant' | 'interrupt'; t?: string; ts: number | null } | { k: 'tools'; n: number; ts: number | null };
+
 // Forward pass over raw events: drop persisted ask-the-session probe turns
 // (question plus the answer it produced, same window rule as readNeedSignals),
 // then collapse runs of tool events into single countable markers so tool
 // noise can never crowd real messages out of a page. `probe0` threads the
 // probe-skip window across appends (a probe's question and its answer can land
 // in different append batches).
-function tlFinalize(raw, probe0) {
-  const events = [];
+function tlFinalize(raw: TlRawEvent[], probe0: boolean): { events: TimelineEvent[]; substantive: number; probe: boolean } {
+  const events: TimelineEvent[] = [];
   let probeSkip = !!probe0;
   let substantive = 0;
   for (const e of raw) {
@@ -795,10 +901,31 @@ function tlFinalize(raw, probe0) {
       else events.push({ k: 'tools', n: 1, ts: e.ts });
       continue;
     }
-    events.push(e);
+    events.push(e as TimelineEvent);
     substantive++;
   }
   return { events, substantive, probe: probeSkip };
+}
+
+export interface TimelinePage {
+  harness: Harness | string;
+  events: TimelineEvent[];
+  start: number;
+  end: number;
+  size: number;
+  mtimeMs: number;
+  atStart: boolean;
+  scannedBytes: number;
+  estEarlier: number | null;
+  meta: TlMeta | null;
+}
+
+export interface ReadTimelinePageOpts {
+  harness?: Harness | string;
+  chunkBytes?: number;
+  maxBytes?: number;
+  minEvents?: number;
+  before?: number;
 }
 
 // A timeline page: substantive-event-budgeted backward read ending at `before`
@@ -806,17 +933,19 @@ function tlFinalize(raw, probe0) {
 // file, with any partially flushed last line held out so `end` is always
 // line-aligned and can seed the append cursor). opts.chunkBytes / maxBytes /
 // minEvents exist for the selftest; production uses the TL_ constants.
-const tlPageCache = new Map();
-function readTimelinePage(file, opts = {}) {
+const tlPageCache = new Map<string, TimelinePage>();
+export function readTimelinePage(file: string, opts: ReadTimelinePageOpts = {}): TimelinePage | null {
   const harness = opts.harness || (file.includes('/.claude/') ? 'claude-code' : 'codex');
   const claude = harness === 'claude-code';
-  let st; try { st = fs.statSync(file); } catch { return null; }
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return null; }
   const chunk = opts.chunkBytes || TL_CHUNK;
   const maxBytes = opts.maxBytes || TL_PAGE_MAX_BYTES;
   const target = opts.minEvents || TL_PAGE_EVENTS;
-  const before = Number.isFinite(opts.before) ? Math.max(0, Math.min(opts.before, st.size)) : null;
+  const before = Number.isFinite(opts.before) ? Math.max(0, Math.min(opts.before as number, st.size)) : null;
   const ckey = `${file}:${st.ino}:${st.mtimeMs}:${st.size}:${before == null ? 'eof' : before}:${chunk}:${maxBytes}:${target}`;
-  if (tlPageCache.has(ckey)) return tlPageCache.get(ckey);
+  const cachedPage = tlPageCache.get(ckey);
+  if (cachedPage) return cachedPage;
 
   // Align the end to a line boundary. A `before` from a previous page is
   // already a line start; EOF may cut a partially flushed line, which belongs
@@ -840,22 +969,22 @@ function readTimelinePage(file, opts = {}) {
   // chunk; if the budget runs out first, the carried partial line is excluded
   // and `start` points at the first FULLY read line, so the next older page
   // re-reads it whole.
-  const meta = {};
+  const meta: TlMeta = {};
   let start = alignedEnd;
-  let carry = Buffer.alloc(0);
-  const parts = [];
+  let carry: Buffer = Buffer.alloc(0);
+  const parts: TlRawEvent[][] = [];
   let scanned = 0, substantive = 0;
   while (start > 0 && scanned < maxBytes && substantive < target) {
     const from = Math.max(0, start - chunk);
     const buf = readBytesRaw(file, from, start - from);
     scanned += buf.length;
     const region = carry.length ? Buffer.concat([buf, carry]) : buf;
-    let parseable;
+    let parseable: Buffer;
     if (from > 0) {
       const nl = region.indexOf(0x0a);
       if (nl < 0) { carry = region; start = from; continue; }
-      carry = region.subarray(0, nl + 1);
-      parseable = region.subarray(nl + 1);
+      carry = region.subarray(0, nl + 1) as Buffer;
+      parseable = region.subarray(nl + 1) as Buffer;
     } else {
       carry = Buffer.alloc(0);
       parseable = region;
@@ -866,9 +995,9 @@ function readTimelinePage(file, opts = {}) {
     start = from;
   }
   const pageStart = start + carry.length;
-  const { events } = tlFinalize([].concat(...parts), false);
+  const { events } = tlFinalize(([] as TlRawEvent[]).concat(...parts), false);
   const covered = Math.max(1, alignedEnd - pageStart);
-  const res = {
+  const res: TimelinePage = {
     harness,
     events,
     start: pageStart,
@@ -888,24 +1017,44 @@ function readTimelinePage(file, opts = {}) {
   return res;
 }
 
+interface TailCursor {
+  ino: number;
+  offset: number;
+  lastSize: number;
+  probe: boolean;
+}
+
 // Per-file append cursors for the live (watched) session. The cursor offset is
 // always line-aligned: a partially flushed line is left unconsumed and re-read
 // once its newline lands. Capped map; priming evicts the oldest entry.
-const tailCursors = new Map(); // file -> { ino, offset, lastSize, probe }
+const tailCursors = new Map<string, TailCursor>(); // file -> { ino, offset, lastSize, probe }
 const CURSOR_CAP = 32;
-function primeTailCursor(file, offset) {
-  let st; try { st = fs.statSync(file); } catch { return false; }
-  const off = Number.isFinite(offset) ? Math.max(0, Math.min(offset, st.size)) : st.size;
+export function primeTailCursor(file: string, offset?: number): boolean {
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return false; }
+  const off = Number.isFinite(offset) ? Math.max(0, Math.min(offset as number, st.size)) : st.size;
   tailCursors.delete(file);
   tailCursors.set(file, { ino: st.ino, offset: off, lastSize: st.size, probe: false });
-  if (tailCursors.size > CURSOR_CAP) tailCursors.delete(tailCursors.keys().next().value);
+  if (tailCursors.size > CURSOR_CAP) {
+    const oldestKey = tailCursors.keys().next().value;
+    if (oldestKey !== undefined) tailCursors.delete(oldestKey);
+  }
   return true;
 }
 
-function readAppended(file, opts = {}) {
+export interface ReadAppendedResult {
+  reset?: boolean;
+  reason?: string;
+  size?: number;
+  events?: TimelineEvent[];
+  meta?: TlMeta | null;
+  end?: number;
+}
+
+export function readAppended(file: string, opts: { harness?: Harness | string } = {}): ReadAppendedResult {
   const harness = opts.harness || (file.includes('/.claude/') ? 'claude-code' : 'codex');
   const claude = harness === 'claude-code';
-  let st;
+  let st: fs.Stats;
   try { st = fs.statSync(file); } catch {
     tailCursors.delete(file);
     return { reset: true, reason: 'missing' };
@@ -929,7 +1078,7 @@ function readAppended(file, opts = {}) {
   const buf = readBytesRaw(file, cur.offset, st.size - cur.offset);
   const lastNl = buf.lastIndexOf(0x0a);
   if (lastNl < 0) return { events: [], meta: null, end: cur.offset, size: st.size }; // partial line only; wait for its newline
-  const meta = {};
+  const meta: TlMeta = {};
   const raw = tlParseText(buf.subarray(0, lastNl + 1).toString('utf8'), claude, meta);
   const fin = tlFinalize(raw, cur.probe);
   cur.probe = fin.probe;
@@ -940,20 +1089,33 @@ function readAppended(file, opts = {}) {
 // --- Token usage, cost estimate, and quota -----------------------------------
 // Real token usage is recorded in both harnesses: Claude per assistant message
 // (message.usage + model), Codex in token_count events (cumulative totals +
-// live rate limits). We read it, estimate spend from pricing.js, and surface
+// live rate limits). We read it, estimate spend from pricing.ts, and surface
 // Codex rate limits as a real quota track. Cached by path+mtime+size so live
 // refresh does not re-read unchanged files. Read-only.
 
-const usageCache = new Map();
+export interface UsageInfo {
+  harness: Harness | string;
+  model: string;
+  metered: boolean;
+  costUSD: number | null;
+  apiEquivUSD: number | null;
+  rateLimits: unknown;
+  contextWindow?: number | null;
+  contextTokens?: number;
+  contextPct?: number | null;
+  tokens: { input?: number; output?: number; cacheRead?: number; cacheCreate?: number; cached?: number; reasoning?: number; total: number };
+}
 
-function readClaudeUsage(file) {
+const usageCache = new Map<string, UsageInfo>();
+
+function readClaudeUsage(file: string): UsageInfo {
   // Tail-anchored past the cap: on a 30MB transcript the head-anchored read
   // reported a context% frozen at the 12MB boundary (a day stale on live
   // sessions). Token totals past the cap cover the newest 12MB either way and
   // are already labeled "est"; context%, model, and the live window come from
   // the true last assistant turn.
   let size = 0;
-  try { size = fs.statSync(file).size; } catch {}
+  try { size = fs.statSync(file).size; } catch { /* size stays 0 */ }
   const fromEnd = size > MAX_READ;
   const lines = readSlice(file, MAX_READ, fromEnd).split('\n');
   if (fromEnd && lines.length) lines.shift();
@@ -980,9 +1142,9 @@ function readClaudeUsage(file) {
     tokens: { input: inT, output: out, cacheRead: cr, cacheCreate: cc, total: inT + out + cr + cc } };
 }
 
-function readCodexUsage(file) {
+function readCodexUsage(file: string): UsageInfo {
   const tail = readSlice(file, 1024 * 1024, true).split('\n');
-  let last = null;
+  let last: Record<string, any> | null = null;
   for (let i = tail.length - 1; i >= 0; i--) {
     const o = parse(tail[i]);
     const p = o && (o.payload || o);
@@ -1006,11 +1168,12 @@ function readCodexUsage(file) {
 }
 
 // Public: per-session usage. Cheap on repeat calls (mtime+size cache).
-function readUsage(file, harness) {
-  let st;
+export function readUsage(file: string, harness: Harness | string): UsageInfo | null {
+  let st: fs.Stats;
   try { st = fs.statSync(file); } catch { return null; }
   const key = `${file}:${st.mtimeMs}:${st.size}`;
-  if (usageCache.has(key)) return usageCache.get(key);
+  const cached = usageCache.get(key);
+  if (cached) return cached;
   const claude = harness === 'claude-code' || file.includes('/.claude/');
   const result = claude ? readClaudeUsage(file) : readCodexUsage(file);
   usageCache.set(key, result);
@@ -1029,24 +1192,38 @@ function readUsage(file, harness) {
 //   archived > 7d  : out of default views (the Wall keeps it)
 // These constants are the single source: the renderer consumes the tier the
 // reader computed per row and owns no time constants of its own.
-const TIER_HOT_MS = 24 * 60 * 60 * 1000;
-const TIER_DRIFT_MS = 7 * 24 * 60 * 60 * 1000;
+export const TIER_HOT_MS = 24 * 60 * 60 * 1000;
+export const TIER_DRIFT_MS = 7 * 24 * 60 * 60 * 1000;
 // "working" freshness window: how recently a session must have moved for a
 // user-last turn or a progress-shaped tail to count as actively worked.
-const FRESH_MS = 30 * 60 * 1000;
-// Back-compat alias: lib/pulse.js gates open notes and waiting sessions on
+export const FRESH_MS = 30 * 60 * 1000;
+// Back-compat alias: lib/pulse.ts gates open notes and waiting sessions on
 // this. It now equals the hot tier (the mining moved it from 18h to 24h).
-const NEED_DECAY_MS = TIER_HOT_MS;
+export const NEED_DECAY_MS = TIER_HOT_MS;
+
+export interface AccountStatus {
+  per: {
+    codex: { sessions: number; generated: number; totalTokens: number; apiEquivUSD: number };
+    'claude-code': { sessions: number; generated: number; totalTokens: number; costUSD: number };
+  };
+  codexQuota: unknown;
+  needsYou: number;
+  working: number;
+  nearCompaction: number;
+  sessions: number;
+  pricingAsOf: string;
+  generatedAt: number;
+}
 
 // Public: account-level rollup for the top bar. Real spend estimate for Claude
 // (metered), real rate-limit quota for Codex (plan-billed), and a needs-you count.
-function accountStatus(opts = {}) {
+export function accountStatus(opts: ListRecentOpts = {}): AccountStatus {
   const rows = listRecent(opts);
   const per = {
     codex: { sessions: 0, generated: 0, totalTokens: 0, apiEquivUSD: 0 },
     'claude-code': { sessions: 0, generated: 0, totalTokens: 0, costUSD: 0 },
   };
-  let codexQuota = null, codexQuotaAge = Infinity, nearCompaction = 0;
+  let codexQuota: unknown = null, codexQuotaAge = Infinity, nearCompaction = 0;
   for (const r of rows) {
     const u = readUsage(r.path, r.harness);
     if (!u) continue;
@@ -1057,10 +1234,10 @@ function accountStatus(opts = {}) {
     if (u.contextPct != null && u.contextPct >= 80) nearCompaction++;
     if (r.harness === 'claude-code') {
       b.generated += (u.tokens && u.tokens.output) || 0;
-      b.costUSD += u.costUSD || 0;
+      (b as { costUSD: number }).costUSD += u.costUSD || 0;
     } else {
       b.generated += ((u.tokens && u.tokens.output) || 0) + ((u.tokens && u.tokens.reasoning) || 0);
-      b.apiEquivUSD += u.apiEquivUSD || 0;
+      (b as { apiEquivUSD: number }).apiEquivUSD += u.apiEquivUSD || 0;
       const ageFromNow = Date.now() - r.ageMs;
       if (u.rateLimits && ageFromNow < codexQuotaAge) { codexQuota = u.rateLimits; codexQuotaAge = ageFromNow; }
     }
@@ -1082,17 +1259,38 @@ function accountStatus(opts = {}) {
 
 // --- Rich extraction: last-exchange, Linear refs, generated HTML, skills, effort, ultracode ---
 
-const rowCache = new Map();
-const detailCache = new Map();
+interface RowExtras {
+  lastUser: string;
+  prevAgent: string;
+  model: string;
+  reasoningEffort: string | null;
+  ultracode: boolean;
+  customTitle: string;
+}
+
+interface SessionDetail {
+  harness: Harness | string;
+  lastExchange: { lastUser: string; prevAgent: string };
+  linearRefs: { url: string; label: string }[];
+  htmlFiles: string[];
+  skillsUsed: Record<string, number>;
+  skillCount: number;
+  reasoningEffort: string | null;
+  model: string;
+  ultracode: boolean;
+}
+
+const rowCache = new Map<string, RowExtras>();
+const detailCache = new Map<string, SessionDetail>();
 const LINEAR_RE = /https?:\/\/linear\.app\/[a-z0-9-]+\/(?:issue|project)\/[^\s)"'<>\]]+/gi;
 
-const clip = (s, n) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
-function assistantText(content) {
+const clip = (s: string | null | undefined, n: number) => (s || '').replace(/\s+/g, ' ').trim().slice(0, n);
+function assistantText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) return content.filter((x) => x && x.type === 'text').map((x) => x.text || '').join(' ');
   return '';
 }
-function genuineUserText(content) {
+function genuineUserText(content: unknown): string {
   if (typeof content === 'string') return content;
   if (Array.isArray(content)) {
     if (content.some((x) => x && x.type === 'tool_result')) return '';
@@ -1100,20 +1298,20 @@ function genuineUserText(content) {
   }
   return '';
 }
-function linearLabel(u) {
+function linearLabel(u: string): string {
   const im = u.match(/\/issue\/([A-Za-z0-9]+-\d+)/);
   if (im) return im[1].toUpperCase();
   const pm = u.match(/\/project\/([a-z0-9-]+)/i);
   if (pm) return pm[1].replace(/-[0-9a-f]{8,}$/i, '').replace(/-/g, ' ').split(' ').filter(Boolean).slice(0, 4).join(' ') || 'project';
   return 'linear';
 }
-function collectLinear(text, map) {
+function collectLinear(text: string | null | undefined, map: Map<string, { url: string; label: string }>): void {
   if (!text) return;
   const m = String(text).match(LINEAR_RE);
   if (!m) return;
   for (let u of m) { u = u.replace(/[).,\]]+$/, ''); if (!map.has(u)) map.set(u, { url: u, label: linearLabel(u) }); }
 }
-function collectHtmlFromCmd(cmd, set) {
+function collectHtmlFromCmd(cmd: string | null | undefined, set: Set<string>): void {
   if (!cmd) return;
   const m = String(cmd).match(/\/[^\s"'>|;]+\.html?\b/g);
   if (m) for (const p of m) set.add(p);
@@ -1125,12 +1323,12 @@ function collectHtmlFromCmd(cmd, set) {
 // letters, a dash, digits (TEAM-123). Case-insensitive in the wild, normalized
 // to uppercase here. Shared by the desktop and `humanctl pulse`; keep the two
 // surfaces on this one extractor. See docs/pulse.md.
-const ISSUE_KEY_RE = /\b([A-Za-z]{2,})-(\d+)\b/g;
+export const ISSUE_KEY_RE = /\b([A-Za-z]{2,})-(\d+)\b/g;
 
-function extractIssueKeys(text) {
+export function extractIssueKeys(text: string | null | undefined): string[] {
   if (!text) return [];
-  const out = [];
-  const seen = new Set();
+  const out: string[] = [];
+  const seen = new Set<string>();
   for (const m of String(text).matchAll(ISSUE_KEY_RE)) {
     const key = `${m[1].toUpperCase()}-${m[2]}`;
     if (!seen.has(key)) { seen.add(key); out.push(key); }
@@ -1144,15 +1342,17 @@ function extractIssueKeys(text) {
 // text are noisy (UTF-8, ISO-8601, and uuid fragments match the shape), so
 // consumers must corroborate them against known issues or branches before
 // treating them as joins. Cached by (path, mtime, size).
-const issueRefCache = new Map();
-function readIssueRefs(file) {
-  let st; try { st = fs.statSync(file); } catch { return { keys: [], urls: [] }; }
+const issueRefCache = new Map<string, { keys: string[]; urls: { url: string; label: string }[] }>();
+export function readIssueRefs(file: string): { keys: string[]; urls: { url: string; label: string }[] } {
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return { keys: [], urls: [] }; }
   const ckey = `${file}:${st.mtimeMs}:${st.size}`;
-  if (issueRefCache.has(ckey)) return issueRefCache.get(ckey);
+  const cached = issueRefCache.get(ckey);
+  if (cached) return cached;
   const text = readSlice(file, HEAD_BYTES, false) + '\n' + readSlice(file, TAIL_BYTES, true);
-  const linear = new Map();
+  const linear = new Map<string, { url: string; label: string }>();
   collectLinear(text, linear);
-  const keys = new Set();
+  const keys = new Set<string>();
   for (const ref of linear.values()) {
     const im = ref.url.match(/\/issue\/([A-Za-z]{2,}-\d+)/i);
     if (im) keys.add(im[1].toUpperCase());
@@ -1177,19 +1377,19 @@ function readIssueRefs(file) {
 // vocabulary signature).
 const PATH_TOKEN_RE = /(?:\/[A-Za-z0-9._~@+-]+){2,}/g;
 const WORKREF_MATCH_CAP = 4000; // path-shaped tokens scanned per transcript
-const workRefCache = new Map();
-const tokenRegexCache = new Map();
+const workRefCache = new Map<string, { roots: string[]; tokens: string[] }>();
+const tokenRegexCache = new Map<string, RegExp | null>();
 
-function vocabSig(list) {
+function vocabSig(list: string[]): string {
   let h = 5381;
   const s = list.join('\n');
   for (let i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0;
   return `${list.length}:${h}`;
 }
 
-function tokenRegexFor(tokens, sig) {
-  if (tokenRegexCache.has(sig)) return tokenRegexCache.get(sig);
-  let re = null;
+function tokenRegexFor(tokens: string[], sig: string): RegExp | null {
+  if (tokenRegexCache.has(sig)) return tokenRegexCache.get(sig) ?? null;
+  let re: RegExp | null = null;
   if (tokens.length) {
     const escaped = tokens.map((t) => t.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'));
     re = new RegExp(`(?:${escaped.join('|')})`, 'g');
@@ -1199,17 +1399,19 @@ function tokenRegexFor(tokens, sig) {
   return re;
 }
 
-function readWorkRefs(file, opts = {}) {
+export function readWorkRefs(file: string, opts: { roots?: string[]; tokens?: string[] } = {}): { roots: string[]; tokens: string[] } {
   const roots = opts.roots || [];
   const tokens = opts.tokens || [];
-  let st; try { st = fs.statSync(file); } catch { return { roots: [], tokens: [] }; }
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return { roots: [], tokens: [] }; }
   const sig = `${vocabSig(roots)}|${vocabSig(tokens)}`;
   const ckey = `${file}:${st.mtimeMs}:${st.size}:${sig}`;
-  if (workRefCache.has(ckey)) return workRefCache.get(ckey);
+  const cached = workRefCache.get(ckey);
+  if (cached) return cached;
   const text = readSlice(file, TAIL_BYTES, true);
   const rootSet = new Set(roots);
-  const matchedRoots = new Set();
-  const seen = new Set();
+  const matchedRoots = new Set<string>();
+  const seen = new Set<string>();
   let scanned = 0;
   for (const m of text.matchAll(PATH_TOKEN_RE)) {
     if (++scanned > WORKREF_MATCH_CAP) break;
@@ -1225,7 +1427,7 @@ function readWorkRefs(file, opts = {}) {
       p = p.slice(0, cut);
     }
   }
-  const matchedTokens = new Set();
+  const matchedTokens = new Set<string>();
   const re = tokenRegexFor(tokens, vocabSig(tokens));
   if (re) {
     re.lastIndex = 0;
@@ -1242,10 +1444,12 @@ function readWorkRefs(file, opts = {}) {
 
 // Light, tail-only per-row extras (cheap, cached): last user prompt + preceding
 // agent message, model, reasoning effort, ultracode flag.
-function readRowExtras(file, harness) {
-  let st; try { st = fs.statSync(file); } catch { return null; }
+function readRowExtras(file: string, harness: Harness | string): RowExtras | null {
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return null; }
   const key = `${file}:${st.mtimeMs}:${st.size}`;
-  if (rowCache.has(key)) return rowCache.get(key);
+  const cached = rowCache.get(key);
+  if (cached) return cached;
   const claude = harness === 'claude-code' || file.includes('/.claude/');
   // Codex logs are dense (token_count/function events), so genuine user turns can
   // sit well back from the end; read a larger tail there.
@@ -1278,17 +1482,19 @@ function readRowExtras(file, harness) {
     }
   }
   if (!claude) ultra = effort === 'xhigh';
-  const res = { lastUser: clip(lastUser, 200), prevAgent: clip(prevAgent, 200), model, reasoningEffort: effort || null, ultracode: ultra, customTitle: customTitle || '' };
+  const res: RowExtras = { lastUser: clip(lastUser, 200), prevAgent: clip(prevAgent, 200), model, reasoningEffort: effort || null, ultracode: ultra, customTitle: customTitle || '' };
   rowCache.set(key, res);
   if (rowCache.size > 800) rowCache.clear();
   return res;
 }
 
 // Full per-session extraction for the detail view (cached by mtime).
-function readDetail(file, harness) {
-  let st; try { st = fs.statSync(file); } catch { return null; }
+export function readDetail(file: string, harness: Harness | string): SessionDetail | null {
+  let st: fs.Stats;
+  try { st = fs.statSync(file); } catch { return null; }
   const key = `${file}:${st.mtimeMs}:${st.size}`;
-  if (detailCache.has(key)) return detailCache.get(key);
+  const cached = detailCache.get(key);
+  if (cached) return cached;
   const claude = harness === 'claude-code' || file.includes('/.claude/');
   // Tail-anchored past the cap: lastExchange must be the REAL last exchange.
   // Head-anchored, a live 12MB+ session showed an hour-stale 8-char user line
@@ -1297,7 +1503,7 @@ function readDetail(file, harness) {
   const lines = readSlice(file, MAX_READ, fromEnd).split('\n');
   if (fromEnd && lines.length) lines.shift();
   let lastUser = '', prevAgent = '', rollingAgent = '', model = '', effort = '', ultra = false, skillCount = 0;
-  const skills = {}, linear = new Map(), html = new Set();
+  const skills: Record<string, number> = {}, linear = new Map<string, { url: string; label: string }>(), html = new Set<string>();
   for (const ln of lines) {
     if (!ln) continue;
     const o = parse(ln);
@@ -1337,7 +1543,7 @@ function readDetail(file, harness) {
   if (!claude) ultra = effort === 'xhigh';
   const htmlFiles = [...new Set([...html].map((f) => f.replace(/^\/+/, '/')))]
     .filter((f) => { try { return fs.existsSync(f); } catch { return false; } }).slice(0, 40);
-  const res = {
+  const res: SessionDetail = {
     harness: claude ? 'claude-code' : 'codex',
     lastExchange: { lastUser: clip(lastUser, 600), prevAgent: clip(prevAgent, 600) },
     linearRefs: [...linear.values()].slice(0, 16),
@@ -1353,11 +1559,17 @@ function readDetail(file, harness) {
   return res;
 }
 
+export interface SkillAggregate {
+  skills: Record<string, number>;
+  sessionsWithSkills: number;
+  totalInvocations: number;
+}
+
 // Aggregate skill usage across recent sessions (Claude only; Codex has no
 // structured skill calls). Heavier (full reads), cached; call off the hot path.
-function aggregateSkills(opts = {}) {
+export function aggregateSkills(opts: ListRecentOpts = {}): SkillAggregate {
   const rows = listRecent(opts);
-  const skills = {};
+  const skills: Record<string, number> = {};
   let sessionsWithSkills = 0, totalInvocations = 0;
   for (const r of rows) {
     const d = readDetail(r.path, r.harness);
@@ -1370,29 +1582,39 @@ function aggregateSkills(opts = {}) {
 }
 
 // Agent inbox: notes posted by `humanctl note` to ~/.humanctl/notes.jsonl.
-const NOTES_FILE = path.join(HOME, '.humanctl', 'notes.jsonl');
+export const NOTES_FILE = path.join(HOME, '.humanctl', 'notes.jsonl');
 const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
-function readNotes(opts = {}) {
-  let txt;
+
+export interface NoteRecord {
+  id: string;
+  ts: string;
+  level: 'fyi' | 'review' | 'blocked' | 'done';
+  message: string;
+  cwd?: string;
+  repo?: string;
+  session?: string;
+  agent?: string;
+  attachments?: string[];
+  [key: string]: unknown;
+}
+
+export function readNotes(opts: { limit?: number } = {}): NoteRecord[] {
+  let txt: string;
   try { txt = readSlice(NOTES_FILE, 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
   if (!txt) return [];
   const notes = txt.split('\n').filter(Boolean).map((l) => {
-    try { const o = JSON.parse(l); return (o && typeof o === 'object' && typeof o.message === 'string' && o.id) ? { ...o, level: NOTE_LEVELS.has(o.level) ? o.level : 'fyi' } : null; } catch { return null; }
-  }).filter(Boolean);
+    try {
+      const o = JSON.parse(l);
+      return (o && typeof o === 'object' && typeof o.message === 'string' && o.id) ? { ...o, level: NOTE_LEVELS.has(o.level) ? o.level : 'fyi' } : null;
+    } catch { return null; }
+  }).filter((n): n is NoteRecord => n !== null);
   notes.reverse(); // newest first
   return notes.slice(0, opts.limit || 100);
 }
 
-module.exports = {
-  listRecent, readBlocks, readUsage, readRowExtras, readDetail, aggregateSkills,
-  accountStatus, readNotes, extractIssueKeys, readIssueRefs, readWorkRefs,
-  readNeedSignals, deriveNeedState, askShapeOf, doneShapeOf, isClaudeOneShot,
-  readTimelinePage, readAppended, primeTailCursor,
-  ISSUE_KEY_RE, NOTES_FILE, HARNESSES, KINDS, BTW_SENTINEL,
-  NEED_DECAY_MS, TIER_HOT_MS, TIER_DRIFT_MS, FRESH_MS,
-};
+export { HARNESSES };
 
-// CLI smoke: `node lib/sessions.js` prints a quick table (read-only).
+// CLI smoke: `node dist/lib/sessions.js` prints a quick table (read-only).
 if (require.main === module) {
   const rows = listRecent({ maxAgeH: 72, limit: 15 });
   console.log(`recent sessions: ${rows.length}`);

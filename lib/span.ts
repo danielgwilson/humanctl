@@ -1,27 +1,59 @@
-'use strict';
-
 // Span of control: how many agent sessions one human actually touched in a
 // day, plus the human-side signals (notes, merged PRs) for the same day. All
 // counts are for one local calendar day. Missing sources report null instead
 // of a fabricated zero; see docs/span.md.
 //
-// Extracted from bin/humanctl.js so `humanctl span` and the span.run command
-// (lib/commands.js) share one implementation.
+// Extracted from bin/humanctl.ts so `humanctl span` and the span.run command
+// (lib/commands.ts) share one implementation.
 
-const childProcess = require('child_process');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
+import childProcess from 'child_process';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 
-function globalDir() {
+export type NoteLevel = 'fyi' | 'review' | 'blocked' | 'done';
+
+export interface NoteCounts {
+  fyi: number;
+  review: number;
+  blocked: number;
+  done: number;
+}
+
+export interface CodexCounts {
+  total: number;
+  interactive: number;
+  automation: number;
+  unknown: number;
+}
+
+export interface ClaudeCounts {
+  total: number;
+  interactive: number;
+}
+
+export interface SpanRecord {
+  date: string;
+  codexSessionsTouched: number | null;
+  codexInteractiveTouched: number | null;
+  codexAutomationTouched: number | null;
+  codexUnknown: number | null;
+  claudeSessionsTouched: number | null;
+  claudeInteractiveTouched: number | null;
+  notes: NoteCounts | null;
+  prsMergedByMe: number | null;
+  generatedAt: string;
+}
+
+function globalDir(): string {
   return path.join(os.homedir(), '.humanctl');
 }
 
-function nowIso() {
+function nowIso(): string {
   return new Date().toISOString();
 }
 
-function safeReadFile(filePath) {
+function safeReadFile(filePath: string): string {
   try {
     return fs.readFileSync(filePath, 'utf8');
   } catch {
@@ -29,16 +61,19 @@ function safeReadFile(filePath) {
   }
 }
 
-const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
+const NOTE_LEVELS = new Set<string>(['fyi', 'review', 'blocked', 'done']);
+function isNoteLevel(v: unknown): v is NoteLevel {
+  return typeof v === 'string' && NOTE_LEVELS.has(v);
+}
 
-function localDateString(date) {
+export function localDateString(date: Date): string {
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, '0');
   const day = String(date.getDate()).padStart(2, '0');
   return `${year}-${month}-${day}`;
 }
 
-function parseLocalDate(value) {
+export function parseLocalDate(value: unknown): Date | null {
   const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(value).trim());
   if (!match) {
     return null;
@@ -56,7 +91,7 @@ function parseLocalDate(value) {
   return date;
 }
 
-function mtimeInWindow(filePath, dayStartMs, dayEndMs) {
+function mtimeInWindow(filePath: string, dayStartMs: number, dayEndMs: number): boolean {
   try {
     const stat = fs.statSync(filePath);
     return stat.mtimeMs >= dayStartMs && stat.mtimeMs < dayEndMs;
@@ -70,8 +105,8 @@ function mtimeInWindow(filePath, dayStartMs, dayEndMs) {
 // of kilobytes (max observed locally: ~42KB), so the bound is 96KB, not a few
 // KB. Never reads the rest of the file. Returns null on any read failure.
 const CODEX_META_HEAD_BYTES = 96 * 1024;
-function readFirstLine(filePath, maxBytes) {
-  let fd;
+function readFirstLine(filePath: string, maxBytes: number): string | null {
+  let fd: number;
   try {
     fd = fs.openSync(filePath, 'r');
   } catch {
@@ -91,29 +126,32 @@ function readFirstLine(filePath, maxBytes) {
   }
 }
 
+type RolloutClass = 'interactive' | 'automation' | 'unknown';
+
 // Classify one Codex rollout file as "interactive", "automation", or
 // "unknown" from its session_meta first line. Same semantics as
-// isCodexAutomation in lib/sessions.js: subagent threads, codex exec runs,
+// isCodexAutomation in lib/sessions.ts: subagent threads, codex exec runs,
 // and scheduled automation runs are automation; sessions a human drove (Codex
 // Desktop, VS Code, the interactive CLI) are interactive. The desktop app
 // additionally detects scheduled runs by prompt shape; here the thread_source
 // field ("user" / "subagent" / "automation", stamped by newer Codex versions)
 // covers that case without reading past the first line. Anything unparseable
 // or missing recognizable meta is "unknown", never guessed.
-function classifyCodexRollout(filePath) {
+function classifyCodexRollout(filePath: string): RolloutClass {
   const line = readFirstLine(filePath, CODEX_META_HEAD_BYTES);
   if (!line) {
     return 'unknown';
   }
 
-  let record;
+  let record: unknown;
   try {
     record = JSON.parse(line);
   } catch {
     return 'unknown';
   }
 
-  const meta = record && typeof record === 'object' ? record.payload || record : null;
+  const rec = record && typeof record === 'object' ? (record as Record<string, unknown>) : null;
+  const meta = (rec && typeof rec.payload === 'object' && rec.payload ? rec.payload : rec) as Record<string, unknown> | null;
   if (!meta || typeof meta !== 'object') {
     return 'unknown';
   }
@@ -123,7 +161,7 @@ function classifyCodexRollout(filePath) {
 
   if (meta.parent_thread_id) return 'automation';
   if (meta.agent_role || meta.agent_nickname) return 'automation';
-  if (meta.source && typeof meta.source === 'object' && meta.source.subagent) return 'automation';
+  if (meta.source && typeof meta.source === 'object' && (meta.source as Record<string, unknown>).subagent) return 'automation';
   if (meta.originator === 'codex_exec' || meta.source === 'exec') return 'automation';
   if (meta.thread_source === 'subagent' || meta.thread_source === 'automation') return 'automation';
   return 'interactive';
@@ -135,7 +173,7 @@ function classifyCodexRollout(filePath) {
 // whole tree. Every rollout file touched that day counts toward the total;
 // each is also classified interactive vs automation from its session_meta
 // first line (see classifyCodexRollout). Null if ~/.codex/sessions is missing.
-function countCodexSessionsTouched(dayStart, dayEnd) {
+function countCodexSessionsTouched(dayStart: Date, dayEnd: Date): CodexCounts | null {
   const sessionsRoot = path.join(os.homedir(), '.codex', 'sessions');
 
   if (!fs.existsSync(sessionsRoot)) {
@@ -144,7 +182,7 @@ function countCodexSessionsTouched(dayStart, dayEnd) {
 
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
-  const counts = { total: 0, interactive: 0, automation: 0, unknown: 0 };
+  const counts: CodexCounts = { total: 0, interactive: 0, automation: 0, unknown: 0 };
 
   for (let offset = -7; offset <= 7; offset += 1) {
     const scanDay = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + offset);
@@ -155,7 +193,7 @@ function countCodexSessionsTouched(dayStart, dayEnd) {
       String(scanDay.getDate()).padStart(2, '0')
     );
 
-    let entries;
+    let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(dayDir, { withFileTypes: true });
     } catch {
@@ -180,15 +218,15 @@ function countCodexSessionsTouched(dayStart, dayEnd) {
 
 // The one Claude-side automation humanctl itself generates: the desktop app
 // summarizes sessions via headless `claude -p` one-shots, and each of those
-// leaves a session file. Same prompt-shape check as lib/sessions.js. The
+// leaves a session file. Same prompt-shape check as lib/sessions.ts. The
 // prompt sits at the top of the transcript (as a queue-operation line or the
 // first user message), so an 8KB head read is enough; anything else counts as
 // interactive. Other people's `claude -p` automations are not detectable this
 // cheaply and are not guessed at.
 const CLAUDE_HEAD_BYTES = 8 * 1024;
 const HUMANCTL_SUMMARY_PROMPT_RE = /^Summarize the recent tail of an autonomous coding-agent session/i;
-function isHumanctlSummaryOneShot(filePath) {
-  let fd;
+function isHumanctlSummaryOneShot(filePath: string): boolean {
+  let fd: number | undefined;
   let head = '';
   try {
     fd = fs.openSync(filePath, 'r');
@@ -202,7 +240,7 @@ function isHumanctlSummaryOneShot(filePath) {
   }
 
   for (const line of head.split('\n')) {
-    let record;
+    let record: unknown;
     try {
       record = JSON.parse(line);
     } catch {
@@ -211,19 +249,20 @@ function isHumanctlSummaryOneShot(filePath) {
     if (!record || typeof record !== 'object') {
       continue;
     }
+    const rec = record as Record<string, unknown>;
 
-    const texts = [];
-    if (record.type === 'queue-operation' && typeof record.content === 'string') {
-      texts.push(record.content);
+    const texts: string[] = [];
+    if (rec.type === 'queue-operation' && typeof rec.content === 'string') {
+      texts.push(rec.content);
     }
-    const message = record.message;
+    const message = rec.message as Record<string, unknown> | undefined;
     if (message && message.role === 'user') {
       if (typeof message.content === 'string') {
         texts.push(message.content);
       } else if (Array.isArray(message.content)) {
-        for (const item of message.content) {
-          if (item && item.type === 'text' && typeof item.text === 'string') {
-            texts.push(item.text);
+        for (const item of message.content as unknown[]) {
+          if (item && typeof item === 'object' && (item as Record<string, unknown>).type === 'text' && typeof (item as Record<string, unknown>).text === 'string') {
+            texts.push((item as Record<string, unknown>).text as string);
           }
         }
       }
@@ -245,7 +284,7 @@ function isHumanctlSummaryOneShot(filePath) {
 // total; humanctl's own summarize one-shots are split out so interactive
 // reflects sessions a human actually drove. Null if ~/.claude/projects is
 // missing.
-function countClaudeSessionsTouched(dayStart, dayEnd) {
+function countClaudeSessionsTouched(dayStart: Date, dayEnd: Date): ClaudeCounts | null {
   const projectsRoot = path.join(os.homedir(), '.claude', 'projects');
 
   if (!fs.existsSync(projectsRoot)) {
@@ -254,8 +293,8 @@ function countClaudeSessionsTouched(dayStart, dayEnd) {
 
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
-  const counts = { total: 0, interactive: 0 };
-  let projects;
+  const counts: ClaudeCounts = { total: 0, interactive: 0 };
+  let projects: fs.Dirent[];
 
   try {
     projects = fs.readdirSync(projectsRoot, { withFileTypes: true });
@@ -269,7 +308,7 @@ function countClaudeSessionsTouched(dayStart, dayEnd) {
     }
 
     const projectDir = path.join(projectsRoot, project.name);
-    let entries;
+    let entries: fs.Dirent[];
     try {
       entries = fs.readdirSync(projectDir, { withFileTypes: true });
     } catch {
@@ -294,7 +333,7 @@ function countClaudeSessionsTouched(dayStart, dayEnd) {
   return counts;
 }
 
-function countNotesForDay(dayStart, dayEnd) {
+function countNotesForDay(dayStart: Date, dayEnd: Date): NoteCounts | null {
   const notesPath = path.join(globalDir(), 'notes.jsonl');
 
   if (!fs.existsSync(notesPath)) {
@@ -303,26 +342,26 @@ function countNotesForDay(dayStart, dayEnd) {
 
   const dayStartMs = dayStart.getTime();
   const dayEndMs = dayEnd.getTime();
-  const counts = { fyi: 0, review: 0, blocked: 0, done: 0 };
+  const counts: NoteCounts = { fyi: 0, review: 0, blocked: 0, done: 0 };
 
   for (const line of safeReadFile(notesPath).split('\n')) {
     if (!line.trim()) {
       continue;
     }
 
-    let note;
+    let note: Record<string, unknown>;
     try {
       note = JSON.parse(line);
     } catch {
       continue;
     }
 
-    const tsMs = Date.parse(note?.ts);
+    const tsMs = Date.parse(String(note?.ts));
     if (!Number.isFinite(tsMs) || tsMs < dayStartMs || tsMs >= dayEndMs) {
       continue;
     }
 
-    if (NOTE_LEVELS.has(note.level)) {
+    if (isNoteLevel(note.level)) {
       counts[note.level] += 1;
     }
   }
@@ -332,7 +371,7 @@ function countNotesForDay(dayStart, dayEnd) {
 
 // Real signal or null, never a guess: any gh failure (missing binary, offline,
 // auth, rate limit) reports null rather than zero.
-function countPrsMergedByMe(dateString) {
+function countPrsMergedByMe(dateString: string): number | null {
   try {
     const stdout = childProcess.execFileSync(
       'gh',
@@ -357,7 +396,7 @@ function countPrsMergedByMe(dateString) {
 }
 
 // One full span record for the local day starting at dayStart.
-function computeSpanRecord(dayStart) {
+export function computeSpanRecord(dayStart: Date): SpanRecord {
   const dayEnd = new Date(dayStart.getFullYear(), dayStart.getMonth(), dayStart.getDate() + 1);
   const date = localDateString(dayStart);
 
@@ -380,11 +419,11 @@ function computeSpanRecord(dayStart) {
 
 // Upsert by date: one line per local day in ~/.humanctl/span.jsonl, so
 // re-recording refreshes that day instead of appending duplicates.
-function upsertSpanRecord(record) {
+export function upsertSpanRecord(record: SpanRecord): string {
   const dir = globalDir();
   fs.mkdirSync(dir, { recursive: true });
   const spanPath = path.join(dir, 'span.jsonl');
-  const kept = [];
+  const kept: string[] = [];
   let replaced = false;
 
   for (const line of safeReadFile(spanPath).split('\n')) {
@@ -392,7 +431,7 @@ function upsertSpanRecord(record) {
       continue;
     }
 
-    let existing;
+    let existing: Record<string, unknown>;
     try {
       existing = JSON.parse(line);
     } catch {
@@ -420,10 +459,3 @@ function upsertSpanRecord(record) {
   fs.renameSync(tempPath, spanPath);
   return spanPath;
 }
-
-module.exports = {
-  localDateString,
-  parseLocalDate,
-  computeSpanRecord,
-  upsertSpanRecord,
-};

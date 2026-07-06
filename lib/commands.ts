@@ -1,5 +1,3 @@
-'use strict';
-
 // The command registry: one declared surface for everything humanctl does.
 //
 // Invariant (AGENTS.md "Command registry"): every mutation of durable state,
@@ -11,24 +9,43 @@
 //
 // This module is plain Node (no Electron imports) so the registry, the event
 // log, and the control-socket server run and selftest without a display
-// (lib/commands.selftest.js). Electron-only handlers (window state, shell
-// opens, CLI spawns) are injected by electron/main.js; commands marked
+// (lib/commands.selftest.ts). Electron-only handlers (window state, shell
+// opens, CLI spawns) are injected by electron/main.ts; commands marked
 // `direct` are implemented here over lib/ alone, so the CLI can still answer
 // them from disk when the app is not running (source "cli-direct").
 
-const fs = require('fs');
-const net = require('net');
-const os = require('os');
-const path = require('path');
-const { randomUUID } = require('crypto');
+import fs from 'fs';
+import net from 'net';
+import os from 'os';
+import path from 'path';
+import { randomUUID } from 'crypto';
 
-function controlDir() { return path.join(os.homedir(), '.humanctl'); }
-function controlSocketPath() { return path.join(controlDir(), 'app.sock'); }
+function controlDir(): string { return path.join(os.homedir(), '.humanctl'); }
+function controlSocketPath(): string { return path.join(controlDir(), 'app.sock'); }
+
+export type ParamType = 'string' | 'number' | 'boolean' | 'object' | 'array';
+
+export interface ParamSpec {
+  type: ParamType;
+  required?: boolean;
+  enum?: string[];
+  max?: number;
+}
+
+export type CommandKind = 'action' | 'observation';
+
+export interface CommandDecl {
+  name: string;
+  kind: CommandKind;
+  direct?: boolean;
+  desc: string;
+  params: Record<string, ParamSpec>;
+}
 
 // ---- command declarations (the single source of truth) ----
 // params is a minimal plain-JS schema: { key: { type, required?, enum?, max? } }
 // kind: 'action' mutates durable state or spawns a process; 'observation' reads.
-const COMMANDS = [
+export const COMMANDS: CommandDecl[] = [
   {
     name: 'sessions.list', kind: 'observation', direct: true,
     desc: 'recent agent sessions across harnesses',
@@ -96,10 +113,10 @@ const COMMANDS = [
   },
   {
     name: 'summary.budget', kind: 'observation', direct: true,
-    desc: 'today\'s always-on-summary spend estimate (USD) against the configured daily budget (lib/summary-budget.js), for the honest pause chip',
+    desc: 'today\'s always-on-summary spend estimate (USD) against the configured daily budget (lib/summary-budget.ts), for the honest pause chip',
     params: { dailyBudgetUSD: { type: 'number' } },
   },
-  // ---- app-only commands (handlers injected by electron/main.js) ----
+  // ---- app-only commands (handlers injected by electron/main.ts) ----
   {
     name: 'app.harness-icons', kind: 'observation',
     desc: 'runtime-extracted harness icons (data URLs) for the installed Claude/Codex apps, cached under userData; never committed, silent glyph fallback on any failure',
@@ -188,7 +205,7 @@ const COMMANDS = [
       // Marks a call the always-on background engine made (unread AND
       // needs-* threads only) rather than the manual trigger button: gated by
       // the daily dollar budget, and a persistent 401 skips silently instead
-      // of surfacing an error (see electron/main.js sessionSummarize).
+      // of surfacing an error (see electron/main.ts sessionSummarize).
       auto: { type: 'boolean' },
     },
   },
@@ -216,18 +233,28 @@ const COMMANDS = [
 
 const COMMANDS_BY_NAME = new Map(COMMANDS.map((c) => [c.name, c]));
 
-function listCommands() {
+export interface CommandSummary {
+  name: string;
+  kind: CommandKind;
+  direct: boolean;
+  desc: string;
+  params: Record<string, ParamSpec>;
+}
+
+export function listCommands(): CommandSummary[] {
   return COMMANDS.map((c) => ({ name: c.name, kind: c.kind, direct: !!c.direct, desc: c.desc, params: c.params }));
 }
 
+export type ValidateResult = { ok: true; params: Record<string, unknown> } | { ok: false; error: string };
+
 // ---- param validation (minimal, plain JS, honest errors) ----
-function validateParams(decl, params) {
-  const given = params && typeof params === 'object' && !Array.isArray(params) ? params : {};
+export function validateParams(decl: CommandDecl, params: unknown): ValidateResult {
+  const given: Record<string, unknown> = params && typeof params === 'object' && !Array.isArray(params) ? params as Record<string, unknown> : {};
   const schema = decl.params || {};
   for (const key of Object.keys(given)) {
     if (!schema[key]) return { ok: false, error: `unknown param "${key}" for ${decl.name}` };
   }
-  const out = {};
+  const out: Record<string, unknown> = {};
   for (const [key, spec] of Object.entries(schema)) {
     const v = given[key];
     if (v === undefined || v === null || v === '') {
@@ -265,28 +292,43 @@ function validateParams(decl, params) {
 // events.1.jsonl at 5MB, one rotation kept. Two writers (the app and a
 // cli-direct invoke) can race the rotation rename; worst case is one early
 // rotation, accepted for a local personal tool.
-const EVENTS_MAX_BYTES = 5 * 1024 * 1024;
+export const EVENTS_MAX_BYTES = 5 * 1024 * 1024;
 const DIGEST_MAX_STR = 80;
 
-function digestParams(params) {
+export function digestParams(params: unknown): Record<string, unknown> {
   if (!params || typeof params !== 'object') return {};
-  const out = {};
-  for (const [k, v] of Object.entries(params)) {
+  const out: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(params as Record<string, unknown>)) {
     if (v === undefined) continue; // absent, not a value; do not log the string "undefined"
     if (typeof v === 'string') out[k] = v.length > DIGEST_MAX_STR ? v.slice(0, DIGEST_MAX_STR) : v;
     else if (typeof v === 'number' || typeof v === 'boolean' || v === null) out[k] = v;
     else if (Array.isArray(v)) out[k] = `[${v.length}]`;
-    else if (typeof v === 'object') out[k] = `{${Object.keys(v).sort().join(',')}}`;
+    else if (typeof v === 'object') out[k] = `{${Object.keys(v as Record<string, unknown>).sort().join(',')}}`;
     else out[k] = typeof v;
   }
   return out;
 }
 
-function createEventLog(opts = {}) {
+export interface EventLogEntry {
+  ts: string;
+  name: string;
+  kind: CommandKind | 'unknown';
+  source: string;
+  paramsDigest: Record<string, unknown>;
+  ok: boolean;
+  ms: number;
+}
+
+export interface EventLog {
+  append: (entry: EventLogEntry) => void;
+  file: string;
+}
+
+export function createEventLog(opts: { dir?: string; maxBytes?: number } = {}): EventLog {
   const dir = opts.dir || controlDir();
   const maxBytes = opts.maxBytes || EVENTS_MAX_BYTES;
   const file = path.join(dir, 'events.jsonl');
-  function append(entry) {
+  function append(entry: EventLogEntry): void {
     // Logging must never break the command it records.
     try {
       fs.mkdirSync(dir, { recursive: true });
@@ -301,6 +343,13 @@ function createEventLog(opts = {}) {
 
 // ---- direct handlers (lib-only, no Electron; lazy requires keep the CLI fast) ----
 
+export interface ResolveSessionResult {
+  ok: boolean;
+  row?: import('./sessions').SessionRow;
+  error?: string;
+  ambiguous?: boolean;
+}
+
 // Resolve a session id (or unique fragment) to a row from the recent scan.
 // Perf (2026-07 click-lag investigation): the naive version always ran the
 // widest possible scan (30 days, 500 rows, includeAutomation) with no cache
@@ -310,16 +359,16 @@ function createEventLog(opts = {}) {
 // blocks ALL window input for that entire span, not just the one IPC call --
 // this is "session.pin" averaging ~8s in the 2026-07-03 perf profile's
 // offender #5, left unfixed there. The renderer's default list scan
-// ({maxAgeH:72, limit:40}) is the one `lib/sessions.js`'s scanCache is almost
+// ({maxAgeH:72, limit:40}) is the one `lib/sessions.ts`'s scanCache is almost
 // always warm for (the 20s poll keeps refreshing it), and it covers the
 // overwhelming majority of real lookups (a session someone just clicked, or
 // just referenced from the CLI, is virtually always in the last 72h). Try
 // that cheap, likely-cached path FIRST and only pay for the wide/uncached
 // scan when the id genuinely is not a recent interactive session (an old or
 // automation-only session referenced by exact id from the CLI).
-function resolveSessionRow(id) {
-  const { listRecent } = require('./sessions');
-  const findIn = (rows) => {
+export function resolveSessionRow(id: string): ResolveSessionResult {
+  const { listRecent } = require('./sessions') as typeof import('./sessions');
+  const findIn = (rows: import('./sessions').SessionRow[]): ResolveSessionResult | null => {
     const exact = rows.find((r) => r.id === id || r.path === id);
     if (exact) return { ok: true, row: exact };
     const partial = rows.filter((r) => r.id.includes(id));
@@ -327,46 +376,50 @@ function resolveSessionRow(id) {
     if (partial.length > 1) return { ok: false, error: `session id "${id}" is ambiguous (${partial.length} matches)`, ambiguous: true };
     return null; // no match in this scope; caller decides whether to widen
   };
-  let cheap;
+  let cheap: ResolveSessionResult | null;
   try { cheap = findIn(listRecent({ maxAgeH: 72, limit: 40 })); }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+  catch (err) { return { ok: false, error: String((err as Error)?.message || err) }; }
   if (cheap) return cheap;
-  let rows;
+  let rows: import('./sessions').SessionRow[];
   try { rows = listRecent({ maxAgeH: 24 * 30, limit: 500, includeAutomation: true }); }
-  catch (err) { return { ok: false, error: String((err && err.message) || err) }; }
+  catch (err) { return { ok: false, error: String((err as Error)?.message || err) }; }
   const wide = findIn(rows);
   if (wide) return wide;
   return { ok: false, error: `no recent session matches "${id}"` };
 }
 
-function sessionDetail(p = {}) {
-  const sessions = require('./sessions');
-  let target = { path: p.path, harness: p.harness };
+interface SessionDetailParams { id?: string; path?: string; harness?: string }
+
+function sessionDetail(p: SessionDetailParams = {}): Record<string, unknown> {
+  const sessions = require('./sessions') as typeof import('./sessions');
+  let target: { path?: string; harness?: string } = { path: p.path, harness: p.harness };
   if (!target.path) {
     if (!p.id) return { ok: false, error: 'session.detail needs an id or a path' };
     const r = resolveSessionRow(p.id);
-    if (!r.ok) return r;
+    if (!r.ok || !r.row) return { ok: r.ok, error: r.error, ambiguous: r.ambiguous };
     target = { path: r.row.path, harness: r.row.harness };
   }
-  const detail = sessions.readDetail ? sessions.readDetail(target.path, target.harness) : null;
+  const detail = sessions.readDetail ? sessions.readDetail(target.path as string, target.harness as string) : null;
   return {
     ok: true,
-    data: sessions.readBlocks(target.path, { harness: target.harness }),
-    usage: sessions.readUsage(target.path, target.harness),
+    data: sessions.readBlocks(target.path as string, { harness: target.harness }),
+    usage: sessions.readUsage(target.path as string, target.harness as string),
     detail,
   };
 }
 
-function sessionTimeline(p = {}) {
-  const sessions = require('./sessions');
-  let target = { path: p.path, harness: p.harness };
+interface SessionTimelineParams { id?: string; path?: string; harness?: string; before?: number }
+
+function sessionTimeline(p: SessionTimelineParams = {}): Record<string, unknown> {
+  const sessions = require('./sessions') as typeof import('./sessions');
+  let target: { path?: string; harness?: string } = { path: p.path, harness: p.harness };
   if (!target.path) {
     if (!p.id) return { ok: false, error: 'session.timeline needs an id or a path' };
     const r = resolveSessionRow(p.id);
-    if (!r.ok) return r;
+    if (!r.ok || !r.row) return { ok: r.ok, error: r.error, ambiguous: r.ambiguous };
     target = { path: r.row.path, harness: r.row.harness };
   }
-  const page = sessions.readTimelinePage(target.path, { harness: target.harness, before: p.before });
+  const page = sessions.readTimelinePage(target.path as string, { harness: target.harness, before: p.before });
   return page ? { ok: true, page } : { ok: false, error: 'could not read this session' };
 }
 
@@ -375,29 +428,34 @@ function sessionTimeline(p = {}) {
 // Stored under ~/.humanctl/attachments/, a sibling of notes.jsonl but NOT on
 // isInboxRelevantChange's allowlist: the inbox already refreshes on the
 // notes.jsonl write that references these files, so watching the attachment
-// copies themselves would just be a second trigger for the same event.
+// copies themselves would just be a second, redundant trigger for the same event.
 const IMAGE_EXT_RE = /\.(png|jpe?g|gif|webp)$/i;
 const MAX_IMAGE_BYTES = 10 * 1024 * 1024;
 const MAX_IMAGES = 4;
-function attachmentsDir() { return path.join(controlDir(), 'attachments'); }
+export function attachmentsDir(): string { return path.join(controlDir(), 'attachments'); }
+
+export interface StoreNoteImagesResult {
+  stored: string[];
+  skipped: { path: string; reason: string }[];
+}
 
 // Copies each valid image path into attachmentsDir(), returns the list of
 // stored relative filenames (what the note persists). A bad individual path
 // (missing, wrong extension, oversized, unreadable) is skipped with a reason
 // collected for the caller, never thrown: one bad --image must not lose an
 // otherwise-good note.
-function storeNoteImages(paths) {
-  const list = Array.isArray(paths) ? paths.slice(0, MAX_IMAGES) : [];
+export function storeNoteImages(paths: unknown): StoreNoteImagesResult {
+  const list: unknown[] = Array.isArray(paths) ? paths.slice(0, MAX_IMAGES) : [];
   if (!list.length) return { stored: [], skipped: [] };
   const dir = attachmentsDir();
   fs.mkdirSync(dir, { recursive: true });
-  const stored = [];
-  const skipped = [];
+  const stored: string[] = [];
+  const skipped: { path: string; reason: string }[] = [];
   for (const raw of list) {
     const srcPath = String(raw || '').trim();
     if (!srcPath) continue;
     if (!IMAGE_EXT_RE.test(srcPath)) { skipped.push({ path: srcPath, reason: 'not a png/jpg/gif/webp file' }); continue; }
-    let st;
+    let st: fs.Stats;
     try { st = fs.statSync(srcPath); } catch { skipped.push({ path: srcPath, reason: 'file not found' }); continue; }
     if (!st.isFile()) { skipped.push({ path: srcPath, reason: 'not a file' }); continue; }
     if (st.size > MAX_IMAGE_BYTES) { skipped.push({ path: srcPath, reason: `over the 10MB limit (${Math.round(st.size / 1024 / 1024)}MB)` }); continue; }
@@ -406,15 +464,25 @@ function storeNoteImages(paths) {
     try {
       fs.copyFileSync(srcPath, path.join(dir, name));
       stored.push(name);
-    } catch (err) { skipped.push({ path: srcPath, reason: String((err && err.message) || err) }); }
+    } catch (err) { skipped.push({ path: srcPath, reason: String((err as Error)?.message || err) }); }
   }
   return { stored, skipped };
 }
 
-function postNote(p = {}) {
+interface PostNoteParams {
+  message?: string;
+  level?: string;
+  cwd?: string;
+  repo?: string;
+  session?: string;
+  agent?: string;
+  images?: unknown;
+}
+
+function postNote(p: PostNoteParams = {}): Record<string, unknown> {
   const message = String(p.message || '').trim();
   if (!message) return { ok: false, error: 'note.post requires a message' };
-  const level = ['fyi', 'review', 'blocked', 'done'].includes(p.level) ? p.level : 'fyi';
+  const level = ['fyi', 'review', 'blocked', 'done'].includes(p.level as string) ? p.level : 'fyi';
   const dir = controlDir();
   fs.mkdirSync(dir, { recursive: true });
   const cwd = typeof p.cwd === 'string' && p.cwd ? p.cwd : process.cwd();
@@ -436,24 +504,24 @@ function postNote(p = {}) {
 
 // ---- Inbox: one thread per session, assembled from data already read ----
 // asksDir/readAskLog mirror the persistence contract documented in
-// docs/ask-session.md and used by electron/main.js's sessionAsk: one
+// docs/ask-session.md and used by electron/main.ts's sessionAsk: one
 // append-only jsonl file per session under ~/.humanctl/asks/, so a probe
 // round-trip and an "interrupted at window close" record both survive a
 // restart. Reading is bounded (tail slice), matching sessions.readNotes.
-function asksDir() { return path.join(controlDir(), 'asks'); }
-function askLogPath(sessionId) { return path.join(asksDir(), `${sessionId}.jsonl`); }
-function appendAskLog(sessionId, entry) {
+export function asksDir(): string { return path.join(controlDir(), 'asks'); }
+export function askLogPath(sessionId: string): string { return path.join(asksDir(), `${sessionId}.jsonl`); }
+export function appendAskLog(sessionId: string | undefined, entry: Record<string, unknown>): void {
   if (!sessionId) return;
   try {
     fs.mkdirSync(asksDir(), { recursive: true });
     fs.appendFileSync(askLogPath(sessionId), `${JSON.stringify(entry)}\n`, 'utf8');
   } catch { /* best effort; the in-memory/state.json copy is the fast path */ }
 }
-function readAskLog(sessionId, limit = 200) {
+export function readAskLog(sessionId: string | undefined, limit = 200): Record<string, unknown>[] {
   if (!sessionId) return [];
-  let txt;
+  let txt: string;
   try { txt = fs.readFileSync(askLogPath(sessionId), 'utf8'); } catch { return []; }
-  const out = [];
+  const out: Record<string, unknown>[] = [];
   for (const line of txt.split('\n')) {
     if (!line) continue;
     try { const o = JSON.parse(line); if (o && typeof o === 'object') out.push(o); } catch { /* skip a corrupt line */ }
@@ -462,7 +530,7 @@ function readAskLog(sessionId, limit = 200) {
 }
 
 // ---- inbox watch scope: what inside ~/.humanctl actually feeds the Inbox ----
-// electron/main.js watches ~/.humanctl recursively so a posted note or a
+// electron/main.ts watches ~/.humanctl recursively so a posted note or a
 // persisted ask answer refreshes the Inbox fast. But ~/.humanctl is also
 // where the registry's OWN outputs live (events.jsonl + its events.1.jsonl
 // rotation today; more will be added over time, e.g. atlas.jsonl, pulse
@@ -474,7 +542,7 @@ function readAskLog(sessionId, limit = 200) {
 // notes.jsonl (note.post) and asks/<sessionId>.jsonl (appendAskLog). Anything
 // else under ~/.humanctl -- present today or added later -- is ignored here
 // by construction, not by omission.
-function isInboxRelevantChange(filename) {
+export function isInboxRelevantChange(filename: string | null | undefined): boolean {
   if (!filename) return true; // some platforms report a null filename; treat as "maybe relevant"
   const norm = String(filename).split(path.sep).join('/');
   if (norm === 'notes.jsonl') return true;
@@ -487,20 +555,31 @@ function isInboxRelevantChange(filename) {
 // session's current needs-you transition (state==='need'|'block' with its
 // stateReason, sourced from the v3 reader), and persisted btw Q&A. No new
 // heavy scans: this reuses listRecent + readNotes, both already mtime-cached.
-function askLogSessionIds() {
-  let ents;
+function askLogSessionIds(): string[] {
+  let ents: fs.Dirent[];
   try { ents = fs.readdirSync(asksDir(), { withFileTypes: true }); } catch { return []; }
   return ents.filter((e) => e.isFile() && e.name.endsWith('.jsonl')).map((e) => e.name.slice(0, -'.jsonl'.length));
 }
 
-function inboxThreads(p = {}) {
-  const { listRecent, readNotes } = require('./sessions');
+interface InboxThread {
+  sessionId: string;
+  repo: string;
+  harness: string;
+  cwd: string;
+  path: string;
+  title: string;
+  items: Record<string, unknown>[];
+  lastTs?: string | null;
+}
+
+export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
+  const { listRecent, readNotes } = require('./sessions') as typeof import('./sessions');
   const limit = p.limit || 200;
   const rows = listRecent({ maxAgeH: 24 * 30, limit: 500 });
   const rowById = new Map(rows.map((r) => [r.id, r]));
   const notes = readNotes({ limit: 500 });
-  const threads = new Map(); // sessionId -> { sessionId, repo, harness, items: [] }
-  const threadFor = (sessionId, row) => {
+  const threads = new Map<string, InboxThread>(); // sessionId -> { sessionId, repo, harness, items: [] }
+  const threadFor = (sessionId: string, row?: import('./sessions').SessionRow): InboxThread => {
     if (!threads.has(sessionId)) {
       threads.set(sessionId, {
         sessionId,
@@ -512,7 +591,7 @@ function inboxThreads(p = {}) {
         items: [],
       });
     }
-    return threads.get(sessionId);
+    return threads.get(sessionId) as InboxThread;
   };
   for (const n of notes) {
     if (!n.session) continue; // unsessioned notes have no thread to join (system thread candidate; left to the renderer)
@@ -541,37 +620,45 @@ function inboxThreads(p = {}) {
     }
   }
   const out = [...threads.values()].map((t) => {
-    t.items.sort((a, b) => (Date.parse(a.ts) || 0) - (Date.parse(b.ts) || 0));
-    t.lastTs = t.items.length ? t.items[t.items.length - 1].ts : null;
+    t.items.sort((a, b) => (Date.parse(String(a.ts)) || 0) - (Date.parse(String(b.ts)) || 0));
+    t.lastTs = t.items.length ? String(t.items[t.items.length - 1].ts) : null;
     return t;
   }).filter((t) => t.items.length);
-  out.sort((a, b) => (Date.parse(b.lastTs) || 0) - (Date.parse(a.lastTs) || 0));
+  out.sort((a, b) => (Date.parse(String(b.lastTs)) || 0) - (Date.parse(String(a.lastTs)) || 0));
   return out.slice(0, limit);
 }
 
 // ---- PR chip (PR-2 item 2): cache-only contract, zero spawns from the inbox
-// path. Reads ONLY ~/.humanctl/pulse-cache.json (lib/pulse.js's own cache
+// path. Reads ONLY ~/.humanctl/pulse-cache.json (lib/pulse.ts's own cache
 // file, written whenever a `humanctl pulse` run completes); never runs git or
 // gh itself. A miss (no cache, wrong signature, repo not in the cached
 // config, cache entry expired past pulse's own TTL) returns chip:null, which
 // the UI treats as "no chip", never as an error and never as a trigger to go
 // fetch fresh data. Age is reported so a stale-but-present cache renders
 // honestly ("as of 14m") instead of implying live data.
-const PR_CHIP_STALE_MS = 10 * 60 * 1000; // spec: label the age once older than 10 minutes
-function prChipCachePath() { return path.join(controlDir(), 'pulse-cache.json'); }
-function prChip(p = {}) {
+export const PR_CHIP_STALE_MS = 10 * 60 * 1000; // spec: label the age once older than 10 minutes
+export function prChipCachePath(): string { return path.join(controlDir(), 'pulse-cache.json'); }
+
+interface PulseCacheGhEntry {
+  name?: string;
+  open?: unknown[];
+  merged?: unknown[];
+  degraded?: string | null;
+}
+
+export function prChip(p: { repo?: string } = {}): Record<string, unknown> {
   const repo = String(p.repo || '').trim();
   if (!repo) return { ok: false, error: 'pulse.pr-chip requires a repo' };
-  let raw;
+  let raw: string;
   try { raw = fs.readFileSync(prChipCachePath(), 'utf8'); } catch { return { ok: true, chip: null }; }
-  let parsed;
+  let parsed: any;
   try { parsed = JSON.parse(raw); } catch { return { ok: true, chip: null }; }
   const gh = parsed && parsed.gh;
   if (!gh || !Number.isFinite(gh.at) || !Array.isArray(gh.data)) return { ok: true, chip: null };
   // Match by the pulse config's repo alias, case-insensitively, since a
-  // session's `repo` field is a directory basename (see lib/pulse.js's
+  // session's `repo` field is a directory basename (see lib/pulse.ts's
   // config.repos[].name convention), not a github org/name.
-  const entry = gh.data.find((r) => r && typeof r.name === 'string' && r.name.toLowerCase() === repo.toLowerCase());
+  const entry: PulseCacheGhEntry | undefined = gh.data.find((r: PulseCacheGhEntry) => r && typeof r.name === 'string' && r.name.toLowerCase() === repo.toLowerCase());
   if (!entry || entry.degraded || !Array.isArray(entry.open)) return { ok: true, chip: null };
   const openCount = entry.open.length;
   const mergedCount = Array.isArray(entry.merged) ? entry.merged.length : 0;
@@ -590,9 +677,9 @@ function prChip(p = {}) {
   };
 }
 
-function spanRun(p = {}) {
-  const span = require('./span');
-  let dayStart;
+function spanRun(p: { date?: string; record?: boolean } = {}): Record<string, unknown> {
+  const span = require('./span') as typeof import('./span');
+  let dayStart: Date | null;
   if (p.date) {
     dayStart = span.parseLocalDate(p.date);
     if (!dayStart) return { ok: false, error: 'span.run: date must be YYYY-MM-DD' };
@@ -605,20 +692,22 @@ function spanRun(p = {}) {
   return recordedTo ? { ok: true, span: record, recordedTo } : { ok: true, span: record };
 }
 
-async function pulseRun(p = {}) {
-  const { runPulse } = require('./pulse');
+async function pulseRun(p: { repo?: string; lane?: string; fresh?: boolean } = {}): Promise<Record<string, unknown>> {
+  const { runPulse } = require('./pulse') as typeof import('./pulse');
   let out = '';
   let err = '';
   const code = await runPulse(
     { json: true, repo: p.repo, lane: p.lane, fresh: !!p.fresh },
-    { out: (s) => { out += `${s}\n`; }, err: (s) => { err += `${s}\n`; } }
+    { out: (s: string) => { out += `${s}\n`; }, err: (s: string) => { err += `${s}\n`; } }
   );
   if (code !== 0) return { ok: false, error: err.trim() || `pulse exited ${code}` };
   try { return { ok: true, pulse: JSON.parse(out) }; }
   catch { return { ok: false, error: 'pulse produced unparseable output' }; }
 }
 
-const DIRECT_HANDLERS = {
+export type CommandHandler = (params: any, ctx: { source: string }) => Record<string, unknown> | Promise<Record<string, unknown>>;
+
+const DIRECT_HANDLERS: Record<string, CommandHandler> = {
   'sessions.list': (p) => { const { listRecent } = require('./sessions'); return { ok: true, rows: listRecent(p || {}) }; },
   'session.detail': (p) => sessionDetail(p),
   'session.timeline': (p) => sessionTimeline(p),
@@ -637,15 +726,25 @@ const DIRECT_HANDLERS = {
   'app.commands': () => ({ ok: true, commands: listCommands() }),
 };
 
+export interface RegistryInvokeCtx {
+  source?: string;
+}
+
+export interface Registry {
+  invoke: (name: string, params: unknown, ctx?: RegistryInvokeCtx) => Promise<Record<string, unknown>>;
+  has: (name: string) => boolean;
+  list: () => CommandSummary[];
+}
+
 // ---- the registry: validate, dispatch, log. One choke point. ----
-function createRegistry(opts = {}) {
+export function createRegistry(opts: { log?: EventLog; handlers?: Record<string, CommandHandler> } = {}): Registry {
   const log = opts.log || createEventLog();
-  const handlers = Object.assign({}, DIRECT_HANDLERS, opts.handlers || {});
-  async function invoke(name, params, ctx = {}) {
+  const handlers: Record<string, CommandHandler> = Object.assign({}, DIRECT_HANDLERS, opts.handlers || {});
+  async function invoke(name: string, params: unknown, ctx: RegistryInvokeCtx = {}): Promise<Record<string, unknown>> {
     const source = ctx.source || 'unknown';
     const started = Date.now();
     const decl = COMMANDS_BY_NAME.get(name);
-    const finish = (result, kind) => {
+    const finish = (result: Record<string, unknown>, kind: CommandKind | 'unknown'): Record<string, unknown> => {
       log.append({
         ts: new Date(started).toISOString(),
         name: String(name).slice(0, DIGEST_MAX_STR),
@@ -662,13 +761,13 @@ function createRegistry(opts = {}) {
     if (!v.ok) return finish({ ok: false, error: v.error }, decl.kind);
     const handler = handlers[name];
     if (!handler) return finish({ ok: false, error: `command "${name}" is only available through the running desktop app` }, decl.kind);
-    let result;
+    let result: Record<string, unknown>;
     try { result = await handler(v.params, { source }); }
-    catch (err) { result = { ok: false, error: String((err && err.message) || err) }; }
+    catch (err) { result = { ok: false, error: String((err as Error)?.message || err) }; }
     if (!result || typeof result !== 'object') result = { ok: false, error: 'command returned nothing' };
     return finish(result, decl.kind);
   }
-  return { invoke, has: (name) => COMMANDS_BY_NAME.has(name), list: listCommands };
+  return { invoke, has: (name: string) => COMMANDS_BY_NAME.has(name), list: listCommands };
 }
 
 // ---- control socket: the local API surface ----
@@ -680,18 +779,25 @@ function createRegistry(opts = {}) {
 // tradeoff for a personal tool. Never a TCP port, never network-exposed.
 const SOCKET_MAX_REQUEST = 256 * 1024;
 
-function createControlServer(opts = {}) {
+export interface ControlServer {
+  listen: (cb?: () => void) => void;
+  close: (cb?: () => void) => void;
+  socketPath: string;
+  server: net.Server;
+}
+
+export function createControlServer(opts: { registry: Registry; socketPath?: string; onError?: (err: Error) => void }): ControlServer {
   const registry = opts.registry;
   const socketPath = opts.socketPath || controlSocketPath();
   const onError = opts.onError || (() => {});
   const server = net.createServer((conn) => {
     let buf = '';
     let handled = false;
-    const respond = (obj) => { try { conn.end(`${JSON.stringify(obj)}\n`); } catch { /* peer gone */ } };
-    const handle = async (raw) => {
+    const respond = (obj: Record<string, unknown>) => { try { conn.end(`${JSON.stringify(obj)}\n`); } catch { /* peer gone */ } };
+    const handle = async (raw: string) => {
       if (handled) return;
       handled = true;
-      let req;
+      let req: any;
       try { req = JSON.parse(raw); } catch { respond({ ok: false, error: 'invalid JSON request' }); return; }
       if (!req || typeof req.name !== 'string') { respond({ ok: false, error: 'request must be {name, params}' }); return; }
       respond(await registry.invoke(req.name, req.params || {}, { source: 'socket' }));
@@ -706,7 +812,7 @@ function createControlServer(opts = {}) {
     conn.on('error', () => {});
   });
   server.on('error', onError);
-  function listen(cb) {
+  function listen(cb?: () => void): void {
     fs.mkdirSync(path.dirname(socketPath), { recursive: true });
     try { fs.unlinkSync(socketPath); } catch { /* no stale socket */ }
     server.listen(socketPath, () => {
@@ -714,7 +820,7 @@ function createControlServer(opts = {}) {
       if (cb) cb();
     });
   }
-  function close(cb) {
+  function close(cb?: () => void): void {
     try {
       server.close(() => {
         try { fs.unlinkSync(socketPath); } catch { /* already gone */ }
@@ -728,22 +834,22 @@ function createControlServer(opts = {}) {
 // One request against a (possibly absent) running app. Resolves to the app's
 // response, or { ok: false, transport: 'unavailable' } when nothing listens,
 // so callers can distinguish "app said no" from "no app".
-function socketRequest(name, params, opts = {}) {
+export function socketRequest(name: string, params?: unknown, opts: { socketPath?: string; timeoutMs?: number } = {}): Promise<Record<string, unknown>> {
   const socketPath = opts.socketPath || controlSocketPath();
   const timeoutMs = opts.timeoutMs || 210000; // session.ask can retry through ~3 minutes
   return new Promise((resolve) => {
-    let conn;
+    let conn: net.Socket;
     try { conn = net.connect(socketPath); }
     catch { resolve({ ok: false, transport: 'unavailable' }); return; }
     let buf = '';
     let settled = false;
-    const settle = (v) => {
+    const settle = (v: Record<string, unknown>) => {
       if (settled) return;
       settled = true;
       try { conn.destroy(); } catch { /* already closed */ }
       resolve(v);
     };
-    const parse = (raw) => {
+    const parse = (raw: string) => {
       try { settle(JSON.parse(raw)); }
       catch { settle({ ok: false, error: 'invalid JSON from the app' }); }
     };
@@ -759,28 +865,4 @@ function socketRequest(name, params, opts = {}) {
   });
 }
 
-module.exports = {
-  COMMANDS,
-  listCommands,
-  validateParams,
-  digestParams,
-  createEventLog,
-  createRegistry,
-  createControlServer,
-  socketRequest,
-  resolveSessionRow,
-  inboxThreads,
-  asksDir,
-  askLogPath,
-  appendAskLog,
-  readAskLog,
-  isInboxRelevantChange,
-  controlSocketPath,
-  controlDir,
-  EVENTS_MAX_BYTES,
-  attachmentsDir,
-  storeNoteImages,
-  prChip,
-  prChipCachePath,
-  PR_CHIP_STALE_MS,
-};
+export { controlDir, controlSocketPath };

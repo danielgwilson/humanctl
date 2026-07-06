@@ -33,7 +33,9 @@ jobs:
           cache: npm
       - run: npm ci
       - run: npm run lint
-      - run: node --check lib/sessions.js && node --check lib/pulse.js && node --check lib/commands.js && node --check lib/span.js && node --check lib/harness-icons.js && node --check lib/summary-budget.js && node --check bin/humanctl.js
+      - run: npm run typecheck
+      - run: npm run build:lib
+      - run: node --check dist/lib/sessions.js && node --check dist/lib/pulse.js && node --check dist/lib/commands.js && node --check dist/lib/span.js && node --check dist/lib/harness-icons.js && node --check dist/lib/summary-budget.js && node --check dist/bin/humanctl.js && node --check dist/electron/main.js && node --check dist/electron/preload.js
       - run: npm run pulse:selftest
       - run: npm run reader:selftest
       - run: npm run commands:selftest
