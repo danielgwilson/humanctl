@@ -1,17 +1,15 @@
-'use strict';
-
 // Selftest for the command registry: plain node, zero deps, no network, no
 // real ~/.humanctl data (every test uses a temp dir). Covers the registry
 // invariant end to end: param validation, unknown-command rejection, the
 // event log (write + rotation), and a real socket round-trip.
 // Run: npm run commands:selftest
 
-const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { randomUUID } = require('crypto');
-const {
+import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { randomUUID } from 'crypto';
+import {
   COMMANDS,
   validateParams,
   digestParams,
@@ -19,47 +17,47 @@ const {
   createRegistry,
   createControlServer,
   socketRequest,
-  inboxThreads,
   appendAskLog,
   askLogPath,
+  readAskLog,
   isInboxRelevantChange,
   storeNoteImages,
   attachmentsDir,
   prChip,
-  prChipCachePath,
-} = require('./commands');
+  type CommandDecl,
+} from './commands';
 
 let passed = 0;
-function check(name, fn) {
+function check(name: string, fn: () => void): void {
   try {
     fn();
     passed += 1;
   } catch (e) {
     console.error(`FAIL ${name}`);
-    console.error(e && e.stack ? e.stack : e);
+    console.error(e && (e as Error).stack ? (e as Error).stack : e);
     process.exitCode = 1;
   }
 }
 
-async function checkAsync(name, fn) {
+async function checkAsync(name: string, fn: () => Promise<void>): Promise<void> {
   try {
     await fn();
     passed += 1;
   } catch (e) {
     console.error(`FAIL ${name}`);
-    console.error(e && e.stack ? e.stack : e);
+    console.error(e && (e as Error).stack ? (e as Error).stack : e);
     process.exitCode = 1;
   }
 }
 
-function tempDir(label) {
+function tempDir(label: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), `humanctl-selftest-${label}-`));
 }
 
 // ---- COMMANDS table shape ----
 
 check('every command has a unique name, a kind, and a desc', () => {
-  const seen = new Set();
+  const seen = new Set<string>();
   for (const c of COMMANDS) {
     assert.ok(c.name && typeof c.name === 'string', 'command missing a name');
     assert.ok(!seen.has(c.name), `duplicate command name ${c.name}`);
@@ -73,29 +71,31 @@ check('every command has a unique name, a kind, and a desc', () => {
 // ---- param validation ----
 
 check('validateParams: required param missing is rejected', () => {
-  const decl = { name: 'note.post', params: { message: { type: 'string', required: true } } };
+  const decl: CommandDecl = { name: 'note.post', kind: 'action', desc: '', params: { message: { type: 'string', required: true } } };
   const v = validateParams(decl, {});
   assert.strictEqual(v.ok, false);
-  assert.match(v.error, /requires param "message"/);
+  assert.match((v as { error: string }).error, /requires param "message"/);
 });
 
 check('validateParams: unknown param is rejected', () => {
-  const decl = { name: 'x', params: { a: { type: 'string' } } };
+  const decl: CommandDecl = { name: 'x', kind: 'observation', desc: '', params: { a: { type: 'string' } } };
   const v = validateParams(decl, { a: 'ok', b: 'nope' });
   assert.strictEqual(v.ok, false);
-  assert.match(v.error, /unknown param "b"/);
+  assert.match((v as { error: string }).error, /unknown param "b"/);
 });
 
 check('validateParams: enum violation is rejected', () => {
-  const decl = { name: 'app.set-view', params: { view: { type: 'string', required: true, enum: ['inbox', 'metrics', 'fleet', 'sessions', 'settings'] } } };
+  const decl: CommandDecl = { name: 'app.set-view', kind: 'action', desc: '', params: { view: { type: 'string', required: true, enum: ['inbox', 'metrics', 'fleet', 'sessions', 'settings'] } } };
   const v = validateParams(decl, { view: 'bogus' });
   assert.strictEqual(v.ok, false);
-  assert.match(v.error, /must be one of inbox\|metrics\|fleet\|sessions\|settings/);
+  assert.match((v as { error: string }).error, /must be one of inbox\|metrics\|fleet\|sessions\|settings/);
 });
 
 check('validateParams: wrong type is rejected for string, number, boolean, object', () => {
-  const decl = {
+  const decl: CommandDecl = {
     name: 'x',
+    kind: 'observation',
+    desc: '',
     params: {
       s: { type: 'string' }, n: { type: 'number' }, b: { type: 'boolean' }, o: { type: 'object' },
     },
@@ -107,14 +107,14 @@ check('validateParams: wrong type is rejected for string, number, boolean, objec
 });
 
 check('validateParams: free text is hard-truncated to max', () => {
-  const decl = { name: 'note.post', params: { message: { type: 'string', max: 5 } } };
+  const decl: CommandDecl = { name: 'note.post', kind: 'action', desc: '', params: { message: { type: 'string', max: 5 } } };
   const v = validateParams(decl, { message: 'abcdefgh' });
   assert.strictEqual(v.ok, true);
-  assert.strictEqual(v.params.message, 'abcde');
+  assert.strictEqual((v as { ok: true; params: Record<string, unknown> }).params.message, 'abcde');
 });
 
 check('validateParams: valid params pass through unchanged', () => {
-  const decl = { name: 'session.pin', params: { id: { type: 'string', required: true } } };
+  const decl: CommandDecl = { name: 'session.pin', kind: 'action', desc: '', params: { id: { type: 'string', required: true } } };
   const v = validateParams(decl, { id: 'abc123' });
   assert.deepStrictEqual(v, { ok: true, params: { id: 'abc123' } });
 });
@@ -133,7 +133,7 @@ check('digestParams: strings truncate at 80 chars, arrays and objects collapse t
     patch: { theme: 'dark', view: 'sessions' },
   });
   assert.strictEqual(d.short, 'ok');
-  assert.strictEqual(d.long.length, 80);
+  assert.strictEqual((d.long as string).length, 80);
   assert.strictEqual(d.n, 3);
   assert.strictEqual(d.b, true);
   assert.strictEqual(d.nil, null);
@@ -146,14 +146,14 @@ check('digestParams: strings truncate at 80 chars, arrays and objects collapse t
 // invoke() is async end to end (handlers may be async), so these live in the
 // async run() below alongside the event-log and socket checks.
 
-async function run() {
+async function run(): Promise<void> {
   await checkAsync('registry: unknown command is rejected and logged with kind "unknown"', async () => {
     const dir = tempDir('unknown2');
     const log = createEventLog({ dir });
     const registry = createRegistry({ log, handlers: {} });
     const result = await registry.invoke('not.a.real.command', {}, { source: 'test' });
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /unknown command/);
+    assert.match(String(result.error), /unknown command/);
     const lines = fs.readFileSync(log.file, 'utf8').trim().split('\n');
     const entry = JSON.parse(lines[lines.length - 1]);
     assert.strictEqual(entry.name, 'not.a.real.command');
@@ -167,7 +167,7 @@ async function run() {
     const registry = createRegistry({ log, handlers: {} });
     const result = await registry.invoke('app.set-view', { view: 'inbox' }, { source: 'test' });
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /only available through the running desktop app/);
+    assert.match(String(result.error), /only available through the running desktop app/);
   });
 
   await checkAsync('registry: validation failure never reaches the handler', async () => {
@@ -186,7 +186,7 @@ async function run() {
     const registry = createRegistry({ log });
     const result = await registry.invoke('app.commands', {}, { source: 'test' });
     assert.strictEqual(result.ok, true);
-    assert.ok(Array.isArray(result.commands) && result.commands.length === COMMANDS.length);
+    assert.ok(Array.isArray(result.commands) && (result.commands as unknown[]).length === COMMANDS.length);
   });
 
   await checkAsync('registry: a handler that throws is turned into an honest ok:false, not a crash', async () => {
@@ -195,7 +195,7 @@ async function run() {
     const registry = createRegistry({ log, handlers: { 'app.set-view': () => { throw new Error('boom'); } } });
     const result = await registry.invoke('app.set-view', { view: 'inbox' }, { source: 'test' });
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /boom/);
+    assert.match(String(result.error), /boom/);
   });
 
   await checkAsync('registry: note.post writes a real note via the direct handler', async () => {
@@ -221,7 +221,7 @@ async function run() {
 
   // ---- inbox: threads assembled from notes + detected asks + persisted asks ----
 
-  // Note: lib/sessions.js resolves NOTES_FILE from os.homedir() ONCE at module
+  // Note: lib/sessions.ts resolves NOTES_FILE from os.homedir() ONCE at module
   // load (a pre-existing constant-capture quirk, tracked separately), so
   // swapping process.env.HOME after the first require does not sandbox
   // readNotes() the way it sandboxes controlDir()-based writers. This selftest
@@ -242,7 +242,8 @@ async function run() {
       assert.strictEqual(posted.ok, true);
       const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
       assert.strictEqual(result.ok, true);
-      const t = result.threads.find((x) => x.sessionId === sid);
+      const threads = result.threads as any[];
+      const t = threads.find((x) => x.sessionId === sid);
       assert.ok(t, 'expected a thread for the noted session (proves the note.post -> inbox.threads join)');
       assert.strictEqual(t.items[0].kind, 'note');
       assert.strictEqual(t.items[0].level, 'review');
@@ -260,7 +261,8 @@ async function run() {
     const registry = createRegistry({ log });
     const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
     assert.strictEqual(result.ok, true);
-    assert.ok(!result.threads.some((t) => t.sessionId === sid), 'a session with no signal must not fabricate a thread');
+    const threads = result.threads as any[];
+    assert.ok(!threads.some((t) => t.sessionId === sid), 'a session with no signal must not fabricate a thread');
   });
 
   check('appendAskLog + readAskLog: round-trips a Q&A entry and an interrupted-probe entry', () => {
@@ -271,7 +273,6 @@ async function run() {
       appendAskLog('sess_xyz', { q: 'status?', a: 'on track', engine: 'claude', ts: new Date().toISOString() });
       appendAskLog('sess_xyz', { status: 'interrupted', q: 'what next?', ts: new Date().toISOString() });
       assert.ok(fs.existsSync(askLogPath('sess_xyz')));
-      const { readAskLog } = require('./commands');
       const entries = readAskLog('sess_xyz');
       assert.strictEqual(entries.length, 2);
       assert.strictEqual(entries[0].a, 'on track');
@@ -290,7 +291,8 @@ async function run() {
       const log = createEventLog({ dir: path.join(home, '.humanctl') });
       const registry = createRegistry({ log });
       const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
-      const t = result.threads.find((x) => x.sessionId === 'sess_qa1');
+      const threads = result.threads as any[];
+      const t = threads.find((x) => x.sessionId === 'sess_qa1');
       assert.ok(t, 'expected a thread from the persisted ask log alone (no note, no live session row)');
       assert.strictEqual(t.items[0].kind, 'qa');
       assert.strictEqual(t.items[0].answer, 'moving along');
@@ -306,9 +308,9 @@ async function run() {
   check('inbox.mark-read requires threadId', () => {
     const decl = COMMANDS.find((c) => c.name === 'inbox.mark-read');
     assert.ok(decl, 'inbox.mark-read must be registered');
-    const v = validateParams(decl, {});
+    const v = validateParams(decl as CommandDecl, {});
     assert.strictEqual(v.ok, false);
-    assert.match(v.error, /requires param "threadId"/);
+    assert.match((v as { error: string }).error, /requires param "threadId"/);
   });
 
   check('shell v2: the deleted persistent-rail commands are gone from the table', () => {
@@ -323,19 +325,19 @@ async function run() {
   await checkAsync('atlas.ask is registered, requires a question, and is honest when the app is not running', async () => {
     const decl = COMMANDS.find((c) => c.name === 'atlas.ask');
     assert.ok(decl, 'atlas.ask must be registered');
-    assert.strictEqual(decl.kind, 'action');
-    assert.strictEqual(validateParams(decl, {}).ok, false);
+    assert.strictEqual((decl as CommandDecl).kind, 'action');
+    assert.strictEqual(validateParams(decl as CommandDecl, {}).ok, false);
     const dir = tempDir('atlas');
     const log = createEventLog({ dir });
     const registry = createRegistry({ log, handlers: {} });
     const result = await registry.invoke('atlas.ask', { question: 'what needs me right now?' }, { source: 'test' });
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /only available through the running desktop app/);
+    assert.match(String(result.error), /only available through the running desktop app/);
   });
 
   check('shell v2: app.set-mode is deleted; app.set-view and app.set-nav replace it', () => {
     assert.ok(!COMMANDS.some((c) => c.name === 'app.set-mode'), 'app.set-mode must be removed from the COMMANDS table');
-    const view = COMMANDS.find((c) => c.name === 'app.set-view');
+    const view = COMMANDS.find((c) => c.name === 'app.set-view') as CommandDecl;
     assert.ok(view, 'app.set-view must be registered');
     assert.strictEqual(view.kind, 'action');
     assert.deepStrictEqual(view.params.view.enum, ['inbox', 'metrics', 'fleet', 'sessions', 'settings']);
@@ -345,7 +347,7 @@ async function run() {
     assert.strictEqual(validateParams(view, { view: 'wall' }).ok, false, 'legacy "wall" is no longer a valid view');
     assert.deepStrictEqual(validateParams(view, { view: 'sessions' }), { ok: true, params: { view: 'sessions' } });
 
-    const nav = COMMANDS.find((c) => c.name === 'app.set-nav');
+    const nav = COMMANDS.find((c) => c.name === 'app.set-nav') as CommandDecl;
     assert.ok(nav, 'app.set-nav must be registered');
     assert.strictEqual(nav.kind, 'action');
     assert.strictEqual(nav.params.pinned.required, true);
@@ -355,7 +357,7 @@ async function run() {
   });
 
   // ---- perf guard: the ~/.humanctl watcher must never react to its own
-  // registry-owned outputs (electron/main.js's inbox fs.watch calls this
+  // registry-owned outputs (electron/main.ts's inbox fs.watch calls this
   // before ping()/scheduleInbox() -- see the 2026-07-03 perf-profile report:
   // events.jsonl living inside the watched dir created a self-sustaining
   // ~213ms refresh loop). Unit-test the filter directly so a future
@@ -386,7 +388,7 @@ async function run() {
   });
 
   await checkAsync('perf guard: invoking a registry command must not trigger the inbox watcher callback', async () => {
-    // Simulates electron/main.js's inbox fs.watch handler end to end: every
+    // Simulates electron/main.ts's inbox fs.watch handler end to end: every
     // registry invoke() appends one line to events.jsonl via the SAME
     // createEventLog() used here, then this asserts that filename would be
     // filtered out before ping()/scheduleInbox() ever run.
@@ -394,11 +396,11 @@ async function run() {
     const log = createEventLog({ dir });
     const registry = createRegistry({ log, handlers: { 'app.set-view': () => ({ ok: true }) } });
     let watcherFired = false;
-    const simulateWatchCallback = (fn) => { if (isInboxRelevantChange(fn)) watcherFired = true; };
+    const simulateWatchCallback = (fn: string | null) => { if (isInboxRelevantChange(fn)) watcherFired = true; };
 
     await registry.invoke('app.set-view', { view: 'inbox' }, { source: 'test' });
     // events.jsonl now has one line; drive the exact filename fs.watch would
-    // report for that write through the same filter main.js applies.
+    // report for that write through the same filter main.ts applies.
     simulateWatchCallback('events.jsonl');
     assert.strictEqual(watcherFired, false, 'events.jsonl writes must never trigger the inbox watcher');
 
@@ -465,22 +467,22 @@ async function run() {
   check('app.harness-icons is registered as an observation with no params', () => {
     const decl = COMMANDS.find((c) => c.name === 'app.harness-icons');
     assert.ok(decl, 'app.harness-icons must be registered');
-    assert.strictEqual(decl.kind, 'observation');
+    assert.strictEqual((decl as CommandDecl).kind, 'observation');
   });
 
-  await checkAsync('app.harness-icons has no direct handler (Electron-only: nativeImage decode lives in electron/main.js)', async () => {
+  await checkAsync('app.harness-icons has no direct handler (Electron-only: nativeImage decode lives in electron/main.ts)', async () => {
     const dir = tempDir('icons-nohandler');
     const log = createEventLog({ dir });
     const registry = createRegistry({ log, handlers: {} });
     const result = await registry.invoke('app.harness-icons', {}, { source: 'test' });
     assert.strictEqual(result.ok, false);
-    assert.match(result.error, /only available through the running desktop app/);
+    assert.match(String(result.error), /only available through the running desktop app/);
   });
 
   // ---- PR-2 item 2: PR chips are cache-only (zero spawns from the inbox path) ----
 
   check('pulse.pr-chip is registered, direct (answers without the app running), and requires a repo', () => {
-    const decl = COMMANDS.find((c) => c.name === 'pulse.pr-chip');
+    const decl = COMMANDS.find((c) => c.name === 'pulse.pr-chip') as CommandDecl;
     assert.ok(decl, 'pulse.pr-chip must be registered');
     assert.strictEqual(decl.direct, true);
     assert.strictEqual(validateParams(decl, {}).ok, false);
@@ -520,7 +522,7 @@ async function run() {
   // ---- PR-2 item 3: note images (copy-in, validated, capped at 4) ----
 
   check('note.post is registered with an images array param, max 4', () => {
-    const decl = COMMANDS.find((c) => c.name === 'note.post');
+    const decl = COMMANDS.find((c) => c.name === 'note.post') as CommandDecl;
     assert.strictEqual(decl.params.images.type, 'array');
     assert.strictEqual(decl.params.images.max, 4);
   });
@@ -551,7 +553,7 @@ async function run() {
     process.env.HOME = home;
     try {
       const srcDir = tempDir('images-cap-src');
-      const paths = [];
+      const paths: string[] = [];
       for (let i = 0; i < 6; i += 1) {
         const p = path.join(srcDir, `img${i}.png`);
         fs.writeFileSync(p, 'fake-png-bytes');
@@ -573,8 +575,9 @@ async function run() {
       const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
       const result = await registry.invoke('note.post', { message: 'proof attached', level: 'done', images: [imgPath] }, { source: 'test' });
       assert.strictEqual(result.ok, true);
-      assert.strictEqual(result.note.attachments.length, 1);
-      const copied = path.join(attachmentsDir(), result.note.attachments[0]);
+      const note = result.note as { attachments: string[] };
+      assert.strictEqual(note.attachments.length, 1);
+      const copied = path.join(attachmentsDir(), note.attachments[0]);
       assert.ok(fs.existsSync(copied));
       assert.strictEqual(fs.readFileSync(copied, 'utf8'), 'fake-png-bytes-for-selftest');
     } finally { process.env.HOME = prevHome; }
@@ -592,29 +595,30 @@ async function run() {
   // ---- PR-2 item 4: always-on summary engine budget ----
 
   check('session.summarize is registered with an auto boolean param', () => {
-    const decl = COMMANDS.find((c) => c.name === 'session.summarize');
+    const decl = COMMANDS.find((c) => c.name === 'session.summarize') as CommandDecl;
     assert.strictEqual(decl.params.auto.type, 'boolean');
   });
 
   check('summary.budget is registered, direct, and accepts an optional dailyBudgetUSD override', () => {
-    const decl = COMMANDS.find((c) => c.name === 'summary.budget');
+    const decl = COMMANDS.find((c) => c.name === 'summary.budget') as CommandDecl;
     assert.ok(decl, 'summary.budget must be registered');
     assert.strictEqual(decl.direct, true);
     assert.strictEqual(decl.params.dailyBudgetUSD.type, 'number');
   });
 
-  await checkAsync('summary.budget: reflects real spend from lib/summary-budget.js, not a stub', async () => {
+  await checkAsync('summary.budget: reflects real spend from lib/summary-budget.ts, not a stub', async () => {
     const home = tempDir('summary-budget-registry');
     const prevHome = process.env.HOME;
     process.env.HOME = home;
     try {
-      const { recordSpend } = require('./summary-budget');
+      const { recordSpend } = require('./summary-budget') as typeof import('./summary-budget');
       recordSpend('a'.repeat(1000), 'b'.repeat(200));
       const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
       const result = await registry.invoke('summary.budget', { dailyBudgetUSD: 1.0 }, { source: 'test' });
       assert.strictEqual(result.ok, true);
-      assert.ok(result.budget.spentUSD > 0, 'expected the recorded spend to show up through the registered command');
-      assert.strictEqual(result.budget.dailyBudgetUSD, 1.0);
+      const budget = result.budget as { spentUSD: number; dailyBudgetUSD: number };
+      assert.ok(budget.spentUSD > 0, 'expected the recorded spend to show up through the registered command');
+      assert.strictEqual(budget.dailyBudgetUSD, 1.0);
     } finally { process.env.HOME = prevHome; }
   });
 
@@ -625,11 +629,11 @@ async function run() {
     const log = createEventLog({ dir });
     const registry = createRegistry({
       log,
-      handlers: { 'session.pin': (p) => ({ ok: true, id: p.id, pinned: true }) },
+      handlers: { 'session.pin': (p: { id: string }) => ({ ok: true, id: p.id, pinned: true }) },
     });
     const socketPath = path.join(dir, 'app.sock');
     const server = createControlServer({ registry, socketPath });
-    await new Promise((resolve) => server.listen(resolve));
+    await new Promise<void>((resolve) => server.listen(resolve));
     try {
       const res = await socketRequest('session.pin', { id: 'zz9' }, { socketPath, timeoutMs: 5000 });
       assert.strictEqual(res.ok, true);
@@ -639,9 +643,9 @@ async function run() {
       // come back as an honest ok:false, not a socket-level error.
       const bad = await socketRequest('nope.nope', {}, { socketPath, timeoutMs: 5000 });
       assert.strictEqual(bad.ok, false);
-      assert.match(bad.error, /unknown command/);
+      assert.match(String(bad.error), /unknown command/);
     } finally {
-      await new Promise((resolve) => server.close(resolve));
+      await new Promise<void>((resolve) => server.close(resolve));
     }
   });
 
@@ -651,7 +655,7 @@ async function run() {
     fs.writeFileSync(socketPath, ''); // a stale regular file left at the socket path
     const registry = createRegistry({ log: createEventLog({ dir }) });
     const server = createControlServer({ registry, socketPath });
-    await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       server.listen(resolve);
       server.server.on('error', reject);
     });
@@ -659,7 +663,7 @@ async function run() {
       const mode = fs.statSync(socketPath).mode & 0o777;
       assert.strictEqual(mode, 0o600);
     } finally {
-      await new Promise((resolve) => server.close(resolve));
+      await new Promise<void>((resolve) => server.close(resolve));
     }
     assert.ok(!fs.existsSync(socketPath), 'close() must unlink the socket file');
   });

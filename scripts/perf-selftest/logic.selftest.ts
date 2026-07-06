@@ -1,5 +1,3 @@
-'use strict';
-
 // CI perf gate (PR-2 item 5, docs/perf.md): the PURE-LOGIC subset of the perf
 // story, runnable with no display server (today's CI runner is plain
 // ubuntu). This is intentionally NOT a substitute for scripts/perf-selftest/
@@ -12,34 +10,34 @@
 //     events.jsonl-inside-watched-dir feedback loop (see the 2026-07-03
 //     lab perf-profile report): a regression here silently reopens that
 //     exact ~213ms self-sustaining refresh loop.
-//   - the always-on summary budget math (lib/summary-budget.js): the
+//   - the always-on summary budget math (lib/summary-budget.ts): the
 //     "ONE authoritative unit, estimated dollars/day" the pause chip and
 //     the auto-summary engine both depend on being correct and monotonic.
-//   - harness icon path resolution (lib/harness-icons.js): pure filesystem
+//   - harness icon path resolution (lib/harness-icons.ts): pure filesystem
 //     logic, no Electron needed to check it resolves/fails correctly.
-//   - the PR chip cache-only contract (lib/commands.js prChip): proves the
+//   - the PR chip cache-only contract (lib/commands.ts prChip): proves the
 //     cache-miss-is-honest and never-spawns invariants without a real gh call.
 //
 // Run: npm run perf:logic-selftest
 
-const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const { isInboxRelevantChange, prChip, prChipCachePath } = require('../../lib/commands');
-const { estimateCallUSD, readBudgetState, writeBudgetState, recordSpend, wouldExceedBudget, budgetStatus, localDay } = require('../../lib/summary-budget');
-const { resolveHarnessIconPath, resolveIconPath } = require('../../lib/harness-icons');
+import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import { isInboxRelevantChange, prChip, prChipCachePath } from '../../lib/commands';
+import { estimateCallUSD, readBudgetState, writeBudgetState, recordSpend, wouldExceedBudget, budgetStatus, localDay } from '../../lib/summary-budget';
+import { resolveHarnessIconPath, resolveIconPath } from '../../lib/harness-icons';
 
 let passed = 0;
-function check(name, fn) {
+function check(name: string, fn: () => void): void {
   try { fn(); passed += 1; }
   catch (e) {
     console.error(`FAIL ${name}`);
-    console.error(e && e.stack ? e.stack : e);
+    console.error(e && (e as Error).stack ? (e as Error).stack : e);
     process.exitCode = 1;
   }
 }
-function tempHome(label) {
+function tempHome(label: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `humanctl-perflogic-${label}-`));
   return dir;
 }

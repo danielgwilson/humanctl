@@ -1,5 +1,3 @@
-'use strict';
-
 // Selftest for the pulse reconciler. Plain node, zero deps, no network, no
 // real data: every fixture is synthetic but keeps the real-world SHAPES that
 // broke naive designs, especially the branch-name shapes around one issue:
@@ -9,11 +7,11 @@
 //                   either; branchName equality is a rejected join)
 // Run: npm run pulse:selftest
 
-const assert = require('assert');
-const fs = require('fs');
-const os = require('os');
-const path = require('path');
-const {
+import assert from 'assert';
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
+import {
   reconcile,
   summarizeChecks,
   parseWorktreePorcelain,
@@ -21,17 +19,19 @@ const {
   computeOpenNotes,
   headerLine,
   NEED_DECAY_MS,
-} = require('./pulse');
-const { extractIssueKeys, readWorkRefs, readNeedSignals, deriveNeedState, BTW_SENTINEL } = require('./sessions');
+  type CollectedData,
+  type PulseConfig,
+} from './pulse';
+import { extractIssueKeys, readWorkRefs, readNeedSignals, deriveNeedState, BTW_SENTINEL } from './sessions';
 
 let passed = 0;
-function check(name, fn) {
+function check(name: string, fn: () => void): void {
   try {
     fn();
     passed += 1;
   } catch (e) {
     console.error(`FAIL ${name}`);
-    console.error(e && e.stack ? e.stack : e);
+    console.error(e && (e as Error).stack ? (e as Error).stack : e);
     process.exitCode = 1;
   }
 }
@@ -40,8 +40,12 @@ const NOW = Date.parse('2026-01-15T18:00:00Z');
 const H = 3.6e6;
 
 // ---- fixture builders (synthetic paths, names, and titles only) ----
+// These builders intentionally use loose (any-shaped) fixture objects: they
+// exercise reconcile()'s runtime behavior over realistic-but-synthetic data,
+// not the type system, so a permissive shape here keeps the fixtures terse
+// without weakening what the checks actually assert.
 
-function emptyCollected(overrides = {}) {
+function emptyCollected(overrides: Partial<CollectedData> = {}): CollectedData {
   return {
     now: NOW,
     gitRepos: [],
@@ -50,16 +54,16 @@ function emptyCollected(overrides = {}) {
     sessions: { rows: [], degraded: null },
     notes: { notes: [], degraded: null },
     ...overrides,
-  };
+  } as CollectedData;
 }
 
-const CONFIG = {
+const CONFIG: PulseConfig = {
   staleHours: 24,
   repos: [{ name: 'acme', path: '/home/dev/work/acme/main', github: 'example/acme' }],
   linear: { workspace: 'example', assignee: 'dev@example.com', teams: ['BUILD'], states: ['started'] },
 };
 
-function issue(identifier, extra = {}) {
+function issue(identifier: string, extra: Record<string, any> = {}): any {
   return {
     identifier,
     title: `Synthetic issue ${identifier}`,
@@ -73,7 +77,7 @@ function issue(identifier, extra = {}) {
   };
 }
 
-function worktree(branch, extra = {}) {
+function worktree(branch: string | null, extra: Record<string, any> = {}): any {
   return {
     path: `/home/dev/work/acme/worktrees/${branch ? branch.replace(/\//g, '-') : 'detached'}`,
     head: 'abc1234def',
@@ -91,7 +95,7 @@ function worktree(branch, extra = {}) {
   };
 }
 
-function pr(number, headRefName, extra = {}) {
+function pr(number: number, headRefName: string, extra: Record<string, any> = {}): any {
   return {
     number,
     title: `Synthetic PR ${number}`,
@@ -106,7 +110,7 @@ function pr(number, headRefName, extra = {}) {
   };
 }
 
-function session(id, cwd, extra = {}) {
+function session(id: string, cwd: string, extra: Record<string, any> = {}): any {
   return {
     harness: 'claude-code',
     id,
@@ -127,11 +131,11 @@ function session(id, cwd, extra = {}) {
   };
 }
 
-function allLaneItems(result) {
+function allLaneItems(result: { lanes: Record<string, any[]> }): any[] {
   return Object.values(result.lanes).flat();
 }
 
-function laneOf(result, id) {
+function laneOf(result: { lanes: Record<string, any[]> }, id: string): string | null {
   for (const [key, items] of Object.entries(result.lanes)) {
     if (items.some((i) => i.id === id)) return key;
   }
@@ -410,19 +414,19 @@ check('readWorkRefs finds only vocabulary paths and tokens in the tail', () => {
 // state, reason, lastActiveMs, lastUserText, and the classified assistant tail
 // must all be byte-for-byte what they were before the probe.
 
-function tmpTranscript(name, lines) {
+function tmpTranscript(name: string, lines: string[]): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ask-selftest-'));
   const file = path.join(dir, name);
   fs.writeFileSync(file, lines.join('\n') + '\n', 'utf8');
   return file;
 }
-function signalsAndState(file, harness) {
+function signalsAndState(file: string, harness: string) {
   const st = fs.statSync(file);
   const sig = readNeedSignals(file, harness, st);
   return { sig, need: deriveNeedState(sig, st, NOW) };
 }
-const codexEv = (ts, payload) => JSON.stringify({ timestamp: ts, type: payload.type, payload });
-const claudeEv = (ts, role, content) => JSON.stringify({ timestamp: ts, message: { role, content } });
+const codexEv = (ts: string, payload: Record<string, any>) => JSON.stringify({ timestamp: ts, type: payload.type, payload });
+const claudeEv = (ts: string, role: string, content: unknown) => JSON.stringify({ timestamp: ts, message: { role, content } });
 const T_USER = '2026-01-15T09:00:00.000Z';
 const T_ASK = '2026-01-15T09:05:00.000Z';
 const T_PROBE = '2026-01-15T17:50:00.000Z';
@@ -501,7 +505,7 @@ check('a genuine user turn after a probe closes the skip window', () => {
 // ---- session joining: parent-cwd launches and transcript evidence ----
 
 // The primary checkout as git reports it: the repo path itself, clean, on main.
-function primaryWorktree(extra = {}) {
+function primaryWorktree(extra: Record<string, any> = {}): any {
   return worktree('main', { path: '/home/dev/work/acme/main', isPrimary: true, dirty: false, ahead: 0, ...extra });
 }
 
@@ -627,7 +631,7 @@ check('reader state need mints needs-you even past the decay window', () => {
 });
 
 check('reader state done or archived never mints a session unit', () => {
-  const mk = (id, extra) => session(id, '/home/dev/work', {
+  const mk = (id: string, extra: Record<string, any>) => session(id, '/home/dev/work', {
     inScope: false,
     ancestorScope: true,
     lastRole: 'assistant',
@@ -726,7 +730,7 @@ check('decayed unattached and out-of-scope sessions land in diagnostics', () => 
 // ---- helpers ----
 
 check('summarizeChecks covers the rollup verdicts', () => {
-  assert.strictEqual(summarizeChecks(null), 'none');
+  assert.strictEqual(summarizeChecks(undefined), 'none');
   assert.strictEqual(summarizeChecks([]), 'none');
   assert.strictEqual(summarizeChecks([{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { state: 'SUCCESS' }]), 'passing');
   assert.strictEqual(summarizeChecks([{ status: 'COMPLETED', conclusion: 'SUCCESS' }, { status: 'IN_PROGRESS', conclusion: '' }]), 'pending');
@@ -768,7 +772,7 @@ check('parseUpstreamTrack reads ahead/behind/gone', () => {
 });
 
 check('computeOpenNotes: done closes the session, decay window applies', () => {
-  const notes = [
+  const notes: any[] = [
     { id: 'n1', ts: new Date(NOW - 1 * H).toISOString(), level: 'blocked', message: 'open one', session: 'sA', cwd: '/w' },
     { id: 'n2', ts: new Date(NOW - 2 * H).toISOString(), level: 'review', message: 'closed by done', session: 'sB', cwd: '/w' },
     { id: 'n3', ts: new Date(NOW - 1 * H).toISOString(), level: 'done', message: 'wrapped', session: 'sB', cwd: '/w' },

@@ -36,6 +36,11 @@
     ".next/dev/types/**/*.ts"
   ],
   "exclude": [
-    "node_modules"
+    "node_modules",
+    "lib",
+    "bin",
+    "electron",
+    "scripts",
+    "dist"
   ]
 }

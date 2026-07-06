@@ -5,33 +5,44 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 
 ## Layout
 
-- `electron/` is the desktop app. `main.js` is the Electron main process (window,
-  IPC, the session-dir watcher, runtime harness-icon extraction). `renderer/`
-  is the UI: plain static `index.html` + a handful of plain `<script>`-tag JS
-  files, no build step. `renderer.js` owns shared state, utils, the Sessions
-  view, session detail, and the always-on summary engine; `inbox.js` the
-  default Inbox view (two-pane: thread list + thread detail); `atlas.js` the
-  summonable right-side drawer (digest, needs-you queue, Atlas chat, resources);
+- `electron/` is the desktop app. `main.ts` is the Electron main process
+  (window, IPC, the session-dir watcher, runtime harness-icon extraction),
+  compiled by tsup to `dist/electron/main.js` (see `tsup.config.ts`).
+  `renderer/` is the UI: plain static `index.html` + a handful of plain
+  `<script>`-tag JS files, no build step (unconverted; a later migration
+  stage). `renderer.js` owns shared state, utils, the Sessions view, session
+  detail, and the always-on summary engine; `inbox.js` the default Inbox view
+  (two-pane: thread list + thread detail); `atlas.js` the summonable
+  right-side drawer (digest, needs-you queue, Atlas chat, resources);
   `contextmenu.js` the custom right-click menu; `boot.js` calls `renderer.js`'s
   boot function last, after the other three have registered their `window.*`
   globals (load order in `index.html` matters).
-- `lib/` holds plain CommonJS Node modules shared by the desktop app and the
-  CLI: `sessions.js` is the read-only cross-harness session reader (Codex +
-  Claude Code logs), `pricing.js` its pricing table, `pulse.js` the
+- `lib/` holds TypeScript modules (strict, `tsconfig.backend.json`) shared by
+  the desktop app and the CLI, compiled by tsup to `dist/lib/*.js`:
+  `sessions.ts` is the read-only cross-harness session reader (Codex +
+  Claude Code logs), `pricing.ts` its pricing table, `pulse.ts` the
   read-only reconciliation engine behind `humanctl pulse` (see `docs/pulse.md`),
-  `span.js` the span-of-control counter behind `humanctl span` (see
-  `docs/span.md`), `commands.js` the command registry (see below and
-  `docs/commands.md`), `harness-icons.js` the pure (Electron-free) half of
-  runtime harness-icon resolution, and `summary-budget.js` the always-on
-  AI-summary dollar-budget tracker.
-- `bin/humanctl.js` is the CLI. `docs/` holds the deeper design and desktop docs
+  `span.ts` the span-of-control counter behind `humanctl span` (see
+  `docs/span.md`), `commands.ts` the command registry (see below and
+  `docs/commands.md`), `harness-icons.ts` the pure (Electron-free) half of
+  runtime harness-icon resolution, and `summary-budget.ts` the always-on
+  AI-summary dollar-budget tracker. `*.selftest.ts` files run directly via
+  `tsx` (no build step needed for the fast dev loop; CI also builds and
+  `node --check`s the compiled output).
+- `bin/humanctl.ts` is the CLI, compiled to `dist/bin/humanctl.js` (the
+  package's `bin` entry: `npm i -g humanctl` ships compiled JS, never runtime
+  TypeScript). `docs/` holds the deeper design and desktop docs
   (`docs/desktop.md` is the desktop reference, `docs/perf.md` the perf-gate
   local/CI split).
+- `npm run typecheck` (`tsc -p tsconfig.backend.json --noEmit`) is the strict
+  type gate over `lib/`, `bin/`, and `electron/main.ts` + `electron/preload.ts`;
+  `npm run build:lib` (tsup) is the compile step. Both are CI-required (see
+  `.github/workflows/ci.yml`).
 
 ## Command registry (hardline)
 
 Every mutation of durable state, every process spawn, and every cross-session
-observation is a registered command: declared once in `lib/commands.js`,
+observation is a registered command: declared once in `lib/commands.ts`,
 invocable from the UI (IPC routed through `registry.invoke`, the single choke
 point), from the CLI against the running app (`humanctl app <name>`, see
 `docs/commands.md`), and logged as one event line in
@@ -39,7 +50,7 @@ point), from the CLI against the running app (`humanctl app <name>`, see
 position) are exempt; nothing that touches disk, a process, or another
 session is.
 
-**Register the command in `lib/commands.js` before wiring any UI to it.** A
+**Register the command in `lib/commands.ts` before wiring any UI to it.** A
 declared command with no handler fails loudly ("only available through the
 running desktop app"); an unregistered mutation wired straight into the
 renderer or main process is the failure mode this rule exists to prevent. See
@@ -72,7 +83,7 @@ rules exist to keep that class of bug from recurring as the app grows.
   app also watches for externally-meaningful changes, UNLESS it is one of the
   specific inputs that directory's consumer actually reads (e.g.
   `notes.jsonl` and `asks/*.jsonl` under the watched `~/.humanctl`, which the
-  Inbox genuinely needs to react to). `lib/commands.js`'s
+  Inbox genuinely needs to react to). `lib/commands.ts`'s
   `isInboxRelevantChange` is the current enforcement point for the
   `~/.humanctl` watcher: it is an ALLOWLIST of genuine inbox inputs, not a
   blocklist of known-bad files, specifically so a new registry-owned output
@@ -129,8 +140,7 @@ the macOS traffic lights), or real-session performance.
 
 The session reader is non-visual, so it runs and is measured on its own:
 
-    npm run desktop:sessions      # print the recent-session table to stdout
-    node --check lib/sessions.js  # syntax gate
+    npm run desktop:sessions      # print the recent-session table to stdout (tsx lib/sessions.ts)
 
 The pulse reconciler is pure over collected inputs and has a fixture-driven
 selftest (no network, no real data):
