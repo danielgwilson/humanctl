@@ -393,8 +393,9 @@ the `~/.humanctl` watcher ignores its own event-log writes via
 This repo is public. The rules that keep it safe:
 
 - The code reads transcripts but never copies them into the repo.
-- Screenshots and demos use the synthetic fixture in `renderer.js` / `inbox.js`,
-  never real sessions. See [repo-hygiene.md](./repo-hygiene.md).
+- Screenshots and demos use the synthetic fixture in
+  `electron/renderer-vite/src/lib/fixtures.ts`, never real sessions. See
+  [repo-hygiene.md](./repo-hygiene.md).
 - Harness identity uses neutral built-in glyphs; no vendor brand asset is ever
   committed (runtime icon extraction with a glyph fallback arrives in a later
   release and still commits nothing).
@@ -410,13 +411,13 @@ npm install
 npm run desktop
 ```
 
-The renderer is static HTML/CSS/JS with no build step. When the
-`window.humanctl` IPC bridge is absent (the page opened in a plain browser), it
-falls back to synthetic fixtures, so the whole UI renders and is driveable
-without launching Electron:
+The renderer (`electron/renderer-vite/`, React + Vite + Tailwind + shadcn) has
+a fixture fallback. When the `window.humanctl` IPC bridge is absent (the page
+opened in a plain browser), it falls back to synthetic fixtures, so the whole
+UI renders and is driveable without launching Electron:
 
 ```bash
-npm run renderer     # serves electron/renderer/ at http://localhost:4173
+npm run renderer     # Vite dev server, HMR, http://localhost:5183
 ```
 
 This is the default fast loop for interface work. Use the real Electron app only
@@ -480,7 +481,7 @@ runtime, and notarizes via Apple's notary service. Without a cert installed,
 
 ## How it is built
 
-No build step, no bundler. The renderer is plain HTML and JS.
+The renderer is React + TypeScript, built with Vite / electron-vite.
 
 - `lib/sessions.ts` is the reader. It scans `~/.codex/sessions` and
   `~/.claude/projects`, reads each transcript by bounded slices, and returns
@@ -505,12 +506,14 @@ No build step, no bundler. The renderer is plain HTML and JS.
   user's own CLIs.
 - `electron/preload.ts` is the locked bridge: a small, explicit set of calls, no
   direct fs, no network.
-- `electron/renderer/` is the UI: `renderer.js` owns shared state/utils, the
-  nav rail, the views, and the session detail; `atlas.js` the summonable drawer;
-  `inbox.js` the Inbox v2 view; `contextmenu.js` the custom right-click menu;
-  `boot.js` calls the boot function last. With no bridge (a plain browser, for a
-  screenshot) it falls back to synthetic fixtures, so demos never contain real
-  session content.
+- `electron/renderer-vite/` is the UI: React 19 + Vite 7 + Tailwind v4 +
+  shadcn/ui (Radix underneath) on the humanctl design tokens. `src/App.tsx`
+  wires the shell (sidebar, header, context bar, chief-of-staff drawer) around
+  the Inbox view (`src/components/inbox/`) and the session-detail view
+  (`src/components/session/`); `src/hooks/use-humanctl.ts` is the typed client
+  for the `window.humanctl` bridge. With no bridge (a plain browser, for a
+  screenshot) it falls back to the synthetic fixtures in
+  `src/lib/fixtures.ts`, so demos never contain real session content.
 
 ## Agent inbox (the point of humanctl)
 

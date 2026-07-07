@@ -3,8 +3,8 @@ import { fmtResetClock, quotaCls } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 
-// Ported from renderer.js's renderCtxBar()/digestHtml(): the SOLE home for
-// the fleet digest, Codex quota, Claude quota ("n/a", never fabricated), and
+// The SOLE home for the fleet digest, Codex quota, Claude quota ("n/a",
+// never fabricated), and
 // the open session's context-fill % (DESIGN.md one-owner rule). Plain markup
 // -- there is no shadcn primitive for a persistent status bar; this is
 // exactly the kind of "commodity control" DESIGN.md does NOT ask us to
@@ -33,14 +33,11 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
   );
 }
 
-// Digest sentence, matching renderer.js's digestHtml() exactly: ONE
-// sentence, one home for the "needs you" count (DESIGN.md one-owner rule --
-// the spike this ported from had rendered `needsYou` twice on this line,
-// fixed here). "idle" here is the fleet digest's own bucket (sessions.list's
-// nearCompaction/idle count is not on Status; this renderer's Status type
-// only carries needsYou/working/sessions, so idle is omitted rather than
-// fabricated -- narrower than renderer.js's full rollup, a fair simplification
-// for a persistent one-line bar).
+// Digest sentence: ONE sentence, one home for the "needs you" count
+// (DESIGN.md one-owner rule). "idle" here is the fleet digest's own bucket
+// (sessions.list's nearCompaction/idle count is not on Status; this
+// renderer's Status type only carries needsYou/working/sessions, so idle is
+// omitted rather than fabricated).
 //
 // STAGE 2B: this footer now renders full-width WITHIN SidebarInset (right
 // of the full-height sidebar), so it no longer needs its own

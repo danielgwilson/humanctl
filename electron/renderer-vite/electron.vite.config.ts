@@ -3,17 +3,14 @@ import { defineConfig, externalizeDepsPlugin } from 'electron-vite';
 import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
-// STAGE 1b config. This does NOT replace electron/main.ts or
-// electron/preload.ts: the main/preload blocks below point electron-vite at
-// the SAME compiled entry points tsup already produces (dist/electron/main.js,
+// This does NOT replace electron/main.ts or electron/preload.ts: the
+// main/preload blocks below point electron-vite at the SAME compiled entry
+// points tsup already produces (dist/electron/main.js,
 // dist/electron/preload.js), so this config only packages them, it does not
-// recompile them. Only the renderer block is new work: a React/Tailwind/
-// shadcn app that consumes the EXISTING window.humanctl bridge over the
-// unchanged preload. Renderer output lands in
-// dist-electron-vite/renderer/ so it never collides with the static
-// electron/renderer/ the old renderer ships from; electron/main.ts loads one
-// or the other behind the HUMANCTL_VITE env flag (see rendererTarget() in
-// electron/main.ts).
+// recompile them. The renderer block builds the React/Tailwind/shadcn app
+// that consumes the window.humanctl bridge over the unchanged preload.
+// Renderer output lands in dist-electron-vite/renderer/, the path
+// electron/main.ts's rendererTarget() always loads.
 export default defineConfig({
   main: {
     plugins: [externalizeDepsPlugin()],

@@ -14,5 +14,5 @@
     "types": ["node"]
   },
   "include": ["lib/**/*.ts", "bin/**/*.ts", "electron/main.ts", "electron/preload.ts"],
-  "exclude": ["node_modules", "dist", ".next", "src", "electron/renderer"]
+  "exclude": ["node_modules", "dist", ".next", "src", "electron/renderer-vite"]
 }

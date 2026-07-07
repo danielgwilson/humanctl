@@ -1,6 +1,5 @@
-// Pure inbox derivation logic, matching electron/renderer/inbox.js exactly
-// so this renderer's Inbox row anatomy, filtering, and sort behavior are
-// identical to the static renderer's (DESIGN.md "Row anatomy" section).
+// Pure inbox derivation logic for the Inbox row anatomy, filtering, and sort
+// behavior (DESIGN.md "Row anatomy" section).
 import type { InboxThread, SessionRow, ThreadItem } from './types';
 import { firstSentence } from './format';
 

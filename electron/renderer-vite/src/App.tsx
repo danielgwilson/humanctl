@@ -15,13 +15,12 @@ const STAGE_FOR_VIEW: Record<string, number> = { metrics: 2, fleet: 2, sessions:
 const LABEL_FOR_VIEW: Record<string, string> = { metrics: 'Metrics', fleet: 'Fleet', sessions: 'Sessions', settings: 'Settings' };
 const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '3': 'fleet', '4': 'sessions' };
 
-// App root for the renderer-vite renderer (STAGE 1b, gated behind
-// HUMANCTL_VITE; see docs/ts-migration-plan.md). Wires the shell (full-height
-// sidebar, inset header, inset context bar, CoS drawer) around the Inbox
-// view and the full-width session-detail view reached from it, at parity
-// with the current electron/renderer/ app. Sessions/Metrics/Fleet/Settings
-// are quiet placeholders this stage (stage 2 scope); the live-timeline
-// reader and the reply/suggested-responses feature are stage 3.
+// App root for the renderer-vite renderer, the sole humanctl desktop
+// renderer. Wires the shell (full-height sidebar, inset header, inset
+// context bar, CoS drawer) around the Inbox view and the full-width
+// session-detail view reached from it. Sessions/Metrics/Fleet/Settings are
+// still quiet placeholders (a later migration stage); the live-timeline
+// reader and the reply/suggested-responses feature are further out.
 //
 // STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
 // (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
@@ -51,8 +50,8 @@ export default function App() {
     }).length;
   }, [threads, lastReadTs]);
 
-  // theme application: mirrors renderer.js's applyTheme() (adds/removes the
-  // .light class on <html>, resolves 'system' via prefers-color-scheme).
+  // theme application: adds/removes the .light class on <html>, resolves
+  // 'system' via prefers-color-scheme.
   useEffect(() => {
     const root = document.documentElement;
     const resolve = () => {

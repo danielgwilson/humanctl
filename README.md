@@ -23,19 +23,19 @@ keep the supporting context attached, and resume as soon as the answer lands.
 
 The app reads recent Codex and Claude Code transcripts on your machine and
 shows the whole fleet in one exception-first surface: sessions that need you
-lead, everything healthy recedes. Three modes (Inbox / Focus / Wall, keys
-1/2/3) sit under a persistent chief-of-staff header that says who is waiting
-on you. Inbox is the default: a message-centric view of every session's agent
-notes, detected asks, and btw questions, one thread per session, so the
-primary surface matches the thesis (attention routing, not session picking).
-The left roster and the right Atlas panel (digest, needs-you queue, and an
-advisory chat grounded in the live fleet) are both collapsible and persist
-across every mode. Rows carry real signals only: a one-line summary, cwd and
-harness, and (in the Focus dossier) context fill, token usage, spend at API
-rates, Codex 5h and weekly quota, model and reasoning effort. Pins and real
-session titles are kept. One click resumes a session in your terminal, or in
-the harness's own desktop app via its deep link (Claude or Codex, when
-installed); a per-harness setting picks which is primary.
+lead, everything healthy recedes. A full-height sidebar navigates Inbox
+(default, unread badge), Metrics, Fleet, and Sessions, keys 1/2/3/4. Inbox is
+the default: a message-centric view of every session's agent notes, detected
+asks, and btw questions, one thread per session, so the primary surface
+matches the thesis (attention routing, not session picking). A summonable
+chief-of-staff drawer (an advisory chat grounded in the live fleet) and a
+persistent bottom context bar (the fleet digest and quota) round out the
+shell. Rows carry real signals only: a one-line summary, cwd and harness, and
+(in session detail) context fill, token usage, spend at API rates, Codex 5h
+and weekly quota, model and reasoning effort. Pins and real session titles are
+kept. One click resumes a session in your terminal, or in the harness's own
+desktop app via its deep link (Claude or Codex, when installed); a
+per-harness setting picks which is primary.
 
 It is read-only and offline by default. It never writes to your transcripts
 and never sends anything off the machine, with explicit opt-in exceptions: AI
@@ -137,12 +137,13 @@ Historical and design-trail docs (kept for context, not current direction):
 
 ## Development
 
-The renderer is plain HTML/CSS/JS with no build step. Without the Electron
-bridge it falls back to synthetic fixtures, so the whole UI runs in a plain
-browser with zero real session data. That is the default loop:
+The renderer (`electron/renderer-vite/`, React + Vite + Tailwind + shadcn)
+falls back to synthetic fixtures when the Electron bridge is absent, so the
+whole UI runs in a plain browser with zero real session data. That is the
+default loop:
 
 ```bash
-npm run renderer       # serves electron/renderer/ at http://localhost:4173
+npm run renderer       # Vite dev server, HMR, http://localhost:5183
 npm run desktop        # Electron against your real local sessions
 npm run desktop:sessions   # print the recent-session table to stdout
 ```

@@ -2,13 +2,11 @@ import { PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { cn } from '@/lib/utils';
 
-// Matches electron/renderer/index.html's .hdr: slim header, wordmark +
-// version + the sidebar-toggle icon only (DESIGN.md signal-ownership:
-// digest/resources/theme controls do NOT live here). The Tooltip on the
-// icon button is a Radix primitive replacing the old [data-tip] pure-CSS
-// tooltip; same visual contract (delayed show, dismiss on Esc/blur) but
-// keyboard focus and ARIA wiring (role="tooltip", aria-describedby) come
-// from Radix for free.
+// Slim header: wordmark + version + the sidebar-toggle icon only
+// (DESIGN.md signal-ownership: digest/resources/theme controls do NOT live
+// here). The Tooltip on the icon button is shadcn's Tooltip (a Radix
+// primitive): keyboard focus and ARIA wiring (role="tooltip",
+// aria-describedby) come from Radix for free.
 //
 // STAGE 2B: this header now renders inside SidebarInset, to the RIGHT of
 // the full-height sidebar, not spanning the full window from x=0. The old

@@ -2,7 +2,7 @@
   "name": "humanctl-renderer-vite",
   "private": true,
   "version": "0.0.1",
-  "description": "STAGE 1b: electron-vite + React + TypeScript + Tailwind + shadcn/ui renderer for humanctl, gated behind HUMANCTL_VITE. Build-time only; not part of the shipped npm CLI package (see root package.json \"files\").",
+  "description": "electron-vite + React + TypeScript + Tailwind + shadcn/ui renderer for humanctl, the sole desktop renderer. Build-time only; not part of the shipped npm CLI package (see root package.json \"files\").",
   "type": "module",
   "main": "dist-electron-vite/main/main.js",
   "scripts": {
