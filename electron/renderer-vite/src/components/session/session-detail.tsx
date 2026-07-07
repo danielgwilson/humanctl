@@ -1,6 +1,8 @@
 import { useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
+import { Chip } from '@/components/ui/chip';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { agoTxt } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -26,7 +28,7 @@ function StreamItem({ item }: { item: ThreadItem }) {
     return (
       <div className="rounded-md border border-border border-l-2 border-l-iris bg-panel p-3">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-iris">{item.level}</span>
+          <Chip variant="label-iris" size="label" dot={false}>{item.level}</Chip>
           <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
         </div>
         <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.message}</div>
@@ -37,7 +39,7 @@ function StreamItem({ item }: { item: ThreadItem }) {
     return (
       <div className="rounded-md border border-border border-l-2 border-l-need bg-panel p-3">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-need">asks you</span>
+          <Chip variant="label-need" size="label" dot={false}>asks you</Chip>
           <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
         </div>
         <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.reason}</div>
@@ -48,7 +50,7 @@ function StreamItem({ item }: { item: ThreadItem }) {
     return (
       <div className="rounded-md border border-border border-l-2 border-l-block bg-panel p-3">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-block">interrupted</span>
+          <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
           <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
         </div>
         <div className="mt-1.5 text-[13px] leading-relaxed text-foreground">{item.question || 'a question was interrupted when the app closed.'}</div>
@@ -58,7 +60,7 @@ function StreamItem({ item }: { item: ThreadItem }) {
   return (
     <div className="rounded-md border border-border border-l-2 border-l-done bg-panel p-3">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-done">{item.engine || 'answer'}</span>
+        <Chip variant="label-done" size="label" dot={false}>{item.engine || 'answer'}</Chip>
         <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
       </div>
       <div className="mt-1.5 text-[12.5px] text-ink2">{item.question}</div>
@@ -83,7 +85,7 @@ function SummaryBlock({
     return (
       <div className="rounded-md border border-border bg-panel2 p-3">
         <div className="flex items-center gap-2">
-          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">AI summary</span>
+          <Chip variant="label" size="label" dot={false}>AI summary</Chip>
           <span className="font-mono text-[9.5px] text-ink4">via {row.summary?.engine || 'claude'} CLI</span>
         </div>
         <div className="mt-1.5 font-mono text-[11px] text-ink3">summarizing recent activity...</div>
@@ -93,28 +95,28 @@ function SummaryBlock({
   if (error) {
     return (
       <div className="rounded-md border border-block/40 bg-panel2 p-3">
-        <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-block">AI summary failed</div>
+        <Chip variant="label-block" size="label" dot={false}>AI summary failed</Chip>
         <div className="mt-1.5 text-[12.5px] text-ink3">{error}</div>
-        <Button variant="outline" size="sm" className="mt-2 h-6 border-rule2 px-2 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
+        <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
       </div>
     );
   }
   if (!row.summary) {
     return (
       <div className="rounded-md border border-border bg-panel2 p-3">
-        <div className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">AI summary</div>
-        <Button variant="outline" size="sm" className="mt-2 h-6 border-rule2 px-2 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
+        <Chip variant="label" size="label" dot={false}>AI summary</Chip>
+        <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
       </div>
     );
   }
   return (
     <div className="rounded-md border border-border bg-panel2 p-3">
       <div className="flex items-center gap-2">
-        <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">AI summary</span>
+        <Chip variant="label" size="label" dot={false}>AI summary</Chip>
         <span className="font-mono text-[9.5px] text-ink4">via {row.summary.engine || 'claude'}{row.summary.at ? ` · ${agoTxt(row.summary.at)}` : ''}</span>
       </div>
       <div className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground">{row.summary.text}</div>
-      <Button variant="outline" size="sm" className="mt-2 h-6 border-rule2 px-2 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
+      <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
     </div>
   );
 }
@@ -168,7 +170,8 @@ export function SessionDetail({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[840px] flex-col overflow-hidden">
-      <div className="flex-1 overflow-y-auto px-6 pb-4 pt-3">
+      <ScrollArea className="min-h-0 flex-1">
+      <div className="px-6 pb-4 pt-3">
         {onBack && (
           <button type="button" onClick={onBack} className="mb-2 font-mono text-[10.5px] text-ink3 hover:text-foreground">
             &#8592; {backLabel || 'back'}
@@ -186,7 +189,8 @@ export function SessionDetail({
             </div>
           </div>
           <Button
-            className="flex-none bg-iris text-primary-foreground hover:brightness-110"
+            variant="iris"
+            className="flex-none"
             disabled={!row}
             onClick={() => row && onResume?.(row)}
             title={row ? 'Resume this session' : 'session no longer in the recent scan'}
@@ -214,25 +218,26 @@ export function SessionDetail({
 
         <div className="mt-3 rounded-md border border-border bg-panel/60 p-3">
           <div className="flex items-center gap-2">
-            <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">Conversation</span>
+            <Chip variant="label" size="label" dot={false}>Conversation</Chip>
           </div>
           <div className="mt-1.5 font-mono text-[11px] text-ink4">
             The live conversation timeline arrives in stage 3 of the TypeScript migration (see docs/ts-migration-plan.md).
           </div>
         </div>
       </div>
+      </ScrollArea>
 
       <div className="mx-6 flex max-h-[45vh] flex-none flex-col rounded-t-md border border-b-0 border-l-2 border-border border-l-done bg-panel2 p-3">
         <div className="flex items-center gap-3">
-          <span className="font-mono text-[9px] font-semibold uppercase tracking-wider text-done">Ask the session</span>
+          <Chip variant="label-done" size="label" dot={false}>Ask the session</Chip>
         </div>
         {answer && (
-          <div className="mt-3 flex-1 overflow-y-auto">
+          <ScrollArea className="mt-3 min-h-0 flex-1">
             <div className="grid gap-1">
               <div className="pl-2 text-[12.5px] text-ink2">{q || 'your question'}</div>
               <div className="whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">{answer}</div>
             </div>
-          </div>
+          </ScrollArea>
         )}
         <div className="mt-2 flex flex-none gap-2">
           <Input
@@ -244,14 +249,15 @@ export function SessionDetail({
             disabled={asking || !row}
             className={cn('flex-1 focus-visible:border-done')}
           />
-          <button
+          <Button
             type="button"
+            variant="done"
             onClick={send}
             disabled={asking || !row || !q.trim()}
-            className="flex-none rounded-md border border-done/45 px-3.5 py-1.5 font-mono text-[10.5px] text-done transition-colors hover:bg-done/10 disabled:opacity-40"
+            className="flex-none px-3.5 py-1.5 font-mono text-[10.5px]"
           >
             {asking ? 'asking...' : 'Ask'}
-          </button>
+          </Button>
         </div>
       </div>
     </div>
