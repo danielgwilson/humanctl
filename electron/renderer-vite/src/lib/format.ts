@@ -1,5 +1,4 @@
-// Small formatting helpers, matching electron/renderer/renderer.js's output
-// exactly so numbers/labels are identical between the two renderers.
+// Small formatting helpers for numbers/labels shown throughout the renderer.
 export function agoTxt(ts: number): string {
   const ms = Date.now() - ts;
   if (ms < 0) return 'now';

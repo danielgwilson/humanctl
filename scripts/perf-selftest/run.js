@@ -274,7 +274,7 @@ async function main() {
       // it, so the warmup genuinely exercised the full first-launch path.
       let warmBooted = false;
       for (let i = 0; i < 30; i++) {
-        const ready = await evalJS(warmCdp, `!!document.querySelector('.hdr') && !!document.querySelector('.stage')`);
+        const ready = await evalJS(warmCdp, `!!window.__humanctlPerf`);
         if (ready) { warmBooted = true; break; }
         await new Promise((r) => setTimeout(r, 200));
       }
@@ -317,16 +317,24 @@ async function main() {
     await cdp.send('Page.enable');
     await cdp.send('DOM.enable');
     await cdp.send('Input.setIgnoreInputEvents', { ignore: false });
+    // Force the page to be treated as focused for the whole measured run.
+    // requestAnimationFrame (which the click-to-paint settle relies on) is
+    // throttled to a crawl by Chromium when the window is occluded or
+    // backgrounded, which on a busy desktop makes a single sample spike to an
+    // absurd value (observed a ~2.2e6 ms outlier) even though every other
+    // sample is ~10-27ms. This keeps the paint measurement about the app, not
+    // about window stacking on the test machine.
+    await cdp.send('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {});
 
     // Give the renderer a moment past CDP-reachable to finish its own boot
     // (load() -> fetchData() -> first render); poll for the app shell.
     let booted = false;
     for (let i = 0; i < 30; i++) {
-      const ready = await evalJS(cdp, `!!document.querySelector('.hdr') && !!document.querySelector('.stage')`);
+      const ready = await evalJS(cdp, `!!window.__humanctlPerf`);
       if (ready) { booted = true; break; }
       await new Promise((r) => setTimeout(r, 200));
     }
-    if (!booted) throw new Error('renderer never reached a booted state (.hdr/.stage not found)');
+    if (!booted) throw new Error('renderer never reached a booted state (window.__humanctlPerf not exposed)');
     const coldOpenTotalMs = Date.now() - t0Spawn;
     results.coldOpenMs = coldOpenTotalMs;
     if (coldOpenTotalMs < BUDGETS.coldOpenMs) log(`cold open: ${coldOpenTotalMs}ms (budget ${BUDGETS.coldOpenMs}ms) -- PASS`);
@@ -334,14 +342,14 @@ async function main() {
 
     await cdp.send('Runtime.evaluate', { expression: injectInstrumentation });
 
-    // ---- click-to-paint: switch views via the nav rail's own click handlers, x10 ----
-    await evalJS(cdp, `window.setView && window.setView('sessions'); true`);
+    // ---- click-to-paint: switch views via the app's own view-switch path, x10 ----
+    await evalJS(cdp, `window.__humanctlPerf && window.__humanctlPerf.setView('sessions'); true`);
     await new Promise((r) => setTimeout(r, 300));
     const clickTimes = [];
     for (let i = 0; i < BUDGETS.clickSamples; i++) {
       const target = i % 2 === 0 ? 'inbox' : 'sessions';
       const t0 = await evalJS(cdp, `performance.now()`);
-      await evalJS(cdp, `window.setView && window.setView(${JSON.stringify(target)}); true`);
+      await evalJS(cdp, `window.__humanctlPerf && window.__humanctlPerf.setView(${JSON.stringify(target)}); true`);
       const settle = await evalJS(cdp, `
         new Promise((resolve) => { requestAnimationFrame(() => requestAnimationFrame(() => resolve(performance.now()))); })
       `, true);
@@ -364,7 +372,7 @@ async function main() {
     // the steady-state behavior the original lab investigation measured (the
     // events.jsonl feedback loop produced hundreds of extra repaints per
     // minute on top of, not instead of, that first legitimate one).
-    await evalJS(cdp, `window.setView && window.setView('inbox'); true`);
+    await evalJS(cdp, `window.__humanctlPerf && window.__humanctlPerf.setView('inbox'); true`);
     log('letting one full 20s poll cycle settle before starting the idle capture...');
     await new Promise((r) => setTimeout(r, 21000));
     await evalJS(cdp, `window.__perf.mutations = []; window.__perfIdleStart = Date.now(); true`);
@@ -388,7 +396,7 @@ async function main() {
 
     // ---- signature-gate check: re-running the SAME refresh call must not repaint ----
     await evalJS(cdp, `window.__perf.mutations = []; true`);
-    await evalJS(cdp, `if (window.scheduleRefresh) { window.scheduleRefresh(); window.scheduleRefresh(); window.scheduleRefresh(); } true`);
+    await evalJS(cdp, `if (window.__humanctlPerf) { window.__humanctlPerf.refresh(); window.__humanctlPerf.refresh(); window.__humanctlPerf.refresh(); } true`);
     await new Promise((r) => setTimeout(r, 3000));
     const sigDump = await evalJS(cdp, `JSON.stringify(window.__perf.mutations.length)`);
     const sigMutations = JSON.parse(sigDump);
@@ -409,7 +417,7 @@ async function main() {
     await cdp.send('HeapProfiler.collectGarbage').catch(() => {});
     const heapBefore = await heapUsed();
     for (let i = 0; i < BUDGETS.heapCycles; i++) {
-      await evalJS(cdp, `if (window.scheduleRefresh) window.scheduleRefresh(); if (window.setView) { window.setView('sessions'); window.setView('inbox'); } true`);
+      await evalJS(cdp, `if (window.__humanctlPerf) { window.__humanctlPerf.refresh(); window.__humanctlPerf.setView('sessions'); window.__humanctlPerf.setView('inbox'); } true`);
       await new Promise((r) => setTimeout(r, 100));
     }
     await cdp.send('HeapProfiler.collectGarbage').catch(() => {});

@@ -2,13 +2,10 @@
 @import "tw-animate-css";
 
 /* ============================================================
-   humanctl design tokens, ported verbatim from
-   electron/renderer/index.html's #kit-tokens + a11y-base stylesheets.
-   This is the SAME token set the static renderer uses: colors, fonts,
-   spacing, radii. Fonts stay LOCAL stacks only (no network), matching the
-   born-clean rule; if Space Grotesk / JetBrains Mono are not installed
-   locally, the stack falls through to system sans/mono, same as the old
-   renderer.
+   humanctl design tokens: colors, fonts, spacing, radii (see DESIGN.md).
+   Fonts stay LOCAL stacks only (no network), matching the born-clean rule;
+   if Space Grotesk / JetBrains Mono are not installed locally, the stack
+   falls through to system sans/mono.
    ============================================================ */
 :root {
   /* canvas, dark-first premium near-black (identical values to index.html) */

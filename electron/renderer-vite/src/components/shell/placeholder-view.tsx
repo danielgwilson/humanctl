@@ -8,7 +8,7 @@ export function PlaceholderView({ label, stage }: { label: string; stage: number
       <div className="font-mono text-[44px] font-semibold text-rule2">--</div>
       <div className="text-[16px] font-semibold text-ink2">{label} is coming in stage {stage}</div>
       <div className="max-w-md text-[12.5px] leading-relaxed text-ink3">
-        This view is not yet ported to the new renderer. Switch to the default renderer (unset HUMANCTL_VITE) for the complete app.
+        This view is coming in a later migration stage.
       </div>
     </div>
   );

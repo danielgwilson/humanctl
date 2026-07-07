@@ -8,15 +8,14 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 - `electron/` is the desktop app. `main.ts` is the Electron main process
   (window, IPC, the session-dir watcher, runtime harness-icon extraction),
   compiled by tsup to `dist/electron/main.js` (see `tsup.config.ts`).
-  `renderer/` is the UI: plain static `index.html` + a handful of plain
-  `<script>`-tag JS files, no build step (unconverted; a later migration
-  stage). `renderer.js` owns shared state, utils, the Sessions view, session
-  detail, and the always-on summary engine; `inbox.js` the default Inbox view
-  (two-pane: thread list + thread detail); `atlas.js` the summonable
-  right-side drawer (digest, needs-you queue, Atlas chat, resources);
-  `contextmenu.js` the custom right-click menu; `boot.js` calls `renderer.js`'s
-  boot function last, after the other three have registered their `window.*`
-  globals (load order in `index.html` matters).
+  `renderer-vite/` is the UI: React 19 + TypeScript, built with Vite 7 /
+  electron-vite, styled with Tailwind v4 (CSS-first) and shadcn/ui (Radix
+  underneath) on the humanctl design tokens (see `DESIGN.md`). It is the only
+  renderer; there is no separate build-less renderer and no flag to switch
+  between renderers. `src/App.tsx` wires the shell (full-height sidebar,
+  inset header, inset context bar, chief-of-staff drawer) around the Inbox
+  view and the full-width session-detail view; see
+  `electron/renderer-vite/README.md` for its own layout and commands.
 - `lib/` holds TypeScript modules (strict, `tsconfig.backend.json`) shared by
   the desktop app and the CLI, compiled by tsup to `dist/lib/*.js`:
   `sessions.ts` is the read-only cross-harness session reader (Codex +
@@ -118,39 +117,36 @@ merge; a UI PR without both is incomplete, not merely under-documented.
 
 ## Local development and testing
 
-The renderer is static HTML/CSS/JS. When the `window.humanctl` IPC bridge is
-absent (i.e. the page is opened in a plain browser), it falls back to synthetic
-fixtures, so the whole UI renders and is fully driveable without launching
-Electron.
+The renderer (`electron/renderer-vite/`) has a fixture fallback: when the
+`window.humanctl` IPC bridge is absent (i.e. the page is opened in a plain
+browser), it falls back to synthetic fixtures, so the whole UI renders and is
+fully driveable without launching Electron.
 
 Prefer the browser for UI work. It is the fast loop, needs no rebuild, and does
-not read any real session data. Two renderers coexist until the stage-4 cutover
-(see `docs/ts-migration-plan.md`); serve whichever you are working on:
+not read any real session data:
 
-    npm run renderer       # OLD static renderer (shipped default) at http://localhost:4173
-    npm run renderer:vite  # NEW Vite renderer (renderer-vite, HUMANCTL_VITE) with HMR at http://localhost:5183
+    npm run renderer   # Vite dev server, HMR, http://localhost:5183
 
 Open that URL and verify layout, the Inbox / Sessions / Metrics / Fleet /
-Settings views, the theme toggle, the nav rail, the Atlas drawer, and
+Settings views, the theme toggle, the nav rail, the chief-of-staff drawer, and
 interactions against fixture data. Fixture mode always renders the built-in
 harness glyphs (never runtime-extracted icons) and never shows PR chips (both
 are real-app-only, see `docs/perf.md` and `docs/commands.md`). This is the
 default way to iterate on the interface.
 
-Toolchain is Node-ecosystem only, on the repo's Node (`.nvmrc`: 24). There is no
-Python step: `npm run renderer` serves the static old renderer through the
-zero-dependency `scripts/serve-static.ts` (node:http, no build, no deps) and
-`npm run renderer:vite` runs Vite directly. `npm run renderer:vite:serve` builds
-the Vite renderer and serves the production bundle via the same static server on
-port 4188 (a Node-agnostic serve for any runner that carries an older Node than
-Vite itself accepts).
+Toolchain is Node-ecosystem only, on the repo's Node (`.nvmrc`: 24). `npm run
+renderer` runs Vite directly against `electron/renderer-vite/`. `npm run
+renderer:build` builds it; `npm run renderer:serve` builds and serves the
+production bundle via the zero-dependency `scripts/serve-static.ts` (node:http,
+no build, no deps) on port 4188 (a Node-agnostic serve for any runner that
+carries an older Node than Vite itself accepts).
 
 To gate a UI change with screenshots, point the preview screenshot tool at the
 running server. A working `.claude/launch.json` config (git-ignored, per
-machine) for the Vite renderer:
+machine):
 
-    { "name": "humanctl-vite", "runtimeExecutable": "npm",
-      "runtimeArgs": ["--prefix", "<abs path to this checkout>", "run", "renderer:vite"],
+    { "name": "humanctl-renderer", "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "<abs path to this checkout>", "run", "renderer"],
       "port": 5183 }
 
 Gate both themes: the app defaults to the dark theme, so toggle to light through
@@ -197,5 +193,5 @@ release, and a CI-safe pure-logic subset:
 
 This repo is public. Keep it born-clean: no real session data, secrets, tokens,
 or personal paths in tracked files or history. Screenshots and demos use the
-synthetic fixtures in `renderer.js`, never real transcripts. Do not use em dashes
-in any file. See `docs/repo-hygiene.md`.
+synthetic fixtures in `electron/renderer-vite/src/lib/fixtures.ts`, never real
+transcripts. Do not use em dashes in any file. See `docs/repo-hygiene.md`.

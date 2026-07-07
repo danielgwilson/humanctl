@@ -4,8 +4,8 @@ import { defineConfig } from 'tsup';
 // dist/, mirroring the source layout (dist/lib, dist/bin, dist/electron) so
 // require()s between them keep working unmodified and package.json's `bin`
 // / `main` can point at stable compiled paths. The renderer
-// (electron/renderer/**) is plain static JS with no build step and is not
-// part of this config; it ships as-is (see package.json "files").
+// (electron/renderer-vite/**) has its own Vite/electron-vite build (see
+// `build:renderer-vite` in package.json) and is not part of this config.
 export default defineConfig([
   {
     name: 'lib',

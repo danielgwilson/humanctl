@@ -1,9 +1,6 @@
-// Synthetic fixture data, matching electron/renderer/renderer.js's
-// FIXTURE_ROWS/FIXTURE_NOTES and inbox.js's fixtureThreads(). Used ONLY when
-// window.humanctl is absent (plain browser / vite dev with no Electron
-// preload attached), same fallback contract as the existing static renderer.
-// OSS-safe: no real ids, generic demo repo names, matches AGENTS.md's
-// born-clean rule.
+// Synthetic fixture data. Used ONLY when window.humanctl is absent (plain
+// browser / vite dev with no Electron preload attached). OSS-safe: no real
+// ids, generic demo repo names, matches AGENTS.md's born-clean rule.
 import type { InboxThread, NoteItem, SessionRow, Status } from './types';
 
 export const FIXTURE_ROWS: SessionRow[] = [

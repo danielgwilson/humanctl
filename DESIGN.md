@@ -67,22 +67,24 @@ No native or OS-default interactive control ships in this app. Every
 interactive element is bespoke, tokenized, keyboard-navigable, ARIA-labeled,
 carries a visible focus ring, and meets an adequate hit target. Specifically:
 
-- No bare `<select>`. Filter and sort dropdowns are the shared `HcSelect`
-  component (`electron/renderer/hc-select.js`): a button trigger plus a
-  popover listbox styled in the same panel language as the context menu and
+- No bare `<select>`. Filter and sort dropdowns are shadcn's `Select` (Radix
+  Select underneath), restyled onto the humanctl tokens: a button trigger plus
+  a popover listbox styled in the same panel language as the context menu and
   the user picker (panel2 background, radius, rule, hover), never the OS's
   own control chrome.
 - No native context menu and no native tooltip where a bespoke one already
-  exists (`contextmenu.js`'s custom menu; the `[data-tip]` pure-CSS tooltip).
+  exists (shadcn's `ContextMenu` and `Tooltip`, both Radix primitives restyled
+  onto the humanctl tokens, replacing the old pure-CSS `[data-tip]` tooltip
+  and the hand-rolled context menu).
 - Every interactive control is keyboard-operable: buttons and the bespoke
   select use native `<button>` semantics; anything else that is clickable
   (session/inbox rows, custom dropdowns) carries `role`, `tabindex="0"`, and
   Enter/Space activation, plus an `aria-label` that summarizes what a sighted
   user reads visually (state, title, the message to the human).
 - Every focusable element shows a visible `:focus-visible` ring (one shared
-  rule in the `a11y-base` stylesheet, `index.html`); no interactive element
-  relies on hover alone to reveal itself to a keyboard user (a control that is
-  `opacity:0` until hover must also reveal on `:focus-visible`).
+  rule in `electron/renderer-vite/src/styles/globals.css`); no interactive
+  element relies on hover alone to reveal itself to a keyboard user (a control
+  that is `opacity:0` until hover must also reveal on `:focus-visible`).
 - Every overlay (the chief-of-staff drawer, the user/settings picker, the
   context menu) moves focus in on open, closes and returns focus to its
   trigger on Esc or an outside interaction, and the drawer keeps a basic focus

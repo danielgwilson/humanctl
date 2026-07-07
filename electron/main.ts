@@ -14,10 +14,11 @@ import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } from 'el
 import path from 'path';
 // This compiled file lives at dist/electron/main.js (see tsup.config.ts), two
 // directories below the packaged app root; electron-builder's `files` config
-// packages electron/renderer/**/*, electron/assets/**/*, and dist/electron/**/*
-// each preserving their project-relative path, so the renderer and the app
-// icon are found relative to APP_ROOT (the app root), never __dirname (which
-// is dist/electron/, not electron/).
+// packages electron/renderer-vite/dist-electron-vite/renderer/**/*,
+// electron/assets/**/*, and dist/electron/**/* each preserving their
+// project-relative path, so the renderer and the app icon are found relative
+// to APP_ROOT (the app root), never __dirname (which is dist/electron/, not
+// electron/).
 const APP_ROOT = path.join(__dirname, '..', '..');
 const ICON_PATH = path.join(APP_ROOT, 'electron', 'assets', 'icon.png');
 let APP_VERSION = '0.0.0';
@@ -92,20 +93,17 @@ function writeState(next: UiState): boolean {
   try { fs.writeFileSync(statePath(), JSON.stringify(clean, null, 2)); return true; } catch { return false; }
 }
 
-// STAGE 1b (feat/vite-renderer-1b): behind HUMANCTL_VITE, load the
-// electron-vite React/Tailwind/shadcn renderer (electron/renderer-vite/)
-// instead of the static electron/renderer/. Default boot (no flag) is
-// unchanged; both renderers coexist and consume the SAME preload bridge
-// below (no new IPC channel). HUMANCTL_VITE=1 with HUMANCTL_VITE_DEV_URL set
-// loads the vite dev server (fast loop, HMR); HUMANCTL_VITE=1 alone loads the
-// `npm run build` output at
-// electron/renderer-vite/dist-electron-vite/renderer/index.html (the
-// packaging proof for this stage; cutover to a real electron-builder input
-// is stage 4).
+// The renderer is the electron-vite React/Tailwind/shadcn app
+// (electron/renderer-vite/); there is no other renderer. Normal boot loads
+// the built output at
+// electron/renderer-vite/dist-electron-vite/renderer/index.html.
+// HUMANCTL_DEV_URL points at the Vite dev server instead (fast loop, HMR):
+// run `npm run renderer` (electron/renderer-vite's `vite`) in one terminal
+// and set HUMANCTL_DEV_URL=http://localhost:5183 for `npm run desktop` in
+// another.
 const VITE_RENDERER_DIST = path.join(APP_ROOT, 'electron', 'renderer-vite', 'dist-electron-vite', 'renderer', 'index.html');
 function rendererTarget(): { file?: string; url?: string } {
-  if (!process.env.HUMANCTL_VITE) return { file: path.join(APP_ROOT, 'electron', 'renderer', 'index.html') };
-  if (process.env.HUMANCTL_VITE_DEV_URL) return { url: process.env.HUMANCTL_VITE_DEV_URL };
+  if (process.env.HUMANCTL_DEV_URL) return { url: process.env.HUMANCTL_DEV_URL };
   return { file: VITE_RENDERER_DIST };
 }
 
@@ -437,8 +435,8 @@ const summaryCache = new Map<string, string>();
 const SUMMARIZE_PROMPT = (ex: { lastUser?: string }, tail: string) => `Summarize the recent tail of an autonomous coding-agent session for an operator dashboard. In 1-2 plain sentences say what the agent is currently working on and its immediate next step. Be concrete and terse, no preamble. Respond directly with the summary only; do not use any tools.\n\nLatest user instruction: ${ex.lastUser || '(none)'}\n\nRecent blocks:\n${tail}`;
 // Always-on summary engine (PR-2 item 4): `auto: true` marks a call the
 // renderer's background engine made (unread AND needs-* threads only, see
-// runAutoSummaries in renderer.js) rather than the manual "Generate/Refresh AI
-// summary" button. Auto calls are budget-gated (dailyBudgetUSD, default from
+// the renderer's runAutoSummaries) rather than the manual "Generate/Refresh
+// AI summary" button. Auto calls are budget-gated (dailyBudgetUSD, default from
 // summary-budget.ts, configurable via app.set-state's summaryBudgetUSD) and,
 // on a persistent 401 (retried once already below), SKIP silently rather than
 // surfacing an error toast -- a skip must never count against the budget

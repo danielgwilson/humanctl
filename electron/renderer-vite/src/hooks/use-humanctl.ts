@@ -1,9 +1,8 @@
-// Typed React client for the EXISTING window.humanctl IPC bridge
-// (electron/preload.ts). When window.humanctl is absent (this app opened in
-// a plain browser, no Electron preload attached), falls back to the
-// synthetic fixtures in lib/fixtures.ts -- same contract AGENTS.md documents
-// for the static renderer ("the whole UI renders and is fully driveable
-// without launching Electron").
+// Typed React client for the window.humanctl IPC bridge (electron/preload.ts).
+// When window.humanctl is absent (this app opened in a plain browser, no
+// Electron preload attached), falls back to the synthetic fixtures in
+// lib/fixtures.ts -- the whole UI renders and is fully driveable without
+// launching Electron.
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AppState, InboxThread, NoteItem, SessionRow, Status } from '../lib/types';
 import { FIXTURE_NOTES, FIXTURE_ROWS, fixtureStatus, fixtureThreads } from '../lib/fixtures';
@@ -23,10 +22,9 @@ export interface FleetData {
 }
 
 /**
- * Polls the same three IPC calls the static renderer's fetchData() does
- * (sessions.list, notes.list, inbox.threads via getInboxThreads), or serves
- * fixtures when there is no bridge. Poll cadence matches the existing
- * renderer's declared 20s idle timer (DESIGN.md: "declare every timer").
+ * Polls three IPC calls (sessions.list, notes.list, inbox.threads via
+ * getInboxThreads), or serves fixtures when there is no bridge. See the
+ * declared 20s idle timer below (DESIGN.md: "declare every timer").
  */
 export function useFleetData(): FleetData {
   const [rows, setRows] = useState<SessionRow[]>([]);
@@ -61,8 +59,7 @@ export function useFleetData(): FleetData {
   useEffect(() => {
     refresh();
     if (!window.humanctl) return;
-    // Declared timer: fires every 20s, matches the static renderer's idle
-    // poll (renderer.js: "The single idle poll: at rest this fires every 20s").
+    // Declared timer: the single idle poll, fires every 20s at rest.
     const id = setInterval(refresh, 20000);
     const offList = window.humanctl.onSessionsChanged?.(refresh);
     const offInbox = window.humanctl.onInboxFast?.(refresh);
@@ -132,11 +129,10 @@ export function useAtlasAsk() {
 }
 
 /**
- * Generate/refresh the per-session AI summary (session:summarize), matching
- * renderer.js's summaryBlockHtml()/sumTrigger mechanics: loading state while
- * in flight, error surfaced with a retry trigger, and the fixture path
- * returns a canned demo summary so the block is fully explorable without
- * Electron.
+ * Generate/refresh the per-session AI summary (session:summarize): loading
+ * state while in flight, error surfaced with a retry trigger, and the
+ * fixture path returns a canned demo summary so the block is fully
+ * explorable without Electron.
  */
 export function useSessionSummarize() {
   const [loadingId, setLoadingId] = useState<string | null>(null);

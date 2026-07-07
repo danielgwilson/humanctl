@@ -7,13 +7,11 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import type { InboxThread, SessionRow } from '@/lib/types';
 import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
 
-// Matches inbox.js's render(): the two-pane Inbox shell (thread list +
-// thread detail), built once and kept mounted so the search input never
-// loses focus across a refresh (matches the static renderer's stated
-// invariant in inbox.js's render() comment). The detail pane renders the
-// SAME SessionDetail component family the full-width session-detail view
-// uses (renderer.js: "the SAME detail component... never a fork"); this
-// pane omits the back breadcrumb since the thread list sits beside it.
+// The two-pane Inbox shell (thread list + thread detail), built once and
+// kept mounted so the search input never loses focus across a refresh. The
+// detail pane renders the SAME SessionDetail component family the
+// full-width session-detail view uses (never a fork); this pane omits the
+// back breadcrumb since the thread list sits beside it.
 export function InboxView({
   threads,
   byId,
