@@ -1,4 +1,5 @@
-import { useCallback, useLayoutEffect, useRef } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
+import type { RefObject } from 'react';
 import { Chip } from '@/components/ui/chip';
 import { Item, ItemContent, ItemHeader } from '@/components/ui/item';
 import { useTimeline } from '@/hooks/use-timeline';
@@ -6,9 +7,6 @@ import { agoTxt } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { SessionRow, TimelineEvent } from '@/lib/types';
 
-// Upward-infinite-scroll trigger distance, matching the reference renderer's
-// `scrollTop < 60` threshold exactly.
-const NEAR_TOP_PX = 60;
 // "Close enough to the bottom" to count as sticky: a live append auto-scrolls
 // only when the reader was already at (or very near) the bottom.
 const NEAR_BOTTOM_PX = 48;
@@ -60,15 +58,40 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
 }
 
 // The live conversation reader: a bounded backward page on open (scrolled to
-// the bottom), upward infinite scroll for older history (scroll position
-// preserved across the prepend), and event-driven live appends for the one
-// hot session with sticky-bottom auto-scroll. This is the sole owner of the
-// conversation-stream signal in detail (DESIGN.md one-owner-per-signal); it
-// replaces the stage-3 placeholder and is never duplicated elsewhere on this
-// screen.
-export function SessionTimeline({ row }: { row: SessionRow | null }) {
+// the bottom), an explicit "load older" affordance for earlier history
+// (scroll position preserved across the prepend), and event-driven live
+// appends for the one hot session with sticky-bottom auto-scroll. This is
+// the sole owner of the conversation-stream signal in detail (DESIGN.md
+// one-owner-per-signal); it replaces the stage-3 placeholder and is never
+// duplicated elsewhere on this screen.
+//
+// STAGE-2E scroll-trap fix: this component used to own its OWN nested
+// `max-h-[420px] overflow-y-auto` scroll region, stacked inside
+// session-detail.tsx's own outer ScrollArea. Two independently-scrolling
+// regions meant the outer one could scroll the header out of view while the
+// inner one silently absorbed further wheel input, so the header was
+// unreachable without hovering exactly off the timeline -- a genuine scroll
+// trap. This component no longer renders any scroll container of its own:
+// its rows render inline into the caller's shared body scroller, and the
+// caller passes down `scrollContainerRef`, a ref to THAT single scroll
+// element (session-detail.tsx's body ScrollArea viewport). Every scroll
+// behavior below (near-bottom tracking, sticky-bottom-on-append,
+// scroll-position-preservation-on-prepend, initial jump-to-bottom) now reads
+// and writes that shared element instead of a local one. Near-top
+// auto-paging is deliberately NOT ported to the shared scroller: the shared
+// scroll region also contains the notes/summary sections above the
+// timeline, so "scrollTop near 0" there means "near the top of the whole
+// page", not "near the top of the conversation" -- wiring that up would
+// auto-page the conversation while someone is just reading notes. The
+// explicit "load older" button below is the correct affordance instead.
+export function SessionTimeline({
+  row,
+  scrollContainerRef,
+}: {
+  row: SessionRow | null;
+  scrollContainerRef: RefObject<HTMLDivElement | null>;
+}) {
   const tl = useTimeline(row);
-  const scrollRef = useRef<HTMLDivElement>(null);
   // Scroll-restore bookkeeping. Both refs are read/written OUTSIDE React
   // state on purpose: they track transient scroll position, the same class
   // of renderer ephemera as the rest of the app's scroll/selection state
@@ -78,30 +101,39 @@ export function SessionTimeline({ row }: { row: SessionRow | null }) {
   const prevScrollRef = useRef<{ height: number; top: number } | null>(null);
 
   const handleLoadOlder = useCallback(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     if (el) prevScrollRef.current = { height: el.scrollHeight, top: el.scrollTop };
     tl.loadOlder();
-  }, [tl]);
+  }, [tl, scrollContainerRef]);
 
-  const handleScroll = useCallback(() => {
-    const el = scrollRef.current;
+  // Tracks "was the reader already at the bottom" on every scroll of the
+  // SHARED body viewport, so a later live append knows whether to stick to
+  // the bottom. Attached imperatively (not JSX onScroll) because this
+  // component does not render the scrolling element itself anymore.
+  useEffect(() => {
+    const el = scrollContainerRef.current;
     if (!el) return;
-    wasNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
-    if (el.scrollTop < NEAR_TOP_PX && !tl.atStart && !tl.loadingOlder && !tl.loading) {
-      handleLoadOlder();
-    }
-  }, [tl.atStart, tl.loadingOlder, tl.loading, handleLoadOlder]);
+    const onScroll = () => {
+      wasNearBottomRef.current = el.scrollHeight - el.scrollTop - el.clientHeight < NEAR_BOTTOM_PX;
+    };
+    onScroll();
+    el.addEventListener('scroll', onScroll, { passive: true });
+    return () => el.removeEventListener('scroll', onScroll);
+  }, [scrollContainerRef]);
 
   // Runs after the DOM reflects the new `items`, before paint: the ONE place
-  // that decides where the scroll region ends up, keyed on `changeSeq` (a
-  // fresh stamp per state transition) rather than diffing `items` itself.
-  //   initial -> jump to bottom (newest at the bottom, per the brief).
+  // that decides where the shared scroll region ends up, keyed on
+  // `changeSeq` (a fresh stamp per state transition) rather than diffing
+  // `items` itself.
+  //   initial -> jump to bottom (newest at the bottom, per the brief). The
+  //              header above stays visible regardless -- it is pinned
+  //              outside this scroll region entirely, not merely scrolled.
   //   prepend -> restore position: keep the same content under the viewport
   //              by offsetting scrollTop by exactly the height added above it.
   //   append  -> jump to bottom ONLY if the reader was already there
   //              (sticky bottom); otherwise leave scroll position untouched.
   useLayoutEffect(() => {
-    const el = scrollRef.current;
+    const el = scrollContainerRef.current;
     if (!el) return;
     if (tl.changeKind === 'initial') {
       el.scrollTop = el.scrollHeight;
@@ -140,11 +172,7 @@ export function SessionTimeline({ row }: { row: SessionRow | null }) {
         ) : tl.error ? (
           <div className="py-2 font-mono text-[11px] text-ink4">{tl.error}</div>
         ) : (
-          <div
-            ref={scrollRef}
-            onScroll={handleScroll}
-            className="max-h-[420px] min-h-[120px] overflow-y-auto overflow-x-hidden"
-          >
+          <div className="min-h-[120px]">
             {tl.atStart ? (
               <div className="py-2 text-center font-mono text-[9.5px] uppercase tracking-wider text-ink4">
                 start of session

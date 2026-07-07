@@ -8,8 +8,20 @@ import { cn } from "@/lib/utils"
 function ScrollArea({
   className,
   children,
+  viewportRef,
+  viewportClassName,
   ...props
-}: React.ComponentProps<typeof ScrollAreaPrimitive.Root>) {
+}: React.ComponentProps<typeof ScrollAreaPrimitive.Root> & {
+  // Exposes the Radix Viewport's own scrollable div so a consumer can read/
+  // set scrollTop directly (session-detail.tsx's single shared body scroller
+  // needs this: the conversation timeline's sticky-bottom-on-append and
+  // scroll-position-preservation-on-prepend behaviors operate on THIS
+  // element once the timeline no longer owns its own nested scroll region).
+  // Optional and additive -- every existing `<ScrollArea>` call site is
+  // unaffected.
+  viewportRef?: React.Ref<HTMLDivElement>
+  viewportClassName?: string
+}) {
   return (
     <ScrollAreaPrimitive.Root
       data-slot="scroll-area"
@@ -17,8 +29,12 @@ function ScrollArea({
       {...props}
     >
       <ScrollAreaPrimitive.Viewport
+        ref={viewportRef}
         data-slot="scroll-area-viewport"
-        className="size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1"
+        className={cn(
+          "size-full rounded-[inherit] transition-[color,box-shadow] outline-none focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1",
+          viewportClassName
+        )}
       >
         {children}
       </ScrollAreaPrimitive.Viewport>

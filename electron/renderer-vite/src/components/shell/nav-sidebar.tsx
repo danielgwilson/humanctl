@@ -51,20 +51,32 @@ export function AppSidebar({
   onSetTheme: (t: AppState['theme']) => void;
 }) {
   return (
-    <Sidebar collapsible="icon">
+    // `border-r-0` cancels the primitive's own full-height border-r (see
+    // components/ui/sidebar.tsx): that border used to run the ENTIRE
+    // window height, including straight through the traffic-light band
+    // below, since the collapsed icon rail (3rem/48px) is narrower than the
+    // macOS hiddenInset traffic-light cluster's own footprint (~80-90px
+    // including its left inset) -- the vertical rule literally bisected the
+    // lights ("overlapping lines over the stoplight"). The border now lives
+    // on SidebarContent + SidebarFooter instead (below), so it starts
+    // cleanly BELOW the header band rather than cutting across it.
+    <Sidebar collapsible="icon" className="border-r-0">
       {/* The macOS traffic lights sit over this top-left band (frameless
           titleBarStyle in electron/main.ts). This header is a pure drag
-          region: no interactive control lives in the same 52px vertical
-          band as the lights, so there is no no-drag island to carve out
-          here (contrast Header, which DOES have one for its own controls).
-          Height matches the old shell's 52px header exactly so the border
-          lines up across the sidebar and the inset header to its right. */}
+          region: no interactive control lives in the same vertical band as
+          the lights, so there is no no-drag island to carve out here
+          (contrast Header, which DOES have one for its own controls). No
+          border here (dropped the old border-b) so the lights get clean,
+          rule-free space -- the seam with the inset header to the right
+          resumes cleanly below, on SidebarContent/SidebarFooter, never
+          crossing the lights. Height matches Header's own compact height so
+          the two panes still read as one level row. */}
       <SidebarHeader
-        className="h-[52px] shrink-0 justify-center border-b border-sidebar-border p-0"
+        className="h-[44px] shrink-0 justify-center p-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         aria-hidden="true"
       />
-      <SidebarContent className="gap-0 py-2">
+      <SidebarContent className="gap-0 border-r border-sidebar-border py-2">
         <SidebarMenu className="gap-0.5 px-2">
           {NAV_ITEMS.map((item) => {
             const active = view === item.view;
@@ -116,7 +128,7 @@ export function AppSidebar({
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border p-2">
+      <SidebarFooter className="border-r border-t border-sidebar-border p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton aria-label="theme, settings">

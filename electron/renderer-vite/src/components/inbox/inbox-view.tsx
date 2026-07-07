@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { InboxToolbar } from './inbox-toolbar';
 import { ThreadRow } from './thread-row';
 import { SessionDetail } from '@/components/session/session-detail';
@@ -6,6 +7,17 @@ import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import type { InboxThread, SessionRow } from '@/lib/types';
 import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
+
+// A real fleet runs 100+ threads through this list, and it re-reconciles on
+// every 20s poll (AGENTS.md perf SLO: DOM rebuilds are signature-gated,
+// unchanged data must not rebuild -- an unvirtualized list still means 100+
+// live DOM rows sitting around for every reconcile pass to diff against).
+// `estimateSize` starts at the row's typical three-line height and
+// `measureElement` corrects it against the real rendered height per row, so
+// this holds up even if a title wraps oddly; `getItemKey` keys each virtual
+// slot to the thread's own sessionId (not the array index) so rows never
+// flicker/mismatch when filtering or sorting reorders the list.
+const ROW_ESTIMATE_PX = 76;
 
 // The two-pane Inbox shell (thread list + thread detail), built once and
 // kept mounted so the search input never loses focus across a refresh. The
@@ -49,6 +61,15 @@ export function InboxView({
   const selected = list.find((t) => t.sessionId === effectiveSel) || null;
   const selectedRow = selected ? byId.get(selected.sessionId) || null : null;
 
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: list.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: () => ROW_ESTIMATE_PX,
+    overscan: 8,
+    getItemKey: (index) => list[index].sessionId,
+  });
+
   function select(id: string) {
     setSelId(id);
     onMarkRead(id);
@@ -66,26 +87,37 @@ export function InboxView({
           </Button>
         </div>
         <InboxToolbar filter={filter} onChange={setFilter} />
-        <ScrollArea className="min-h-0 flex-1">
+        <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
           {list.length === 0 ? (
             <div className="p-6 font-mono text-[12px] text-ink3">
               No agent updates match. Agents post here via <code className="rounded bg-panel2 px-1.5 py-px">humanctl note</code>.
             </div>
           ) : (
-            list.map((t) => (
-              <ThreadRow
-                key={t.sessionId}
-                thread={t}
-                byId={byId}
-                selected={t.sessionId === effectiveSel}
-                unreadTs={lastReadTs}
-                onSelect={select}
-                onMarkRead={onMarkRead}
-                onPin={onTogglePin}
-                onOpenDetail={onOpenDetail}
-                pinned={pins.has(t.sessionId)}
-              />
-            ))
+            <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), width: '100%' }}>
+              {rowVirtualizer.getVirtualItems().map((vRow) => {
+                const t = list[vRow.index];
+                return (
+                  <div
+                    key={t.sessionId}
+                    data-index={vRow.index}
+                    ref={rowVirtualizer.measureElement}
+                    style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
+                  >
+                    <ThreadRow
+                      thread={t}
+                      byId={byId}
+                      selected={t.sessionId === effectiveSel}
+                      unreadTs={lastReadTs}
+                      onSelect={select}
+                      onMarkRead={onMarkRead}
+                      onPin={onTogglePin}
+                      onOpenDetail={onOpenDetail}
+                      pinned={pins.has(t.sessionId)}
+                    />
+                  </div>
+                );
+              })}
+            </div>
           )}
         </ScrollArea>
       </aside>
