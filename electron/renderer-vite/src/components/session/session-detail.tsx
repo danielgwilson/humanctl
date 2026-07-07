@@ -1,8 +1,17 @@
-import { useState } from 'react';
+import { Fragment, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Separator } from '@/components/ui/separator';
 import { Chip } from '@/components/ui/chip';
+import {
+  Item,
+  ItemContent,
+  ItemFooter,
+  ItemGroup,
+  ItemHeader,
+  ItemSeparator,
+} from '@/components/ui/item';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { agoTxt } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -23,53 +32,74 @@ import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 // signature-gating in renderer.js is the highest-risk item in that stage,
 // so it gets a dedicated, closely reviewed PR rather than a naive port here.
 // This view shows a quiet, honest placeholder in its place.
-function StreamItem({ item }: { item: ThreadItem }) {
+//
+// De-carded (audit punch #1, DESIGN.md "Flat surfaces, no cards, no
+// shadows-as-hierarchy"): every `rounded-md border ... bg-panel p-3` box
+// below is now a flat `Item` row inside an `ItemGroup`, separated by a
+// hairline `ItemSeparator` instead of a bordered box. The per-kind hue still
+// reads via the existing `Chip` and, for the stream rows only, a single thin
+// left rule -- never a rounded card, background panel, or shadow.
+function StreamRow({ item }: { item: ThreadItem }) {
+  const ts = agoTxt(Date.parse(item.ts));
+
   if (item.kind === 'note') {
     return (
-      <div className="rounded-md border border-border border-l-2 border-l-iris bg-panel p-3">
-        <div className="flex items-center gap-2">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris pl-3">
+        <ItemHeader>
           <Chip variant="label-iris" size="label" dot={false}>{item.level}</Chip>
-          <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
-        </div>
-        <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.message}</div>
-      </div>
+          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+        </ItemHeader>
+        <ItemContent>
+          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.message}</div>
+        </ItemContent>
+      </Item>
     );
   }
   if (item.kind === 'ask') {
     return (
-      <div className="rounded-md border border-border border-l-2 border-l-need bg-panel p-3">
-        <div className="flex items-center gap-2">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-need pl-3">
+        <ItemHeader>
           <Chip variant="label-need" size="label" dot={false}>asks you</Chip>
-          <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
-        </div>
-        <div className="mt-1.5 whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.reason}</div>
-      </div>
+          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+        </ItemHeader>
+        <ItemContent>
+          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.reason}</div>
+        </ItemContent>
+      </Item>
     );
   }
   if (item.kind === 'ask-interrupted') {
     return (
-      <div className="rounded-md border border-border border-l-2 border-l-block bg-panel p-3">
-        <div className="flex items-center gap-2">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-block pl-3">
+        <ItemHeader>
           <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
-          <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
-        </div>
-        <div className="mt-1.5 text-[13px] leading-relaxed text-foreground">{item.question || 'a question was interrupted when the app closed.'}</div>
-      </div>
+          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+        </ItemHeader>
+        <ItemContent>
+          <div className="text-[13px] leading-relaxed text-foreground">
+            {item.question || 'a question was interrupted when the app closed.'}
+          </div>
+        </ItemContent>
+      </Item>
     );
   }
   return (
-    <div className="rounded-md border border-border border-l-2 border-l-done bg-panel p-3">
-      <div className="flex items-center gap-2">
+    <Item size="sm" className="flex-col items-stretch border-l-2 border-l-done pl-3">
+      <ItemHeader>
         <Chip variant="label-done" size="label" dot={false}>{item.engine || 'answer'}</Chip>
-        <span className="ml-auto font-mono text-[9.5px] text-ink4">{agoTxt(Date.parse(item.ts))}</span>
-      </div>
-      <div className="mt-1.5 text-[12.5px] text-ink2">{item.question}</div>
-      <div className="mt-1 whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">{item.answer}</div>
-    </div>
+        <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+      </ItemHeader>
+      <ItemContent>
+        <div className="text-[12.5px] text-ink2">{item.question}</div>
+        <div className="whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">
+          {item.answer}
+        </div>
+      </ItemContent>
+    </Item>
   );
 }
 
-function SummaryBlock({
+function SummarySection({
   row,
   loading,
   error,
@@ -81,43 +111,54 @@ function SummaryBlock({
   onGenerate: () => void;
 }) {
   const label = row.summary ? 'Refresh AI summary' : error ? 'Retry AI summary' : 'Generate AI summary';
-  if (loading) {
-    return (
-      <div className="rounded-md border border-border bg-panel2 p-3">
-        <div className="flex items-center gap-2">
-          <Chip variant="label" size="label" dot={false}>AI summary</Chip>
-          <span className="font-mono text-[9.5px] text-ink4">via {row.summary?.engine || 'claude'} CLI</span>
-        </div>
-        <div className="mt-1.5 font-mono text-[11px] text-ink3">summarizing recent activity...</div>
-      </div>
-    );
-  }
-  if (error) {
-    return (
-      <div className="rounded-md border border-block/40 bg-panel2 p-3">
-        <Chip variant="label-block" size="label" dot={false}>AI summary failed</Chip>
-        <div className="mt-1.5 text-[12.5px] text-ink3">{error}</div>
-        <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
-      </div>
-    );
-  }
-  if (!row.summary) {
-    return (
-      <div className="rounded-md border border-border bg-panel2 p-3">
-        <Chip variant="label" size="label" dot={false}>AI summary</Chip>
-        <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
-      </div>
-    );
-  }
   return (
-    <div className="rounded-md border border-border bg-panel2 p-3">
-      <div className="flex items-center gap-2">
-        <Chip variant="label" size="label" dot={false}>AI summary</Chip>
-        <span className="font-mono text-[9.5px] text-ink4">via {row.summary.engine || 'claude'}{row.summary.at ? ` · ${agoTxt(row.summary.at)}` : ''}</span>
-      </div>
-      <div className="mt-1.5 whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground">{row.summary.text}</div>
-      <Button variant="outline" size="sm" className="mt-2 h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>{label}</Button>
-    </div>
+    <Item size="sm" role="group" className="flex-col items-stretch">
+      <ItemHeader>
+        {error ? (
+          <Chip variant="label-block" size="label" dot={false}>AI summary failed</Chip>
+        ) : (
+          <Chip variant="label" size="label" dot={false}>AI summary</Chip>
+        )}
+        {!error && (
+          <span className="font-mono text-[9.5px] text-ink4">
+            {loading
+              ? `via ${row.summary?.engine || 'claude'} CLI`
+              : row.summary
+                ? `via ${row.summary.engine || 'claude'}${row.summary.at ? ` · ${agoTxt(row.summary.at)}` : ''}`
+                : ''}
+          </span>
+        )}
+      </ItemHeader>
+      <ItemContent>
+        {loading && <div className="font-mono text-[11px] text-ink3">summarizing recent activity...</div>}
+        {!loading && error && <div className="text-[12.5px] text-ink3">{error}</div>}
+        {!loading && !error && row.summary && (
+          <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground">{row.summary.text}</div>
+        )}
+      </ItemContent>
+      {!loading && (
+        <ItemFooter className="justify-start">
+          <Button variant="outline" size="sm" className="h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>
+            {label}
+          </Button>
+        </ItemFooter>
+      )}
+    </Item>
+  );
+}
+
+function ConversationPlaceholder() {
+  return (
+    <Item size="sm" role="group" className="flex-col items-stretch">
+      <ItemHeader>
+        <Chip variant="label" size="label" dot={false}>Conversation</Chip>
+      </ItemHeader>
+      <ItemContent>
+        <div className="font-mono text-[11px] text-ink4">
+          The live conversation timeline arrives in stage 3 of the TypeScript migration (see docs/ts-migration-plan.md).
+        </div>
+      </ItemContent>
+    </Item>
   );
 }
 
@@ -199,47 +240,52 @@ export function SessionDetail({
           </Button>
         </div>
 
-        <div className="mt-4 flex flex-col gap-3">
-          {stream.length ? stream.map((it, i) => <StreamItem key={i} item={it} />) : (
-            <div className="font-mono text-[11px] text-ink4">no updates in this thread yet.</div>
+        <div className="mt-4">
+          <ItemGroup>
+            {stream.length ? (
+              stream.map((it, i) => (
+                <Fragment key={i}>
+                  <StreamRow item={it} />
+                  {i < stream.length - 1 && <ItemSeparator />}
+                </Fragment>
+              ))
+            ) : (
+              <div className="py-3 font-mono text-[11px] text-ink4">no updates in this thread yet.</div>
+            )}
+          </ItemGroup>
+
+          {row && (
+            <>
+              <ItemSeparator />
+              <SummarySection
+                row={row}
+                loading={!!summaryLoading}
+                error={summaryError}
+                onGenerate={() => onGenerateSummary?.(row)}
+              />
+            </>
           )}
-        </div>
 
-        {row && (
-          <div className="mt-3">
-            <SummaryBlock
-              row={row}
-              loading={!!summaryLoading}
-              error={summaryError}
-              onGenerate={() => onGenerateSummary?.(row)}
-            />
-          </div>
-        )}
-
-        <div className="mt-3 rounded-md border border-border bg-panel/60 p-3">
-          <div className="flex items-center gap-2">
-            <Chip variant="label" size="label" dot={false}>Conversation</Chip>
-          </div>
-          <div className="mt-1.5 font-mono text-[11px] text-ink4">
-            The live conversation timeline arrives in stage 3 of the TypeScript migration (see docs/ts-migration-plan.md).
-          </div>
+          <ItemSeparator />
+          <ConversationPlaceholder />
         </div>
       </div>
       </ScrollArea>
 
-      <div className="mx-6 flex max-h-[45vh] flex-none flex-col rounded-t-md border border-b-0 border-l-2 border-border border-l-done bg-panel2 p-3">
+      <div className="mx-6 flex max-h-[45vh] flex-none flex-col gap-2 pb-3">
+        <Separator />
         <div className="flex items-center gap-3">
           <Chip variant="label-done" size="label" dot={false}>Ask the session</Chip>
         </div>
         {answer && (
-          <ScrollArea className="mt-3 min-h-0 flex-1">
-            <div className="grid gap-1">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="grid gap-1 pr-2">
               <div className="pl-2 text-[12.5px] text-ink2">{q || 'your question'}</div>
               <div className="whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">{answer}</div>
             </div>
           </ScrollArea>
         )}
-        <div className="mt-2 flex flex-none gap-2">
+        <div className="flex flex-none gap-2">
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}
