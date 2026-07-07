@@ -9,6 +9,7 @@
     "dev": "vite",
     "dev:electron": "electron-vite dev",
     "build": "electron-vite build",
+    "build:browser": "vite build",
     "preview": "vite preview",
     "typecheck": "tsc -p tsconfig.json --noEmit"
   },

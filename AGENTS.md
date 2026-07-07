@@ -120,9 +120,11 @@ fixtures, so the whole UI renders and is fully driveable without launching
 Electron.
 
 Prefer the browser for UI work. It is the fast loop, needs no rebuild, and does
-not read any real session data:
+not read any real session data. Two renderers coexist until the stage-4 cutover
+(see `docs/ts-migration-plan.md`); serve whichever you are working on:
 
-    npm run renderer     # serves electron/renderer/ at http://localhost:4173
+    npm run renderer       # OLD static renderer (shipped default) at http://localhost:4173
+    npm run renderer:vite  # NEW Vite renderer (renderer-vite, HUMANCTL_VITE) with HMR at http://localhost:5183
 
 Open that URL and verify layout, the Inbox / Sessions / Metrics / Fleet /
 Settings views, the theme toggle, the nav rail, the Atlas drawer, and
@@ -130,6 +132,26 @@ interactions against fixture data. Fixture mode always renders the built-in
 harness glyphs (never runtime-extracted icons) and never shows PR chips (both
 are real-app-only, see `docs/perf.md` and `docs/commands.md`). This is the
 default way to iterate on the interface.
+
+Toolchain is Node-ecosystem only, on the repo's Node (`.nvmrc`: 24). There is no
+Python step: `npm run renderer` serves the static old renderer through the
+zero-dependency `scripts/serve-static.ts` (node:http, no build, no deps) and
+`npm run renderer:vite` runs Vite directly. `npm run renderer:vite:serve` builds
+the Vite renderer and serves the production bundle via the same static server on
+port 4188 (a Node-agnostic serve for any runner that carries an older Node than
+Vite itself accepts).
+
+To gate a UI change with screenshots, point the preview screenshot tool at the
+running server. A working `.claude/launch.json` config (git-ignored, per
+machine) for the Vite renderer:
+
+    { "name": "humanctl-vite", "runtimeExecutable": "npm",
+      "runtimeArgs": ["--prefix", "<abs path to this checkout>", "run", "renderer:vite"],
+      "port": 5183 }
+
+Gate both themes: the app defaults to the dark theme, so toggle to light through
+the user/settings picker at the foot of the nav (the theme is not driven by the
+OS `prefers-color-scheme` unless the theme is set to `system`).
 
 Use the real Electron app only for what the browser cannot show: real session
 data, the `window.humanctl` IPC surface, native window chrome (frameless drag,
