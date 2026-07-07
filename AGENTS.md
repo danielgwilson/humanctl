@@ -91,6 +91,30 @@ rules exist to keep that class of bug from recurring as the app grows.
   remembering to blocklist it later. Extend `isInboxRelevantChange` (and its
   selftest coverage) every time a new system-written file or directory is
   introduced under a watched path.
+- **Never block the Electron main process (2026-07-07 doctrine).** The
+  main/browser process is single-threaded and owns the native window;
+  synchronous fs, CPU-heavy parsing, or synchronous IPC on it stalls window
+  dragging, clicks, and animation. This is the recurring "laggy, can't even
+  drag the window" class: the session reader (`lib/sessions.ts` and its
+  `readFileSync`/`statSync`/`readdirSync`) was being invoked synchronously
+  inside `main.ts`'s IPC handlers, so every poll and file-change re-read and
+  re-parsed the real fleet's transcripts on the main thread and blocked the
+  event loop (fixtures hid it because an empty fleet reads instantly). RULES:
+  the transcript watch/parse/aggregate pipeline runs in a `utilityProcess`
+  (or `worker_threads`), never on main; `main.ts` only owns the window and
+  routes IPC; no `ipcMain.handle` may synchronously read/parse transcripts;
+  never `ipcRenderer.sendSync`; prefer `fs.promises`/streaming over sync fs;
+  a single coalescing watcher, never a re-scan storm. Canonical reference:
+  Electron's performance guide + `utilityProcess` API; James Long, "The
+  Horror of Blocking Electron's Main Process."
+- **The perf gate must exercise realistic-scale data AND measure main-process
+  event-loop delay.** A fixture/empty-fleet gate is structurally blind to
+  main-process blocking. `perf:selftest` must run against a realistic-scale
+  synthetic corpus (100+ sessions, some large transcripts) and instrument the
+  main process with `perf_hooks.monitorEventLoopDelay`, asserting p99 stays
+  under ~16-20ms (hard-fail above ~50ms). Cold-open/click-to-paint on empty
+  fixtures cannot see this; the event-loop-delay p99 on real-scale data can.
+  See `docs/perf.md`.
 
 ## UI PRs: screenshots and one-owner audit (hardline)
 
