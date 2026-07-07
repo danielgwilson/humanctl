@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import { useMemo, useRef, useState } from 'react';
+import { useVirtualizer } from '@tanstack/react-virtual';
 import { List, Bookmark } from 'lucide-react';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { Input } from '@/components/ui/input';
@@ -23,6 +24,21 @@ interface SessionsFilter {
 }
 
 const DEFAULT_FILTER: SessionsFilter = { q: '', state: '', harness: '', sort: 'recent' };
+
+// A real fleet is 100+ sessions, all rendered here (DESIGN.md: "Complete
+// fleet | Sessions view"), re-reconciling on every 20s poll -- exactly the
+// long list AGENTS.md's perf SLOs care about. Virtualized below via ONE
+// `@tanstack/react-virtual` instance over a single combined array (the
+// "Pinned" section header plus both row groups, in render order) so there
+// is still exactly one scroll region and the pinned/rest grouping, click-
+// to-open, pin toggling, and state chips all behave identically to the
+// unvirtualized version -- only which DOM rows are mounted changes.
+const ROW_ESTIMATE_PX = 76;
+const HEADER_ESTIMATE_PX = 28;
+
+type SessionVirtualItem =
+  | { kind: 'pinned-header'; key: string; count: number }
+  | { kind: 'row'; key: string; row: SessionRow; pinned: boolean };
 
 function displayTitle(row: SessionRow): string {
   return row.customTitle || row.title || row.id.slice(0, 10);
@@ -190,49 +206,66 @@ export function SessionsView({
     return { pinnedList: p, restList: r };
   }, [filtered, pins]);
 
+  const virtualItems = useMemo<SessionVirtualItem[]>(() => {
+    const out: SessionVirtualItem[] = [];
+    if (pinnedList.length > 0) {
+      out.push({ kind: 'pinned-header', key: '__pinned-header__', count: pinnedList.length });
+      for (const row of pinnedList) out.push({ kind: 'row', key: row.id, row, pinned: true });
+    }
+    for (const row of restList) out.push({ kind: 'row', key: row.id, row, pinned: false });
+    return out;
+  }, [pinnedList, restList]);
+
+  const scrollRef = useRef<HTMLDivElement | null>(null);
+  const rowVirtualizer = useVirtualizer({
+    count: virtualItems.length,
+    getScrollElement: () => scrollRef.current,
+    estimateSize: (index) => (virtualItems[index]?.kind === 'pinned-header' ? HEADER_ESTIMATE_PX : ROW_ESTIMATE_PX),
+    overscan: 8,
+    getItemKey: (index) => virtualItems[index].key,
+  });
+
   const total = rows.length;
 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={List} title="Sessions" subtitle={`${total} ${total === 1 ? 'session' : 'sessions'}`} />
       <SessionsToolbar filter={filter} onChange={setFilter} />
-      <ScrollArea className="min-h-0 flex-1">
+      <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
         {total === 0 ? (
           <div className="p-12 text-center text-[12.5px] text-ink3">no sessions in the last 72h.</div>
         ) : filtered.length === 0 ? (
           <div className="p-12 text-center text-[12.5px] text-ink3">no sessions match.</div>
         ) : (
-          <>
-            {pinnedList.length > 0 && (
-              <>
-                <div className="flex items-center gap-2 border-b border-border bg-bg2 px-6 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">
-                  <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris" aria-hidden="true" />
-                  Pinned
-                  <span className="text-ink4">{pinnedList.length}</span>
+          <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), width: '100%' }}>
+            {rowVirtualizer.getVirtualItems().map((vRow) => {
+              const item = virtualItems[vRow.index];
+              return (
+                <div
+                  key={item.key}
+                  data-index={vRow.index}
+                  ref={rowVirtualizer.measureElement}
+                  style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
+                >
+                  {item.kind === 'pinned-header' ? (
+                    <div className="flex items-center gap-2 border-b border-border bg-bg2 px-6 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">
+                      <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris" aria-hidden="true" />
+                      Pinned
+                      <span className="text-ink4">{item.count}</span>
+                    </div>
+                  ) : (
+                    <SessionRowItem
+                      row={item.row}
+                      selected={item.row.id === selectedId}
+                      pinned={item.pinned}
+                      onSelect={onSelect}
+                      onTogglePin={onTogglePin}
+                    />
+                  )}
                 </div>
-                {pinnedList.map((row) => (
-                  <SessionRowItem
-                    key={row.id}
-                    row={row}
-                    selected={row.id === selectedId}
-                    pinned
-                    onSelect={onSelect}
-                    onTogglePin={onTogglePin}
-                  />
-                ))}
-              </>
-            )}
-            {restList.map((row) => (
-              <SessionRowItem
-                key={row.id}
-                row={row}
-                selected={row.id === selectedId}
-                pinned={false}
-                onSelect={onSelect}
-                onTogglePin={onTogglePin}
-              />
-            ))}
-          </>
+              );
+            })}
+          </div>
         )}
       </ScrollArea>
     </div>

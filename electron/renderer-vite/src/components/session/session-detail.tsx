@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react';
+import { Fragment, useRef, useState } from 'react';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -27,6 +27,22 @@ import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 // embedded pane (no back breadcrumb) or the full-width session-detail
 // overlay reached from a list (breadcrumb present); both render this same
 // tree, never a second component.
+//
+// STAGE-2E scroll-trap fix: this used to wrap header + stream + summary +
+// timeline in ONE outer ScrollArea while SessionTimeline ALSO ran its own
+// nested `overflow-y-auto` scroll internally -- two independent scroll
+// regions, so scrolling the outer one could carry the header out of view
+// while the inner one silently ate further scroll input, with no way back up
+// without first hovering off the timeline. Fixed by making this a genuine
+// three-row flex column: a `flex-none` header (back breadcrumb, glyph/
+// title/state/resume, meta line) that is structurally outside any scroll
+// region and therefore always visible; ONE `flex-1 min-h-0` ScrollArea that
+// is the sole scroller for the stream + summary + conversation timeline,
+// flowing inline; and the `flex-none` ask-the-session composer pinned at the
+// bottom, unchanged. `bodyViewportRef` is threaded down to SessionTimeline so
+// its sticky-bottom-on-append and scroll-position-preservation-on-prepend
+// behaviors operate on this ONE shared scroller instead of a nested one (see
+// session-timeline.tsx's header comment for the full rationale).
 //
 // The live-timeline "Conversation" reader (session:timeline / the
 // session:append incremental cursor) is stage 3: SessionTimeline
@@ -173,6 +189,10 @@ export function SessionDetail({
   const [q, setQ] = useState('');
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+  // The single shared body scroller (see the STAGE-2E header comment):
+  // SessionTimeline reads/writes this element directly for sticky-bottom and
+  // scroll-restore, rather than owning a second nested scroll region.
+  const bodyViewportRef = useRef<HTMLDivElement | null>(null);
 
   if (!thread) {
     return <div className="p-6 font-mono text-[12px] text-ink3">Select a thread to open it.</div>;
@@ -198,8 +218,10 @@ export function SessionDetail({
 
   return (
     <div className="mx-auto flex h-full w-full max-w-[840px] flex-col overflow-hidden">
-      <ScrollArea className="min-h-0 flex-1">
-      <div className="px-6 pb-4 pt-3">
+      {/* Pinned header: back breadcrumb + glyph/title/state/resume + meta
+          line. Structurally outside the scroll region below -- never
+          scrolls, always visible, the fix for the scroll-trap symptom. */}
+      <div className="flex-none px-6 pb-3 pt-3">
         {onBack && (
           <button type="button" onClick={onBack} className="mb-2 font-mono text-[10.5px] text-ink3 hover:text-foreground">
             &#8592; {backLabel || 'back'}
@@ -226,36 +248,40 @@ export function SessionDetail({
             {row?.harness === 'codex' ? 'Resume in Codex' : 'Resume in Claude'}
           </Button>
         </div>
+      </div>
 
-        <div className="mt-4">
-          <ItemGroup>
-            {stream.length ? (
-              stream.map((it, i) => (
-                <Fragment key={i}>
-                  <StreamRow item={it} />
-                  {i < stream.length - 1 && <ItemSeparator />}
-                </Fragment>
-              ))
-            ) : (
-              <div className="py-3 font-mono text-[11px] text-ink4">no updates in this thread yet.</div>
-            )}
-          </ItemGroup>
-
-          {row && (
-            <>
-              <ItemSeparator />
-              <SummarySection
-                row={row}
-                loading={!!summaryLoading}
-                error={summaryError}
-                onGenerate={() => onGenerateSummary?.(row)}
-              />
-            </>
+      {/* THE single body scroll region: notes/asks stream + summary +
+          conversation timeline, all flowing inline. `bodyViewportRef` is the
+          element SessionTimeline reads/writes for its scroll behaviors. */}
+      <ScrollArea className="min-h-0 flex-1" viewportRef={bodyViewportRef}>
+      <div className="px-6 pb-4">
+        <ItemGroup>
+          {stream.length ? (
+            stream.map((it, i) => (
+              <Fragment key={i}>
+                <StreamRow item={it} />
+                {i < stream.length - 1 && <ItemSeparator />}
+              </Fragment>
+            ))
+          ) : (
+            <div className="py-3 font-mono text-[11px] text-ink4">no updates in this thread yet.</div>
           )}
+        </ItemGroup>
 
-          <ItemSeparator />
-          <SessionTimeline row={row} />
-        </div>
+        {row && (
+          <>
+            <ItemSeparator />
+            <SummarySection
+              row={row}
+              loading={!!summaryLoading}
+              error={summaryError}
+              onGenerate={() => onGenerateSummary?.(row)}
+            />
+          </>
+        )}
+
+        <ItemSeparator />
+        <SessionTimeline row={row} scrollContainerRef={bodyViewportRef} />
       </div>
       </ScrollArea>
 
