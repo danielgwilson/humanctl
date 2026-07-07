@@ -13,6 +13,7 @@ import {
   ItemSeparator,
 } from '@/components/ui/item';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
+import { SessionTimeline } from '@/components/session/session-timeline';
 import { agoTxt } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
@@ -21,17 +22,18 @@ import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 // renderDetail()/streamItemHtml comment ("the SAME detail component
 // rendered into the Inbox's second pane... never a fork"): header (glyph,
 // title, state chip, resume action), the notes/asks/qa stream, an AI-summary
-// block, and the ask-the-session composer as a sticky footer. `backLabel`
-// switches on whether this is the Inbox embedded pane (no back breadcrumb)
-// or the full-width session-detail overlay reached from a list (breadcrumb
-// present); both render this same tree, never a second component.
+// block, the live conversation timeline, and the ask-the-session composer as
+// a sticky footer. `backLabel` switches on whether this is the Inbox
+// embedded pane (no back breadcrumb) or the full-width session-detail
+// overlay reached from a list (breadcrumb present); both render this same
+// tree, never a second component.
 //
 // The live-timeline "Conversation" reader (session:timeline / the
-// session:append incremental cursor) is explicitly STAGE 3 scope per
-// docs/ts-migration-plan.md -- the react re-render model vs. the hand-tuned
-// signature-gating in renderer.js is the highest-risk item in that stage,
-// so it gets a dedicated, closely reviewed PR rather than a naive port here.
-// This view shows a quiet, honest placeholder in its place.
+// session:append incremental cursor) is stage 3: SessionTimeline
+// (session-timeline.tsx) owns that signal exclusively -- it is the sole home
+// for the conversation stream in this view, replacing the placeholder that
+// used to sit here, and it owns its own state end to end (see that file's
+// header comment for the perf rationale).
 //
 // De-carded (audit punch #1, DESIGN.md "Flat surfaces, no cards, no
 // shadows-as-hierarchy"): every `rounded-md border ... bg-panel p-3` box
@@ -147,21 +149,6 @@ function SummarySection({
   );
 }
 
-function ConversationPlaceholder() {
-  return (
-    <Item size="sm" role="group" className="flex-col items-stretch">
-      <ItemHeader>
-        <Chip variant="label" size="label" dot={false}>Conversation</Chip>
-      </ItemHeader>
-      <ItemContent>
-        <div className="font-mono text-[11px] text-ink4">
-          The live conversation timeline arrives in stage 3 of the TypeScript migration (see docs/ts-migration-plan.md).
-        </div>
-      </ItemContent>
-    </Item>
-  );
-}
-
 export function SessionDetail({
   thread,
   row,
@@ -267,7 +254,7 @@ export function SessionDetail({
           )}
 
           <ItemSeparator />
-          <ConversationPlaceholder />
+          <SessionTimeline row={row} />
         </div>
       </div>
       </ScrollArea>
