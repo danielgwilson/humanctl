@@ -92,6 +92,23 @@ function writeState(next: UiState): boolean {
   try { fs.writeFileSync(statePath(), JSON.stringify(clean, null, 2)); return true; } catch { return false; }
 }
 
+// STAGE 1b (feat/vite-renderer-1b): behind HUMANCTL_VITE, load the
+// electron-vite React/Tailwind/shadcn renderer (electron/renderer-vite/)
+// instead of the static electron/renderer/. Default boot (no flag) is
+// unchanged; both renderers coexist and consume the SAME preload bridge
+// below (no new IPC channel). HUMANCTL_VITE=1 with HUMANCTL_VITE_DEV_URL set
+// loads the vite dev server (fast loop, HMR); HUMANCTL_VITE=1 alone loads the
+// `npm run build` output at
+// electron/renderer-vite/dist-electron-vite/renderer/index.html (the
+// packaging proof for this stage; cutover to a real electron-builder input
+// is stage 4).
+const VITE_RENDERER_DIST = path.join(APP_ROOT, 'electron', 'renderer-vite', 'dist-electron-vite', 'renderer', 'index.html');
+function rendererTarget(): { file?: string; url?: string } {
+  if (!process.env.HUMANCTL_VITE) return { file: path.join(APP_ROOT, 'electron', 'renderer', 'index.html') };
+  if (process.env.HUMANCTL_VITE_DEV_URL) return { url: process.env.HUMANCTL_VITE_DEV_URL };
+  return { file: VITE_RENDERER_DIST };
+}
+
 function createWindow(): void {
   win = new BrowserWindow({
     width: 1240,
@@ -109,7 +126,9 @@ function createWindow(): void {
       sandbox: true,
     },
   });
-  win.loadFile(path.join(APP_ROOT, 'electron', 'renderer', 'index.html'));
+  const target = rendererTarget();
+  if (target.url) win.loadURL(target.url);
+  else win.loadFile(target.file!);
 
   win.once('ready-to-show', () => { win!.show(); win!.focus(); });
 

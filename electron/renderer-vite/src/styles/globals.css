@@ -1,0 +1,215 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+/* ============================================================
+   humanctl design tokens, ported verbatim from
+   electron/renderer/index.html's #kit-tokens + a11y-base stylesheets.
+   This is the SAME token set the static renderer uses: colors, fonts,
+   spacing, radii. Fonts stay LOCAL stacks only (no network), matching the
+   born-clean rule; if Space Grotesk / JetBrains Mono are not installed
+   locally, the stack falls through to system sans/mono, same as the old
+   renderer.
+   ============================================================ */
+:root {
+  /* canvas, dark-first premium near-black (identical values to index.html) */
+  --bg: #0a0c10;
+  --bg2: #0d1016;
+  --panel: #141821;
+  --panel2: #171c26;
+  --rule: #222836;
+  --rule2: #2b3444;
+  --ink: #eef1f6;
+  --ink2: #a7b0bf;
+  --ink3: #8b93a3;
+  --ink4: #7d89a0;
+  --iris: #8b89f7;
+  --iris-dim: #6f6ddb;
+
+  /* semantic hues, one per axis (color = meaning only, never decoration) */
+  --s-work: #33c98d;
+  --s-need: #f5b73d;
+  --s-block: #f0603f;
+  --s-idle: #7b8598;
+  --s-done: #4db6f0;
+  --h-codex: #f0883e;
+  --h-claude: #b07cf5;
+
+  --font-disp: 'Space Grotesk', -apple-system, system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+
+  --radius: 9px; /* --r2 in the old kit */
+  --radius-sm: 6px; /* --r1 */
+  --radius-lg: 13px; /* --r3 */
+
+  /* shadcn semantic tokens, mapped onto the humanctl palette above so
+     shadcn primitives (Select, Sheet, ContextMenu, Dialog, Tooltip) render
+     in the SAME language as the bespoke components they replace, not
+     default shadcn zinc. */
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--panel);
+  --card-foreground: var(--ink);
+  --popover: var(--panel2);
+  --popover-foreground: var(--ink);
+  --primary: var(--iris);
+  --primary-foreground: #0a0c10;
+  --secondary: var(--panel2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--panel2);
+  --muted-foreground: var(--ink3);
+  --accent: var(--panel2);
+  --accent-foreground: var(--ink);
+  --destructive: var(--s-block);
+  --destructive-foreground: #ffffff;
+  --border: var(--rule2);
+  --input: var(--rule2);
+  --ring: var(--iris);
+}
+
+/* light theme override, identical values to index.html's body.light block */
+.light {
+  --bg: #f4f5f8;
+  --bg2: #eceef3;
+  --panel: #ffffff;
+  --panel2: #f7f8fb;
+  --rule: #e2e6ee;
+  --rule2: #d3d9e4;
+  --ink: #12151c;
+  --ink2: #454c5a;
+  --ink3: #5c6373;
+  --ink4: #5f6674;
+
+  --background: var(--bg);
+  --foreground: var(--ink);
+  --card: var(--panel);
+  --card-foreground: var(--ink);
+  --popover: var(--panel2);
+  --popover-foreground: var(--ink);
+  --primary: var(--iris);
+  --primary-foreground: #ffffff;
+  --secondary: var(--panel2);
+  --secondary-foreground: var(--ink);
+  --muted: var(--panel2);
+  --muted-foreground: var(--ink3);
+  --accent: var(--panel2);
+  --accent-foreground: var(--ink);
+  --border: var(--rule2);
+  --input: var(--rule2);
+  --ring: var(--iris);
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  /* humanctl semantic hues, exposed as Tailwind utilities too:
+     bg-work, text-need, border-block, etc. */
+  --color-work: var(--s-work);
+  --color-need: var(--s-need);
+  --color-block: var(--s-block);
+  --color-idle: var(--s-idle);
+  --color-done: var(--s-done);
+  --color-codex: var(--h-codex);
+  --color-claude: var(--h-claude);
+  --color-bg2: var(--bg2);
+  --color-panel: var(--panel);
+  --color-panel2: var(--panel2);
+  --color-rule: var(--rule);
+  --color-rule2: var(--rule2);
+  --color-ink2: var(--ink2);
+  --color-ink3: var(--ink3);
+  --color-ink4: var(--ink4);
+  --color-iris: var(--iris);
+  --color-iris-dim: var(--iris-dim);
+
+  --font-sans: var(--font-disp);
+  --font-mono: var(--font-mono);
+
+  --radius-xs: calc(var(--radius) * 0.6);
+  --radius-sm: var(--radius-sm);
+  --radius-md: calc(var(--radius) * 0.9);
+  --radius-lg: var(--radius);
+  --radius-xl: var(--radius-lg);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--font-disp);
+    -webkit-font-smoothing: antialiased;
+    letter-spacing: -0.005em;
+  }
+  /* one shared focus-visible contract, ported from a11y-base in index.html:
+     keyboard focus only, never on mouse/touch clicks. shadcn/Radix primitives
+     already emit :focus-visible on their own interactive parts, so this rule
+     is inherited "for free" rather than re-declared per component. */
+  :focus {
+    outline: none;
+  }
+  :focus-visible {
+    outline: 2px solid var(--iris);
+    outline-offset: 2px;
+    border-radius: 4px;
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after {
+      animation: none !important;
+      transition: none !important;
+    }
+  }
+}
+
+/* the one shared chip component, ported from index.html's .chip */
+.hc-chip {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  padding: 2px 7px;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  line-height: 1.4;
+  white-space: nowrap;
+  background: color-mix(in srgb, var(--c) 15%, transparent);
+  color: color-mix(in srgb, var(--c) 78%, var(--ink));
+  border: 1px solid color-mix(in srgb, var(--c) 23%, transparent);
+}
+.hc-chip .dt {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--c);
+}
+.c-work { --c: var(--s-work); }
+.c-need { --c: var(--s-need); }
+.c-block { --c: var(--s-block); }
+.c-idle { --c: var(--s-idle); }
+.c-done { --c: var(--s-done); }
+.c-codex { --c: var(--h-codex); }
+.c-claude { --c: var(--h-claude); }
+
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-thumb { background: var(--rule2); border-radius: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
