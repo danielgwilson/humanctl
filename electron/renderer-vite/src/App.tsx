@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/shell/nav-sidebar';
+import { AppSidebar, SidebarEdgePeek } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
 import { ContextBar } from '@/components/shell/context-bar';
 import { CosDrawer } from '@/components/shell/cos-drawer';
@@ -26,10 +26,15 @@ const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '
 // STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
 // (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
 // in a full-height Linear/Slack-style layout: SidebarProvider wraps a
-// collapsible="icon" Sidebar (nav-sidebar.tsx) and a SidebarInset that owns
-// the header/content/context-bar column to its right. See DESIGN.md's
-// "Information architecture" section for the conformance statement and the
-// recorded tooltip-on-hover / full-height deviation from shell v3.
+// Sidebar (nav-sidebar.tsx) and a SidebarInset that owns the
+// header/content/context-bar column to its right. See DESIGN.md's
+// "Information architecture" section for the conformance statement.
+//
+// STAGE-OFFCANVAS (0.17.4): the Sidebar is now collapsible="offcanvas"
+// (fully hidden when collapsed, not an icon rail); <SidebarEdgePeek/> is
+// rendered here as a sibling of <AppSidebar/>, both inside SidebarProvider,
+// so it shares the same sidebar context to open it on a left-edge hover
+// (see nav-sidebar.tsx for why it cannot live nested inside AppSidebar).
 export default function App() {
   const { rows, threads, status, demo, refresh } = useFleetData();
   const { state, patch } = useAppState();
@@ -205,6 +210,7 @@ export default function App() {
           theme={state.theme}
           onSetTheme={(t) => patch({ theme: t })}
         />
+        <SidebarEdgePeek />
         <SidebarInset className="h-full overflow-hidden">
           <Header demo={demo} version={status?.version} rightRailOpen={state.rightRailOpen} onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })} />
           <div className="relative min-h-0 flex-1 overflow-hidden">
