@@ -98,7 +98,11 @@ rules exist to keep that class of bug from recurring as the app grows.
 Every UI-visible change, in every PR:
 
 1. Attach full-app screenshots covering all views, in both themes, on fixture
-   data (never real session data).
+   data (never real session data). Commit them under the top-level
+   `screenshots/<stage>/` directory (NOT `docs/`, which is in the npm `files`
+   allowlist and would ship the images inside the CLI tarball), and reference
+   them in the PR body by their `raw.githubusercontent.com/<owner>/<repo>/<branch>/screenshots/...`
+   URL.
 2. For every NEW visible element, state in the PR body: what signal it shows,
    and why it owns that signal on that screen (DESIGN.md's one-owner-per-
    signal rule). If the element duplicates a signal already shown elsewhere
