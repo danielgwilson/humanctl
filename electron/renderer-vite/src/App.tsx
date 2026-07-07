@@ -5,22 +5,23 @@ import { AppSidebar } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
 import { ContextBar } from '@/components/shell/context-bar';
 import { CosDrawer } from '@/components/shell/cos-drawer';
-import { PlaceholderView } from '@/components/shell/placeholder-view';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { SessionDetail } from '@/components/session/session-detail';
+import { MetricsView } from '@/components/views/metrics-view';
+import { FleetView } from '@/components/views/fleet-view';
+import { SessionsView } from '@/components/views/sessions-view';
+import { SettingsView } from '@/components/views/settings-view';
 import { useAppState, useFleetData, useSessionSummarize } from '@/hooks/use-humanctl';
-import type { SessionRow, ViewName } from '@/lib/types';
+import type { InboxThread, SessionRow, ViewName } from '@/lib/types';
 
-const STAGE_FOR_VIEW: Record<string, number> = { metrics: 2, fleet: 2, sessions: 2, settings: 2 };
-const LABEL_FOR_VIEW: Record<string, string> = { metrics: 'Metrics', fleet: 'Fleet', sessions: 'Sessions', settings: 'Settings' };
 const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '3': 'fleet', '4': 'sessions' };
 
 // App root for the renderer-vite renderer, the sole humanctl desktop
 // renderer. Wires the shell (full-height sidebar, inset header, inset
 // context bar, CoS drawer) around the Inbox view and the full-width
-// session-detail view reached from it. Sessions/Metrics/Fleet/Settings are
-// still quiet placeholders (a later migration stage); the live-timeline
-// reader and the reply/suggested-responses feature are further out.
+// session-detail view reached from it, plus the four real
+// Sessions/Metrics/Fleet/Settings views (stage 2d); the reply/suggested-
+// responses feature is further out.
 //
 // STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
 // (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
@@ -127,8 +128,25 @@ export default function App() {
   }
 
   const selectedId = state.selectedId || null;
-  const selectedThread = selectedId ? threads.find((t) => t.sessionId === selectedId) || null : null;
   const selectedRow = selectedId ? byId.get(selectedId) || null : null;
+  const matchedThread = selectedId ? threads.find((t) => t.sessionId === selectedId) || null : null;
+  // Sessions view (stage 2d) can open detail on ANY session in the 72h scan,
+  // not just ones with an active ask/note -- inboxThreads (lib/commands.ts)
+  // only assembles a thread for sessions with a note, a need/block state, or
+  // a persisted ask log. When a session has no matching thread, synthesize an
+  // empty one from the row alone so SessionDetail still renders (its stream
+  // falls back to its own "no updates in this thread yet" empty state); this
+  // never touches SessionDetail itself, just what App feeds it.
+  const selectedThread: InboxThread | null = matchedThread || (selectedRow ? {
+    sessionId: selectedRow.id,
+    repo: selectedRow.repo,
+    harness: selectedRow.harness,
+    cwd: selectedRow.cwd,
+    path: selectedRow.path || '',
+    title: selectedRow.customTitle || selectedRow.title,
+    items: [],
+    lastTs: new Date(Date.now() - (selectedRow.ageMs || 0)).toISOString(),
+  } : null);
 
   function openDetail(id: string) {
     patch({ selectedId: id });
@@ -218,8 +236,20 @@ export default function App() {
                 summaryErrors={summaryErrors}
                 onGenerateSummary={generateSummary}
               />
+            ) : state.view === 'sessions' ? (
+              <SessionsView
+                rows={rows}
+                pins={pins}
+                selectedId={selectedId}
+                onSelect={openDetail}
+                onTogglePin={togglePin}
+              />
+            ) : state.view === 'metrics' ? (
+              <MetricsView rows={rows} status={status} />
+            ) : state.view === 'fleet' ? (
+              <FleetView rows={rows} status={status} />
             ) : (
-              <PlaceholderView label={LABEL_FOR_VIEW[state.view] || state.view} stage={STAGE_FOR_VIEW[state.view] || 2} />
+              <SettingsView state={state} patch={patch} />
             )}
           </div>
           <ContextBar status={status} ctxPct={selectedRow?.contextPct ?? null} />
