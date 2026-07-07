@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.16.9",
+  "version": "0.16.10",
   "description": "A control plane for the human bottleneck.",
   "main": "dist/electron/main.js",
   "engines": {
@@ -38,11 +38,12 @@
     "renderer:vite:build": "npm --prefix electron/renderer-vite run build:browser",
     "renderer:vite:serve": "npm run renderer:vite:build && tsx scripts/serve-static.ts --dir electron/renderer-vite/dist --port 4188",
     "desktop:sessions": "tsx lib/sessions.ts",
-    "app:build": "npm run build:lib && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
-    "app:dmg": "npm run build:lib && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
-    "app:install": "npm run app:build && npm run perf:selftest && bash scripts/install-app.sh && npm run smoke:packaged",
+    "build:renderer-vite": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build",
+    "app:build": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
+    "app:dmg": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
+    "app:install": "npm run app:build && npm run perf:selftest && bash scripts/install-app.sh && npm run smoke:packaged && HUMANCTL_VITE=1 npm run smoke:packaged",
     "smoke:packaged": "bash scripts/smoke-packaged.sh",
-    "app:release": "npm run build:lib && electron-builder --mac dmg --config.mac.notarize=true",
+    "app:release": "npm run build:lib && npm run build:renderer-vite && electron-builder --mac dmg --config.mac.notarize=true",
     "notch:generate": "cd attic/notch/macos && xcodegen generate",
     "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
     "notch:open": "pkill -x HumanctlNotch || true && open -a ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
@@ -56,6 +57,7 @@
       "dist/electron/**/*",
       "dist/lib/**/*",
       "electron/renderer/**/*",
+      "electron/renderer-vite/dist-electron-vite/renderer/**/*",
       "electron/assets/**/*",
       "package.json",
       "!node_modules/**/*"
