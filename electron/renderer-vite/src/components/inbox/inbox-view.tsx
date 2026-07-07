@@ -3,6 +3,7 @@ import { InboxToolbar } from './inbox-toolbar';
 import { ThreadRow } from './thread-row';
 import { SessionDetail } from '@/components/session/session-detail';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import type { InboxThread, SessionRow } from '@/lib/types';
 import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
 
@@ -62,12 +63,12 @@ export function InboxView({
           <span aria-hidden="true">&#9993;</span>
           <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-ink2">Inbox</span>
           <span className="font-mono text-[9.5px] text-ink4">{list.length} {list.length === 1 ? 'thread' : 'threads'}</span>
-          <Button variant="outline" size="sm" className="ml-auto h-6 border-rule2 px-2 font-mono text-[9px] text-ink3" onClick={onMarkAllRead}>
+          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 font-mono text-[9px] text-ink3" onClick={onMarkAllRead}>
             mark all read
           </Button>
         </div>
         <InboxToolbar filter={filter} onChange={setFilter} />
-        <div className="flex-1 overflow-y-auto">
+        <ScrollArea className="min-h-0 flex-1">
           {list.length === 0 ? (
             <div className="p-6 font-mono text-[12px] text-ink3">
               No agent updates match. Agents post here via <code className="rounded bg-panel2 px-1.5 py-px">humanctl note</code>.
@@ -88,7 +89,7 @@ export function InboxView({
               />
             ))
           )}
-        </div>
+        </ScrollArea>
       </aside>
       <section className="min-h-0 min-w-0 overflow-hidden">
         <SessionDetail

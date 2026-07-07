@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Sheet, SheetContent, SheetHeader, SheetTitle } from '@/components/ui/sheet';
 import { Input } from '@/components/ui/input';
 import { Button } from '@/components/ui/button';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { useAtlasAsk } from '@/hooks/use-humanctl';
 
 // Ported from atlas.js: the chief-of-staff drawer, a summonable right-side
@@ -28,27 +29,29 @@ export function CosDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
           <span className="text-[15px]" aria-hidden="true">🤝</span>
           <SheetTitle className="font-mono text-[10px] font-semibold uppercase tracking-widest text-iris">Chief of staff</SheetTitle>
         </SheetHeader>
-        <div className="flex flex-1 flex-col gap-3 overflow-y-auto p-4">
-          <div className="flex flex-1 flex-col gap-3 overflow-y-auto">
-            {history.length === 0 && !loading && (
-              <p className="font-mono text-[10.5px] leading-relaxed text-ink4">
-                Ask your chief of staff things like &quot;what needs me right now?&quot; Answers are advisory only, grounded in pulse, notes,
-                and session states, and cite what they refer to.
-              </p>
-            )}
-            {history.map((x, i) => (
-              <div key={i} className="grid gap-1.5">
-                <div className="text-[12px] text-ink2">{x.q}</div>
-                <div className="whitespace-pre-wrap border-l-2 border-iris-dim pl-2 text-[12.5px] leading-relaxed text-foreground">{x.a}</div>
-              </div>
-            ))}
-            {loading && (
-              <div className="grid gap-1.5">
-                <div className="text-[12px] text-ink2">{q}</div>
-                <div className="font-mono text-[11px] text-ink3">thinking...</div>
-              </div>
-            )}
-          </div>
+        <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
+          <ScrollArea className="min-h-0 flex-1">
+            <div className="flex flex-col gap-3">
+              {history.length === 0 && !loading && (
+                <p className="font-mono text-[10.5px] leading-relaxed text-ink4">
+                  Ask your chief of staff things like &quot;what needs me right now?&quot; Answers are advisory only, grounded in pulse, notes,
+                  and session states, and cite what they refer to.
+                </p>
+              )}
+              {history.map((x, i) => (
+                <div key={i} className="grid gap-1.5">
+                  <div className="text-[12px] text-ink2">{x.q}</div>
+                  <div className="whitespace-pre-wrap border-l-2 border-iris-dim pl-2 text-[12.5px] leading-relaxed text-foreground">{x.a}</div>
+                </div>
+              ))}
+              {loading && (
+                <div className="grid gap-1.5">
+                  <div className="text-[12px] text-ink2">{q}</div>
+                  <div className="font-mono text-[11px] text-ink3">thinking...</div>
+                </div>
+              )}
+            </div>
+          </ScrollArea>
           <div className="mt-3 flex flex-none gap-1.5">
             <Input
               value={q}
@@ -59,7 +62,7 @@ export function CosDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
               disabled={loading}
               maxLength={500}
             />
-            <Button onClick={send} disabled={loading} className="flex-none bg-transparent border border-iris-dim text-iris hover:bg-iris/10">
+            <Button variant="accent-outline" onClick={send} disabled={loading} className="flex-none">
               Ask
             </Button>
           </div>

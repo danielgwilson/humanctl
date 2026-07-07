@@ -179,36 +179,11 @@
   }
 }
 
-/* the one shared chip component, ported from index.html's .chip */
-.hc-chip {
-  font-family: var(--font-mono);
-  font-size: 10px;
-  font-weight: 500;
-  letter-spacing: 0.02em;
-  padding: 2px 7px;
-  border-radius: 5px;
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  line-height: 1.4;
-  white-space: nowrap;
-  background: color-mix(in srgb, var(--c) 15%, transparent);
-  color: color-mix(in srgb, var(--c) 78%, var(--ink));
-  border: 1px solid color-mix(in srgb, var(--c) 23%, transparent);
-}
-.hc-chip .dt {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: var(--c);
-}
-.c-work { --c: var(--s-work); }
-.c-need { --c: var(--s-need); }
-.c-block { --c: var(--s-block); }
-.c-idle { --c: var(--s-idle); }
-.c-done { --c: var(--s-done); }
-.c-codex { --c: var(--h-codex); }
-.c-claude { --c: var(--h-claude); }
+/* The .hc-chip dialect is retired: components/ui/chip.tsx (built on shadcn
+   Badge) is now the one shared small-labeled-pill component everywhere,
+   applying the same color-mix recipe (15% hue bg, 78%-toward-ink text, 23%
+   hue border) via inline style + Tailwind utilities instead of a bespoke
+   global CSS class + per-hue modifier classes. */
 
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-thumb { background: var(--rule2); border-radius: 8px; }

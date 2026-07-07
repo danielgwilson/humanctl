@@ -101,6 +101,37 @@ UI PRs that touch any interactive control must keyboard-test it (Tab to it,
 operate it without a mouse) and state the contrast ratio for any new or
 changed text/background pairing.
 
+## Component contract (renderer-vite, stage 2a)
+
+Commodity controls use the shadcn primitive, restyled onto the humanctl
+tokens above, never a bespoke reimplementation and never stock shadcn
+zinc/new-york look:
+
+- **A small labeled pill is `Chip`** (`components/ui/chip.tsx`, built on
+  shadcn Badge), covering session-state chips, note-level chips
+  (fyi/review/blocked/done), and mono section/stream-tag labels. One
+  component, one cva variant set, one hue-per-axis map -- never a raw
+  `font-mono text-[9px] uppercase ...` span and never a second chip dialect.
+- **A button is a `Button` cva variant** (`components/ui/button.tsx`), never
+  an inline `className` restyle and never a raw `<button>`. `iris` is the
+  primary accent action; `done` and `accent-outline` are the accent-outline
+  "ask" actions. The same conceptual button must render identically wherever
+  it appears.
+- **A scroll region is `ScrollArea`** (`components/ui/scroll-area.tsx`),
+  never a raw `overflow-y-auto` div. No native or OS-default scrollbar ships
+  in this app (this is the bespoke-controls hardline above, applied to
+  scrolling specifically).
+- **A divider is `Separator`** (`components/ui/separator.tsx`), never a
+  bespoke `h-Npx w-px bg-<token>` span.
+- Select, Sheet, ContextMenu, and Tooltip follow the same rule already
+  (adopted in the shell v3 pass): use the shadcn primitive, restyled onto the
+  humanctl palette via the `--color-*` token bridge in `globals.css`, not a
+  hand-rolled popover/overlay.
+
+Every new view built on renderer-vite inherits this vocabulary rather than
+deriving a new one-off dialect. Extend the shared primitive (add a cva
+variant, a Chip variant) before reaching for an inline `className` override.
+
 ## Process rules for UI changes
 
 1. Register commands before wiring UI (see AGENTS.md CommandRegistry invariant).

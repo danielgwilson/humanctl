@@ -1,6 +1,7 @@
 import type { Status } from '@/lib/types';
 import { fmtResetClock, quotaCls } from '@/lib/format';
 import { cn } from '@/lib/utils';
+import { Separator } from '@/components/ui/separator';
 
 // Ported from renderer.js's renderCtxBar()/digestHtml(): the SOLE home for
 // the fleet digest, Codex quota, Claude quota ("n/a", never fabricated), and
@@ -57,13 +58,13 @@ export function ContextBar({ status, navPinned, ctxPct }: { status: Status | nul
           'loading fleet...'
         )}
       </span>
-      <span className="h-3.5 w-px flex-none bg-rule2" />
+      <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
       <QuotaItem label="codex" pct={qp?.used_percent != null ? Math.round(qp.used_percent) : null} resetsAt={qp?.resets_at} note={qs?.used_percent != null ? `weekly ${Math.round(qs.used_percent)}%` : undefined} />
-      <span className="h-3.5 w-px flex-none bg-rule2" />
+      <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
       <QuotaItem label="claude" pct={null} note="confirmed: Claude Code transcripts expose no rate-limit/window data, only token counts" />
       {ctxPct != null && (
         <>
-          <span className="h-3.5 w-px flex-none bg-rule2" />
+          <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
           <span className="flex-none" title="context window fill for the open session">{ctxPct}% context</span>
         </>
       )}

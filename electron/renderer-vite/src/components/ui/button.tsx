@@ -4,21 +4,39 @@ import { Slot } from "radix-ui"
 
 import { cn } from "@/lib/utils"
 
+// Theme-agnostic against the humanctl tokens (globals.css flips every
+// --color-* value between :root and .light). The app themes by toggling a
+// `.light` class on <html> -- dark is the DEFAULT with no `.dark` ancestor,
+// so stock shadcn's `dark:` utilities (e.g. `dark:border-input
+// dark:bg-input/30`) silently never fired and the outline button rendered
+// its light-mode fallback even in the primary dark theme. Fixed by dropping
+// every `dark:` prefix below; the CSS vars already carry the theme swap.
 const buttonVariants = cva(
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {
         default: "bg-primary text-primary-foreground hover:bg-primary/90",
         destructive:
-          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:bg-destructive/60 dark:focus-visible:ring-destructive/40",
+          "bg-destructive text-white hover:bg-destructive/90 focus-visible:ring-destructive/20",
         outline:
-          "border bg-background shadow-xs hover:bg-accent hover:text-accent-foreground dark:border-input dark:bg-input/30 dark:hover:bg-input/50",
+          "border border-input bg-background shadow-xs hover:bg-accent hover:text-accent-foreground",
         secondary:
           "bg-secondary text-secondary-foreground hover:bg-secondary/80",
         ghost:
-          "hover:bg-accent hover:text-accent-foreground dark:hover:bg-accent/50",
+          "hover:bg-accent hover:text-accent-foreground",
         link: "text-primary underline-offset-4 hover:underline",
+        // Primary accent action (session-detail's "Resume in Codex/Claude"),
+        // replacing the inline `bg-iris text-primary-foreground
+        // hover:brightness-110` one-off className restyle.
+        iris: "bg-iris text-primary-foreground hover:brightness-110",
+        // "Ask the session" / "Ask the chief of staff" accent-outline
+        // actions, replacing two hand-tuned raw <button> treatments
+        // (session-detail's `border-done/45 text-done` and cos-drawer's
+        // `border-iris-dim text-iris`) with two named cva variants so the
+        // "same" button renders identically wherever it's used.
+        done: "border border-done/45 bg-transparent text-done hover:bg-done/10",
+        "accent-outline": "border border-iris-dim bg-transparent text-iris hover:bg-iris/10",
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",

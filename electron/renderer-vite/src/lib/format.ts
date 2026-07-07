@@ -60,10 +60,14 @@ export function cwdBase(p?: string): string {
   return parts[parts.length - 1] || p;
 }
 
-export const STATE_META: Record<string, { cls: string; label: string }> = {
-  work: { cls: 'c-work', label: 'running' },
-  need: { cls: 'c-need', label: 'needs input' },
-  block: { cls: 'c-block', label: 'blocked' },
-  idle: { cls: 'c-idle', label: 'stalled' },
-  done: { cls: 'c-done', label: 'finished' },
+// `variant` names the Chip cva variant (components/ui/chip.tsx) that renders
+// this state's hue -- one strict map, DESIGN.md: "Colors are semantic and
+// fixed per axis".
+export type ChipVariant = 'work' | 'need' | 'block' | 'idle' | 'done' | 'fyi' | 'review' | 'label' | 'label-iris' | 'label-need' | 'label-block' | 'label-done';
+export const STATE_META: Record<string, { variant: ChipVariant; label: string }> = {
+  work: { variant: 'work', label: 'running' },
+  need: { variant: 'need', label: 'needs input' },
+  block: { variant: 'block', label: 'blocked' },
+  idle: { variant: 'idle', label: 'stalled' },
+  done: { variant: 'done', label: 'finished' },
 };
