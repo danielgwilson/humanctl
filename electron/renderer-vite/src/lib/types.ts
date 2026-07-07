@@ -129,6 +129,24 @@ export type SessionAppendPayload =
       at?: number;
     };
 
+// Mirrors lib/sessions.ts's SkillAggregate exactly (skills.aggregate ->
+// aggregateSkills). Claude-only (Codex has no structured skill calls).
+export interface SkillAggregate {
+  skills: Record<string, number>;
+  sessionsWithSkills: number;
+  totalInvocations: number;
+}
+
+// Mirrors lib/summary-budget.ts's BudgetStatus exactly (summary.budget ->
+// budgetStatus). Today's always-on-summary spend vs the configured daily cap.
+export interface BudgetStatus {
+  day: string;
+  spentUSD: number;
+  dailyBudgetUSD: number;
+  paused: boolean;
+  remainingUSD: number;
+}
+
 export type ViewName = 'inbox' | 'metrics' | 'fleet' | 'sessions' | 'settings';
 
 export interface AppState {
@@ -160,6 +178,11 @@ export interface HumanctlBridge {
   askAtlas: (arg: { question: string; engine?: string }) => Promise<{ ok: boolean; answer?: string; engine?: string; at?: number; error?: string }>;
   askSession: (arg: unknown) => Promise<{ ok: boolean; answer?: string; engine?: string; error?: string }>;
   summarize: (arg: unknown) => Promise<{ ok: boolean; summary?: string; engine?: string; error?: string }>;
+  // Metrics/Settings-only reads (skills.aggregate / summary.budget). Heavier
+  // than the fleet poll (full transcript reads for skills; a small JSON file
+  // for budget) -- called once per view visit, never on the 20s poll.
+  aggregateSkills: (opts?: unknown) => Promise<{ ok: boolean; agg?: SkillAggregate }>;
+  getSummaryBudget: (opts?: unknown) => Promise<{ ok: boolean; budget?: BudgetStatus }>;
   resumeSession: (arg: unknown) => Promise<{ ok: boolean }>;
   openInApp: (arg: unknown) => Promise<{ ok: boolean }>;
   revealSession: (path: string) => Promise<{ ok: boolean }>;

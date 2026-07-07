@@ -29,6 +29,34 @@ export function quotaCls(pct: number | null | undefined): string {
   return pct == null ? 'q-na' : pct > 80 ? 'q-red' : pct > 50 ? 'q-amber' : '';
 }
 
+// Ported verbatim from the deleted static renderer (renderer.js's fmtTok /
+// fmtUSD): compact token counts (1.2M, 240k) and compact USD (rounds past
+// $10, "k" past $1000) for the Metrics/Settings stat rows.
+export function fmtTok(n: number | null | undefined): string {
+  const v = n || 0;
+  if (v >= 1e9) return `${(v / 1e9).toFixed(1)}B`;
+  if (v >= 1e6) return `${(v / 1e6).toFixed(1)}M`;
+  if (v >= 1e3) return `${(v / 1e3).toFixed(1)}k`;
+  return String(Math.round(v));
+}
+
+export function fmtUSD(n: number | null | undefined): string | null {
+  if (n == null) return null;
+  if (n >= 1000) return `$${(n / 1000).toFixed(1)}k`;
+  if (n >= 10) return `$${n.toFixed(0)}`;
+  return `$${n.toFixed(2)}`;
+}
+
+// Quota window length as a short cadence word ("5h", "weekly"), ported from
+// renderer.js's fmtCadence.
+export function fmtCadence(mins?: number): string {
+  if (!mins) return '';
+  if (mins % 10080 === 0) return mins === 10080 ? 'weekly' : `${mins / 10080}w`;
+  if (mins % 1440 === 0) return `${mins / 1440}d`;
+  if (mins % 60 === 0) return `${mins / 60}h`;
+  return `${mins}m`;
+}
+
 export function cleanNarrative(text?: string): string {
   const orig = text == null ? '' : String(text);
   if (!orig) return orig;

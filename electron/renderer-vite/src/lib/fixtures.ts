@@ -1,7 +1,7 @@
 // Synthetic fixture data. Used ONLY when window.humanctl is absent (plain
 // browser / vite dev with no Electron preload attached). OSS-safe: no real
 // ids, generic demo repo names, matches AGENTS.md's born-clean rule.
-import type { InboxThread, NoteItem, SessionRow, Status, TimelineEvent, TimelinePage } from './types';
+import type { BudgetStatus, InboxThread, NoteItem, SessionRow, SkillAggregate, Status, TimelineEvent, TimelinePage } from './types';
 
 // FNV-1a, deterministic per-id seed so a given fixture session always shows
 // the same synthetic timeline across renders (no real randomness, so
@@ -47,16 +47,46 @@ export function fixtureThreads(): InboxThread[] {
   ];
 }
 
+// Derived from FIXTURE_ROWS (not hand-duplicated constants) so the fleet
+// digest, Metrics, and Fleet views always agree on one screen: previously
+// this hardcoded a 12-session/5-codex/7-claude fleet while FIXTURE_ROWS only
+// ever had 8 rows (4 codex/4 claude), a fixture-only drift that read as a
+// bug once Metrics and Fleet put both figures on screen together. Matches
+// lib/sessions.ts's own nearCompaction threshold (contextPct >= 80) exactly.
 export function fixtureStatus(): Status {
   const now = Math.floor(Date.now() / 1000);
+  const codexRows = FIXTURE_ROWS.filter((r) => r.harness === 'codex');
+  const claudeRows = FIXTURE_ROWS.filter((r) => r.harness === 'claude-code');
+  const needsYou = FIXTURE_ROWS.filter((r) => r.state === 'need' || r.state === 'block').length;
+  const working = FIXTURE_ROWS.filter((r) => r.state === 'work').length;
+  const nearCompaction = FIXTURE_ROWS.filter((r) => (r.contextPct ?? 0) >= 80).length;
   return {
     per: {
-      codex: { sessions: 5, generated: 240000, totalTokens: 5e6, apiEquivUSD: 1.71 },
-      'claude-code': { sessions: 7, generated: 180000, totalTokens: 3.2e6, costUSD: 7.30 },
+      codex: { sessions: codexRows.length, generated: 240000, totalTokens: 5e6, apiEquivUSD: codexRows.reduce((s, r) => s + (r.apiEquivUSD || 0), 0) },
+      'claude-code': { sessions: claudeRows.length, generated: 180000, totalTokens: 3.2e6, costUSD: claudeRows.reduce((s, r) => s + (r.costUSD || 0), 0) },
     },
     codexQuota: { plan_type: 'pro', primary: { used_percent: 46, window_minutes: 300, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, window_minutes: 10080, resets_at: now + 5 * 86400 } },
-    needsYou: 5, working: 4, nearCompaction: 1, sessions: 12, pricingAsOf: '2026-06',
+    needsYou, working, nearCompaction, sessions: FIXTURE_ROWS.length, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
+  };
+}
+
+// Generic demo skill names (born-clean; never the agent's real installed
+// skill catalog) for the Metrics view's top-skills list.
+export const FIXTURE_SKILL_AGGREGATE: SkillAggregate = {
+  skills: { 'code-review': 6, 'test-runner': 4, 'doc-gardener': 2, 'deploy-check': 1 },
+  sessionsWithSkills: 5,
+  totalInvocations: 13,
+};
+
+export function fixtureBudgetStatus(dailyBudgetUSD: number): BudgetStatus {
+  const spentUSD = Math.min(dailyBudgetUSD, 0.34);
+  return {
+    day: new Date().toISOString().slice(0, 10),
+    spentUSD,
+    dailyBudgetUSD,
+    paused: spentUSD >= dailyBudgetUSD,
+    remainingUSD: Math.max(0, dailyBudgetUSD - spentUSD),
   };
 }
 

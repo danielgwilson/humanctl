@@ -6,15 +6,16 @@ humanctl is an attention router for a scarce human running many coding-agent ses
 
 **One owner per signal.** Every piece of information has exactly one home per screen. Adding a second home for a signal requires deleting the first. If a review adds a count, digest, or status that already renders elsewhere on the same screen, the PR is wrong by definition.
 
-Signal ownership (updated in shell v3's chrome pass, 0.16.0a):
+Signal ownership (updated in stage 2d's real-views pass, 0.17.2):
 
 | Signal | Owner | Exception |
 |---|---|---|
-| Fleet digest (counts) | bottom context bar | none (sole home; removed from the header and from the chief-of-staff drawer, both former second homes) |
+| Fleet digest (counts) | bottom context bar | Fleet view's headline (need-you/moving/total stat tiles) restates the same three numbers, read from the same `status` object rather than a re-derivation that could drift; presented as the view's own headline framing, not a second digest sentence. Mirrors the quota exception below. |
 | What needs the human, ranked | Inbox list order | none |
 | Session state + reason | row chip in lists; header chip in detail | none |
 | Spend, tokens, quota | Metrics view | bottom bar shows Codex + Claude quota always (not gated to >80 percent); Claude quota renders "n/a" honestly (Claude Code transcripts expose no rate-limit data) |
 | Complete fleet | Sessions view | none |
+| Fleet shape (session counts by state / harness / tier) | Fleet view | Metrics' harness row is fused with dollars ($ spend + session count per harness in one stat row), a distinct spend-context signal, not a bare count duplicate of Fleet's shape bars |
 | Chief-of-staff chat | right drawer (chat only) | none (resources and digest were removed from this drawer; it is chat-only) |
 | Chat with one session | session detail composer | Inbox reply is the same composer |
 | Context fill | bottom context bar (when a session is open); session detail meta | none |

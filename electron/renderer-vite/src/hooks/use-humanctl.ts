@@ -4,8 +4,8 @@
 // lib/fixtures.ts -- the whole UI renders and is fully driveable without
 // launching Electron.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, InboxThread, NoteItem, SessionRow, Status } from '../lib/types';
-import { FIXTURE_NOTES, FIXTURE_ROWS, fixtureStatus, fixtureThreads } from '../lib/fixtures';
+import type { AppState, BudgetStatus, InboxThread, NoteItem, SessionRow, SkillAggregate, Status } from '../lib/types';
+import { FIXTURE_NOTES, FIXTURE_ROWS, FIXTURE_SKILL_AGGREGATE, fixtureBudgetStatus, fixtureStatus, fixtureThreads } from '../lib/fixtures';
 
 export function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.humanctl;
@@ -105,6 +105,63 @@ export function useAppState() {
   }, []);
 
   return { state, patch };
+}
+
+/**
+ * Skill-usage aggregation for the Metrics view's top-skills list
+ * (skills.aggregate -> lib/sessions.ts's aggregateSkills, a heavier full-read
+ * over recent transcripts). One-shot fetch on mount/`active` flip -- NOT part
+ * of the 20s fleet poll -- so it only runs while Metrics is the open view.
+ */
+export function useSkillAggregate(active: boolean) {
+  const [agg, setAgg] = useState<SkillAggregate | null>(null);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    setLoading(true);
+    (async () => {
+      if (!window.humanctl) {
+        if (!cancelled) { setAgg(FIXTURE_SKILL_AGGREGATE); setLoading(false); }
+        return;
+      }
+      const r = await window.humanctl.aggregateSkills({ maxAgeH: 72, limit: 40 });
+      if (!cancelled) {
+        setAgg(r?.ok && r.agg ? r.agg : null);
+        setLoading(false);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, [active]);
+
+  return { agg, loading };
+}
+
+/**
+ * Today's always-on-summary spend vs the configured daily budget
+ * (summary.budget -> lib/summary-budget.ts's budgetStatus). One-shot fetch on
+ * mount/`active` flip, mirroring useSkillAggregate above.
+ */
+export function useSummaryBudget(active: boolean, dailyBudgetUSD: number) {
+  const [budget, setBudget] = useState<BudgetStatus | null>(null);
+
+  useEffect(() => {
+    if (!active) return;
+    let cancelled = false;
+    (async () => {
+      if (!window.humanctl) {
+        if (!cancelled) setBudget(fixtureBudgetStatus(dailyBudgetUSD));
+        return;
+      }
+      const r = await window.humanctl.getSummaryBudget({ dailyBudgetUSD });
+      if (!cancelled) setBudget(r?.ok && r.budget ? r.budget : null);
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [active, dailyBudgetUSD]);
+
+  return { budget };
 }
 
 /** Ask-the-chief-of-staff (atlas.ask), same mechanics as atlas.js's runAsk. */
