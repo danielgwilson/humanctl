@@ -64,6 +64,18 @@
   --border: var(--rule2);
   --input: var(--rule2);
   --ring: var(--iris);
+
+  /* shadcn Sidebar tokens (stage 2b), mapped onto the SAME palette the old
+     nav rail used (bg-card surface, panel2 hover/accent, iris active
+     treatment) so the shadcn Sidebar primitive never renders stock zinc. */
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--iris);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--panel2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--rule2);
+  --sidebar-ring: var(--iris);
 }
 
 /* light theme override, identical values to index.html's body.light block */
@@ -96,6 +108,15 @@
   --border: var(--rule2);
   --input: var(--rule2);
   --ring: var(--iris);
+
+  --sidebar: var(--card);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--iris);
+  --sidebar-primary-foreground: var(--primary-foreground);
+  --sidebar-accent: var(--panel2);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--rule2);
+  --sidebar-ring: var(--iris);
 }
 
 @theme inline {
@@ -138,6 +159,18 @@
   --color-ink4: var(--ink4);
   --color-iris: var(--iris);
   --color-iris-dim: var(--iris-dim);
+
+  /* shadcn Sidebar's own token namespace (bg-sidebar, text-sidebar-foreground,
+     bg-sidebar-accent, border-sidebar-border, etc.), bridged the same way as
+     every other --color-* utility above. */
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
 
   --font-sans: var(--font-disp);
   --font-mono: var(--font-mono);

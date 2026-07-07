@@ -19,14 +19,14 @@ Signal ownership (updated in shell v3's chrome pass, 0.16.0a):
 | Chat with one session | session detail composer | Inbox reply is the same composer |
 | Context fill | bottom context bar (when a session is open); session detail meta | none |
 | Notes stream | Inbox | per-session slice in detail |
-| Navigation | left nav strip (visible icon strip, hover-expands, pins) | none |
-| Settings + theme | the user/settings picker at the foot of the nav strip | Settings remains a routable `app.set-view('settings')` destination; the picker is its entry point, not a second, independent home |
+| Navigation | left full-height sidebar (icon rail, tooltip-on-hover, Cmd+\ toggle, persisted) | none |
+| Settings + theme | the user/settings picker at the foot of the sidebar | Settings remains a routable `app.set-view('settings')` destination; the picker is its entry point, not a second, independent home |
 
 ## Information architecture
 
-Chrome (shell v3): a slim header (wordmark + version + the right-drawer sidebar-toggle icon only) / a VISIBLE left nav icon-strip with a user-settings picker at its foot / the active view / a toggled right chief-of-staff drawer / a persistent bottom context bar.
+Chrome (shell v4, stage 2b): a full-height left sidebar (collapsible icon rail by default, with per-item tooltips on hover for labels and a user-settings picker at its foot) / an inset header to the right of the sidebar (wordmark + version + the right-drawer toggle icon only; the macOS traffic lights sit over the sidebar's own top-left header band, not this one) / the active view / a toggled right chief-of-staff drawer / a persistent bottom context bar within the inset, full width of the content column.
 
-Nav (a visible icon strip by default -- NOT hidden; hovering the strip itself for >=150ms expands it to show labels as an overlay; Cmd+backslash pins the widened rail as a fixed column): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. Settings is reached through the user/settings picker's "All settings," not a nav-strip icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
+Nav (a full-height icon rail by default -- NOT hidden; Cmd+backslash toggles the widened rail and the expanded/collapsed state persists): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. Labels show as a per-item tooltip on hover when the rail is collapsed, rather than a whole-rail hover-expand overlay (see "Deliberate deviations" below). Settings is reached through the user/settings picker's "All settings," not a sidebar icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
 
 ## Vocabulary (one, everywhere)
 
@@ -131,6 +131,22 @@ zinc/new-york look:
 Every new view built on renderer-vite inherits this vocabulary rather than
 deriving a new one-off dialect. Extend the shared primitive (add a cva
 variant, a Chip variant) before reaching for an inline `className` override.
+
+## Deliberate deviations
+
+- **Nav: whole-rail hover-expand (shell v3) -> shadcn Sidebar, tooltip-on-hover
+  (stage 2b).** Shell v3 mandated a nav strip that hover-expands as a whole
+  after >=150ms and pins via Cmd+backslash. Stage 2b replaces this with the
+  shadcn `Sidebar` primitive (`collapsible="icon"`) in a full-height layout:
+  the rail stays an icon strip and shows a per-item tooltip on hover instead
+  of expanding the whole rail; Cmd+backslash still toggles a widened rail,
+  but the state is a persisted boolean (`AppState.navPinned`) rather than a
+  hover-then-pin gesture. This deletes the bespoke fixed-position/hover-timer/
+  pin code entirely and gets keyboard navigation, focus management, and
+  ARIA wiring for the rail from Radix for free. It also moves the rail from
+  a fixed-position overlay spanning header-to-context-bar to a genuine
+  full-height column (Linear/Slack style), with the header and context bar
+  now insets to its right rather than full-width bars the rail floats over.
 
 ## Process rules for UI changes
 

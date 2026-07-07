@@ -41,13 +41,17 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
 // only carries needsYou/working/sessions, so idle is omitted rather than
 // fabricated -- narrower than renderer.js's full rollup, a fair simplification
 // for a persistent one-line bar).
-export function ContextBar({ status, navPinned, ctxPct }: { status: Status | null; navPinned: boolean; ctxPct?: number | null }) {
+//
+// STAGE 2B: this footer now renders full-width WITHIN SidebarInset (right
+// of the full-height sidebar), so it no longer needs its own
+// navPinned-driven marginLeft shift -- SidebarInset's flex layout owns that
+// offset for every row in the inset column, header included.
+export function ContextBar({ status, ctxPct }: { status: Status | null; ctxPct?: number | null }) {
   const qp = status?.codexQuota?.primary;
   const qs = status?.codexQuota?.secondary;
   return (
     <footer
-      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-border bg-bg2 px-4 font-mono text-[10.5px] text-ink3 transition-[margin-left] duration-150"
-      style={{ marginLeft: navPinned ? '220px' : '52px' }}
+      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-border bg-bg2 px-4 font-mono text-[10.5px] text-ink3"
     >
       <span className="flex-1 overflow-hidden text-ellipsis font-sans text-[11.5px] text-foreground/90">
         {status ? (
