@@ -83,6 +83,52 @@ export interface Status {
   version?: string;
 }
 
+// Live timeline (stage 3): mirrors lib/sessions.ts's TimelineEvent /
+// TimelinePage exactly (the backend types the renderer never redeclares
+// independently, per this file's header comment). `t` is the clipped preview
+// text for user/assistant/interrupt rows; `n` is the collapsed tool-call
+// count for a run of tool activity. `ts` is a epoch-ms timestamp or null.
+export type TimelineEvent =
+  | { k: 'user' | 'assistant' | 'interrupt'; t?: string; ts: number | null }
+  | { k: 'tools'; n: number; ts: number | null };
+
+export interface TimelineMeta {
+  customTitle?: string;
+  model?: string;
+  effort?: string;
+}
+
+// A bounded backward page: [start, end) is the exact byte range scanned,
+// `atStart` says whether it reached byte 0 of the file, `estEarlier` is a
+// density-based estimate (never exact) of substantive events not shown.
+export interface TimelinePage {
+  harness: Harness | string;
+  events: TimelineEvent[];
+  start: number;
+  end: number;
+  size: number;
+  mtimeMs: number;
+  atStart: boolean;
+  scannedBytes: number;
+  estEarlier: number | null;
+  meta: TimelineMeta | null;
+}
+
+// The session:append IPC payload (electron/main.ts's pumpHot): either a
+// reset (rotation/truncation/oversized gap -- re-read a full page) or an
+// incremental batch of newly-appended events for the ONE hot session.
+export type SessionAppendPayload =
+  | { path: string; reset: true; reason?: string }
+  | {
+      path: string;
+      events: TimelineEvent[];
+      meta?: TimelineMeta | null;
+      need?: { state?: SessionState; reason?: string; tier?: Tier } | null;
+      end?: number;
+      size?: number;
+      at?: number;
+    };
+
 export type ViewName = 'inbox' | 'metrics' | 'fleet' | 'sessions' | 'settings';
 
 export interface AppState {
@@ -98,9 +144,9 @@ export interface AppState {
 }
 
 // The subset of window.humanctl this renderer actually calls. Everything
-// here exists verbatim in electron/preload.ts; this renderer adds no new
-// channel (stage 1b scope: shell + Inbox + session detail; the live
-// timeline reader (readTimeline/session:append) is stage 3).
+// here exists verbatim in electron/preload.ts; stage 3 adds the live-timeline
+// trio (readTimeline / setHotSession / onSessionAppend) -- no new IPC channel,
+// the bridge already exposed these (electron/preload.ts lines 17-18, 52-56).
 export interface HumanctlBridge {
   getStatus: (opts?: unknown) => Promise<{ ok: boolean; status?: Status }>;
   listSessions: (opts?: unknown) => Promise<{ ok: boolean; rows?: SessionRow[] }>;
@@ -120,6 +166,22 @@ export interface HumanctlBridge {
   onSessionsChanged: (cb: () => void) => () => void;
   onInboxFast: (cb: () => void) => () => void;
   onStateChanged: (cb: (state: AppState) => void) => () => void;
+  // Bounded backward page (sessions:timeline -> session.timeline). Omitting
+  // `before` reads the newest page (ending at EOF); passing a previous page's
+  // `start` walks one page further back.
+  readTimeline: (arg: {
+    id?: string;
+    path?: string;
+    harness?: string;
+    before?: number;
+  }) => Promise<{ ok: boolean; page?: TimelinePage; error?: string }>;
+  // Names which session's transcript the main-process watcher should pump
+  // incremental appends for (session:hot). Pass null/omit `path` to stop the
+  // hot-append pump (main.ts: `hotPath = arg && arg.path ? ... : null`).
+  setHotSession: (
+    arg: { path: string; harness?: string; from?: number } | null
+  ) => Promise<{ ok: boolean; error?: string }>;
+  onSessionAppend: (cb: (payload: SessionAppendPayload) => void) => () => void;
 }
 
 declare global {
