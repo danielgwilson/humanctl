@@ -20,14 +20,14 @@ Signal ownership (updated in stage 2d's real-views pass, 0.17.2):
 | Chat with one session | session detail composer | Inbox reply is the same composer |
 | Context fill | bottom context bar (when a session is open); session detail meta | none |
 | Notes stream | Inbox | per-session slice in detail |
-| Navigation | left full-height sidebar (icon rail, tooltip-on-hover, Cmd+\ toggle, persisted) | none |
+| Navigation | left full-height sidebar (offcanvas: fully hidden by default, header toggle or left-edge hover reveals it, Cmd+\ toggle, persisted) | none |
 | Settings + theme | the user/settings picker at the foot of the sidebar | Settings remains a routable `app.set-view('settings')` destination; the picker is its entry point, not a second, independent home |
 
 ## Information architecture
 
-Chrome (shell v4, stage 2b; header compacted and given a matching left-sidebar toggle in stage 2e): a full-height left sidebar (collapsible icon rail by default, with per-item tooltips on hover for labels and a user-settings picker at its foot) / a compact inset header to the right of the sidebar (a left-side sidebar-toggle icon, wordmark + version, and the right-drawer toggle icon on the far right -- both toggles share the same bespoke icon-button treatment; the macOS traffic lights sit over the sidebar's own top-left header band, not this one, and that band is deliberately rule-free so no border crosses the lights) / the active view / a toggled right chief-of-staff drawer / a persistent bottom context bar within the inset, full width of the content column.
+Chrome (shell v4, stage 2b; header compacted and given a matching left-sidebar toggle in stage 2e; sidebar switched from a collapsible icon rail to offcanvas in 0.17.4): a full-height left sidebar (collapsible offcanvas: fully hidden by default, with a user-settings picker at its foot) / a compact inset header (a left-side sidebar-toggle icon, wordmark + version, and the right-drawer toggle icon on the far right -- both toggles share the same bespoke icon-button treatment). Whichever element occupies the window's top-left corner in the current state owns the macOS traffic-light band, and that band is deliberately rule-free so no border crosses the lights: the sidebar's own top-left header band when expanded (header is inset to its right, plain symmetric padding, normal border); the header itself when collapsed (it spans from x=0, gets left padding that clears the lights instead, and drops its own border). The active view / a toggled right chief-of-staff drawer / a persistent bottom context bar sit within the inset, full width of the content column.
 
-Nav (a full-height icon rail by default -- NOT hidden; Cmd+backslash toggles the widened rail and the expanded/collapsed state persists): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. Labels show as a per-item tooltip on hover when the rail is collapsed, rather than a whole-rail hover-expand overlay (see "Deliberate deviations" below). Settings is reached through the user/settings picker's "All settings," not a sidebar icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
+Nav (a full-height sidebar, offcanvas: fully hidden by default, NOT an icon rail -- collapsed means zero rail and full-width content): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. The header's PanelLeft toggle or Cmd+backslash reveals/hides it (state persists); hovering the very left edge of the window also peeks it open (see "Deliberate deviations" below). Labels are always shown as text next to each icon whenever the sidebar is visible at all (there is no partially-visible icon-only state left to tooltip over). Settings is reached through the user/settings picker's "All settings," not a sidebar icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
 
 ## Vocabulary (one, everywhere)
 
@@ -150,6 +150,27 @@ variant, a Chip variant) before reaching for an inline `className` override.
   a fixed-position overlay spanning header-to-context-bar to a genuine
   full-height column (Linear/Slack style), with the header and context bar
   now insets to its right rather than full-width bars the rail floats over.
+- **Nav: icon rail (stage 2b) -> offcanvas + hover-peek (0.17.4, Linear/Attio
+  reference).** The collapsed icon rail was 48px (`SIDEBAR_WIDTH_ICON`), but
+  the macOS `hiddenInset` traffic-light cluster's own footprint is ~80-90px
+  including its left inset, so the lights always spilled past the rail's
+  right edge -- no amount of border-tweaking fixed a rail narrower than the
+  lights it had to clear. `collapsible="icon"` is replaced with
+  `collapsible="offcanvas"`: collapsed (default) now means the sidebar is
+  fully hidden and content is full width, removing the too-narrow-rail
+  problem by construction. Traffic-light ownership becomes state-aware
+  instead of sidebar-only: whichever element occupies the window's top-left
+  corner in the current state (the sidebar's own header when expanded, the
+  compact Header when collapsed, since `SidebarInset` now spans from x=0)
+  clears the lights and stays borderless there; never both, never a rule
+  crossing the lights. A new pointer-only affordance, a thin fixed strip at
+  the window's true left edge (below the traffic-light band, rendered only
+  while collapsed), opens the sidebar on a ~120ms debounced hover -- Linear's
+  "move to the edge to reveal" gesture -- layered on top of, not instead of,
+  the accessible paths (the header's `PanelLeft` toggle, Cmd+backslash). This
+  also retires the per-item tooltip-on-hover pattern from stage 2b: there is
+  no longer a partially-visible icon-only rail to hover over, so labels are
+  simply always shown as text whenever the sidebar is visible at all.
 
 ## Process rules for UI changes
 
