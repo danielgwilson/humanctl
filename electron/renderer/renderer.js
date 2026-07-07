@@ -924,13 +924,24 @@ function toggleUserPicker() { if (userPickerOpen) closeUserPicker(); else openUs
 // ============================================================
 // VIEW SWITCHING (registry-backed via app.set-view). Leaving detail if open.
 // ============================================================
-function setView(v) {
+// setViewLocal applies a view change to THIS window's DOM/state only, with no
+// write-back to window.humanctl.setView. Used whenever the new view value
+// already came FROM persisted/broadcast state (load()'s boot-time restore,
+// applyExternalState's live CLI/socket-driven update) so it never re-persists
+// a value that is already on disk, which would re-broadcast state:changed and
+// risk a self-triggered setView echo. setView (below) is the write-through
+// version for genuine user-initiated changes (click, keyboard shortcut,
+// context menu), which DOES need to persist.
+function setViewLocal(v) {
   if (!['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(v)) v = 'inbox';
   detailId = null;
   detailHostId = null;
   view = v;
-  if (window.humanctl) window.humanctl.setView(v);
   renderView();
+}
+function setView(v) {
+  setViewLocal(v);
+  if (window.humanctl) window.humanctl.setView(view);
 }
 function renderView() {
   // Toggle the full-width overlay; show the active view section otherwise.
@@ -2111,7 +2122,12 @@ async function load() {
   // below), then let fetchData land and repaint through the same signature
   // gate the 20s poll already uses, so the first screen the user can click on
   // never waits behind a full session scan.
-  remapAgents(); renderHeader(); renderNav(); renderCtxBar(); setView(view);
+  // setViewLocal, not setView: `view` here is exactly what getState() just
+  // returned from disk (or the 'inbox' default), so writing it straight back
+  // through window.humanctl.setView would be a pure echo -- a persist call
+  // whose patch is identical to what applyStatePatch will read right back off
+  // disk, for zero actual state change, on every single boot.
+  remapAgents(); renderHeader(); renderNav(); renderCtxBar(); setViewLocal(view);
   await fetchData();
   if (window.Atlas) await window.Atlas.hydrate();
   await refreshSummaryBudgetChip();
@@ -2190,7 +2206,13 @@ function applyExternalState(st) {
   applyTheme(); applyNavPinned();
   if (window.Atlas) { if (rightRailOpen && !window.Atlas.isOpen()) window.Atlas.open(); else if (!rightRailOpen && window.Atlas.isOpen()) window.Atlas.close(); }
   const v = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'].includes(st.view) ? st.view : view;
-  if (v !== view && !overlayOpen()) setView(v); else redrawActive();
+  // setViewLocal, not setView: v came FROM the broadcast state (already
+  // persisted by whoever made the change, e.g. `humanctl app app.set-view`
+  // over the control socket), so writing it back through
+  // window.humanctl.setView would immediately re-persist the same value and
+  // re-broadcast state:changed to this same window -- a self-echo loop with
+  // no natural end (see the boot-time version of this same hazard in load()).
+  if (v !== view && !overlayOpen()) setViewLocal(v); else redrawActive();
 }
 if (window.humanctl && window.humanctl.onStateChanged) window.humanctl.onStateChanged(applyExternalState);
 // The single idle poll: at rest this fires every 20s and returns early on an
