@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { NavRail } from '@/components/shell/nav-rail';
+import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
+import { AppSidebar } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
 import { ContextBar } from '@/components/shell/context-bar';
 import { CosDrawer } from '@/components/shell/cos-drawer';
@@ -8,18 +9,27 @@ import { PlaceholderView } from '@/components/shell/placeholder-view';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { SessionDetail } from '@/components/session/session-detail';
 import { useAppState, useFleetData, useSessionSummarize } from '@/hooks/use-humanctl';
-import type { SessionRow } from '@/lib/types';
+import type { SessionRow, ViewName } from '@/lib/types';
 
 const STAGE_FOR_VIEW: Record<string, number> = { metrics: 2, fleet: 2, sessions: 2, settings: 2 };
 const LABEL_FOR_VIEW: Record<string, string> = { metrics: 'Metrics', fleet: 'Fleet', sessions: 'Sessions', settings: 'Settings' };
+const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '3': 'fleet', '4': 'sessions' };
 
 // App root for the renderer-vite renderer (STAGE 1b, gated behind
-// HUMANCTL_VITE; see docs/ts-migration-plan.md). Wires the shell (nav rail,
-// header, context bar, CoS drawer) around the Inbox view and the full-width
-// session-detail view reached from it, at parity with the current
-// electron/renderer/ app. Sessions/Metrics/Fleet/Settings are quiet
-// placeholders this stage (stage 2 scope); the live-timeline reader and the
-// reply/suggested-responses feature are stage 3.
+// HUMANCTL_VITE; see docs/ts-migration-plan.md). Wires the shell (full-height
+// sidebar, inset header, inset context bar, CoS drawer) around the Inbox
+// view and the full-width session-detail view reached from it, at parity
+// with the current electron/renderer/ app. Sessions/Metrics/Fleet/Settings
+// are quiet placeholders this stage (stage 2 scope); the live-timeline
+// reader and the reply/suggested-responses feature are stage 3.
+//
+// STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
+// (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
+// in a full-height Linear/Slack-style layout: SidebarProvider wraps a
+// collapsible="icon" Sidebar (nav-sidebar.tsx) and a SidebarInset that owns
+// the header/content/context-bar column to its right. See DESIGN.md's
+// "Information architecture" section for the conformance statement and the
+// recorded tooltip-on-hover / full-height deviation from shell v3.
 export default function App() {
   const { rows, threads, status, demo } = useFleetData();
   const { state, patch } = useAppState();
@@ -110,15 +120,59 @@ export default function App() {
     patch({ selectedId: undefined });
   }
 
+  // Global keyboard shortcuts (DESIGN.md's nav paragraph): 1/2/3/4 switch
+  // views (and close any open session detail, matching the old nav rail's
+  // onNavigate), 'a' summons/dismisses the chief-of-staff drawer. Cmd/Ctrl+\
+  // (the sidebar expand/collapse toggle) is handled inside SidebarProvider
+  // itself (components/ui/sidebar.tsx's SIDEBAR_KEYBOARD_SHORTCUT), not
+  // here. This is ONE declared `keydown` listener on `window`, mounted for
+  // App's lifetime and removed on unmount -- an event listener, not a
+  // recurring timer/poller, so it is outside AGENTS.md's declared-cadence
+  // rule, but its lifecycle is stated here per that rule's spirit. Ignored
+  // whenever a modifier key is held (so Cmd+1, Cmd+\, etc. are not
+  // double-handled) or focus is in an input/textarea/contenteditable (so
+  // these keys never fire while typing in the Inbox search box or a
+  // composer).
+  useEffect(() => {
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.metaKey || e.ctrlKey || e.altKey) return;
+      const target = e.target as HTMLElement | null;
+      const tag = target?.tagName;
+      if (tag === 'INPUT' || tag === 'TEXTAREA' || target?.isContentEditable) return;
+      const nextView = VIEW_FOR_KEY[e.key];
+      if (nextView) {
+        e.preventDefault();
+        closeDetail();
+        patch({ view: nextView });
+        return;
+      }
+      if (e.key === 'a') {
+        e.preventDefault();
+        patch({ rightRailOpen: !state.rightRailOpen });
+      }
+    }
+    window.addEventListener('keydown', onKeyDown);
+    return () => window.removeEventListener('keydown', onKeyDown);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [state.rightRailOpen]);
+
   return (
     <TooltipProvider delayDuration={350}>
-      <div className="grid h-screen grid-rows-[52px_1fr_30px]" style={{ ['--hdr-h' as string]: '52px', ['--ctxbar-h' as string]: '30px' }}>
-        <Header demo={demo} version={status?.version} rightRailOpen={state.rightRailOpen} onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })} />
-        <div className="relative min-h-0 overflow-hidden">
-          <div
-            className="h-full transition-[margin-left] duration-150 ease-out"
-            style={{ marginLeft: state.navPinned ? 220 : 52 }}
-          >
+      <SidebarProvider
+        className="h-screen"
+        open={state.navPinned}
+        onOpenChange={(open) => patch({ navPinned: open })}
+      >
+        <AppSidebar
+          view={state.view}
+          onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
+          unreadCount={unreadCount}
+          theme={state.theme}
+          onSetTheme={(t) => patch({ theme: t })}
+        />
+        <SidebarInset className="h-full overflow-hidden">
+          <Header demo={demo} version={status?.version} rightRailOpen={state.rightRailOpen} onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })} />
+          <div className="relative min-h-0 flex-1 overflow-hidden">
             {selectedThread ? (
               <SessionDetail
                 thread={selectedThread}
@@ -151,17 +205,9 @@ export default function App() {
               <PlaceholderView label={LABEL_FOR_VIEW[state.view] || state.view} stage={STAGE_FOR_VIEW[state.view] || 2} />
             )}
           </div>
-        </div>
-        <ContextBar status={status} navPinned={state.navPinned} ctxPct={selectedRow?.contextPct ?? null} />
-      </div>
-      <NavRail
-        view={state.view}
-        onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
-        navPinned={state.navPinned}
-        unreadCount={unreadCount}
-        theme={state.theme}
-        onSetTheme={(t) => patch({ theme: t })}
-      />
+          <ContextBar status={status} ctxPct={selectedRow?.contextPct ?? null} />
+        </SidebarInset>
+      </SidebarProvider>
       <CosDrawer open={state.rightRailOpen} onOpenChange={(open) => patch({ rightRailOpen: open })} />
     </TooltipProvider>
   );
