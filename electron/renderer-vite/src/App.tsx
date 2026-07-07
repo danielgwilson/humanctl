@@ -30,7 +30,7 @@ const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '
 // "Information architecture" section for the conformance statement and the
 // recorded tooltip-on-hover / full-height deviation from shell v3.
 export default function App() {
-  const { rows, threads, status, demo } = useFleetData();
+  const { rows, threads, status, demo, refresh } = useFleetData();
   const { state, patch } = useAppState();
   const { summarize, loadingId: summaryLoadingId, errors: summaryErrors } = useSessionSummarize();
 
@@ -64,6 +64,24 @@ export default function App() {
     mq.addEventListener('change', resolve);
     return () => mq.removeEventListener('change', resolve);
   }, [state.theme]);
+
+  // Perf-harness hook (scripts/perf-selftest/run.js). The LOCAL perf gate
+  // drives the renderer over CDP; it needs a stable way to switch views
+  // (click-to-paint) and to force a fleet refresh (idle/signature-gate/heap
+  // checks) without depending on the old renderer's window.setView /
+  // window.scheduleRefresh globals, which no longer exist. This exposes just
+  // those two operations. Benign in normal use (both are already user-
+  // reachable via the nav and the 20s poll); it exists so the perf SLOs stay
+  // enforceable against the React renderer. Not a registered command:
+  // renderer-only view state + a re-fetch of already-registered reads.
+  useEffect(() => {
+    const w = window as unknown as Record<string, unknown>;
+    w.__humanctlPerf = {
+      setView: (v: ViewName) => patch({ view: v, selectedId: undefined }),
+      refresh,
+    };
+    return () => { delete w.__humanctlPerf; };
+  }, [patch, refresh]);
 
   function markRead(threadId: string) {
     const t = threads.find((x) => x.sessionId === threadId);
