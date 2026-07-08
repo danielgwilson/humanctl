@@ -21,7 +21,8 @@ session history that day.
 Checks, against the DESIGN.md perf SLOs:
 
 - **Cold open to interactive**: under 1500ms, measured from process spawn to
-  the renderer reaching a booted shell (`.hdr` + `.stage` present).
+  the renderer exposing `window.__humanctlPerf` (the gate polls for it; see
+  `scripts/perf-selftest/run.js`).
 - **Click to paint**: under 100ms x10, measured across view switches
   (`setView`) via a double-`requestAnimationFrame` settle.
 - **60s idle self-refresh**: zero DOM mutation batches in a 60-second window
@@ -32,9 +33,9 @@ Checks, against the DESIGN.md perf SLOs:
   loop signature (the original investigation measured ~2.6 refreshes/SECOND
   from that bug, not one repaint per 20-second cycle) or an unrelated new
   self-triggered refresh.
-- **Signature-gate check**: three back-to-back `scheduleRefresh()` calls
-  against unchanged data must produce zero repaints (unchanged data must not
-  rebuild).
+- **Signature-gate check**: three back-to-back `window.__humanctlPerf.refresh()`
+  calls against unchanged data must produce zero repaints (unchanged data must
+  not rebuild).
 - **Heap after 20 cycles**: forced refresh + view-switch cycles must not
   balloon `performance.memory.usedJSHeapSize` (a coarse, Chromium-limited
   signal, but sufficient to catch an order-of-magnitude per-cycle leak like
@@ -42,8 +43,11 @@ Checks, against the DESIGN.md perf SLOs:
 
 This is wired into `npm run app:install` as a required step before install:
 a failing perf:selftest blocks the local install, the same way a failing
-test should block a release. It is intentionally NOT part of `npm test` or
-any CI workflow.
+check should block a release. It is intentionally NOT part of `npm run lint`,
+`npm run typecheck`, `npm run build:lib`, the selftests, `npm run
+perf:logic-selftest`, `npm run bundle:check`, or any other step in
+`.github/workflows/ci.yml`'s `verify` job -- there is no `npm test` script in
+this repo.
 
 Numbers from a representative local run (fixture/empty-fleet data, this
 machine, this PR):

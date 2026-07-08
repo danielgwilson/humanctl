@@ -8,13 +8,15 @@
 // is ever touched) so results are reproducible on any machine, not dependent
 // on whatever happens to be in the operator's real session history that day.
 //
-// This is deliberately NOT part of `npm test`/CI (see docs/perf.md): it needs
-// a real Chromium renderer (an Electron window), and today's CI runner has no
-// display server. CI instead runs scripts/perf-selftest/logic.selftest.js,
-// the pure-logic subset (signature functions, watcher filter, budget math,
-// time-ladder) that needs no display. Running a full Electron instance in a
-// throwaway --user-data-dir + isolated HOME was judged not worth the xvfb
-// complexity for this repo's size; see docs/perf.md for the explicit split.
+// This is deliberately NOT run by any CI script (see docs/perf.md; this repo
+// has no `npm test`): it needs a real Chromium renderer (an Electron window),
+// and today's CI runner has no display server. CI instead runs
+// scripts/perf-selftest/logic.selftest.ts (via `npm run perf:logic-selftest`,
+// tsx), the pure-logic subset (signature functions, watcher filter, budget
+// math, time-ladder) that needs no display. Running a full Electron instance
+// in a throwaway --user-data-dir + isolated HOME was judged not worth the
+// xvfb complexity for this repo's size; see docs/perf.md for the explicit
+// split.
 //
 // Port/process hygiene (fixed-CDP-port antipattern, root-caused and fixed
 // here): earlier versions launched Electron with a FIXED

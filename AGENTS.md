@@ -36,7 +36,11 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 - `npm run typecheck` (`tsc -p tsconfig.backend.json --noEmit`) is the strict
   type gate over `lib/`, `bin/`, and `electron/main.ts` + `electron/preload.ts`;
   `npm run build:lib` (tsup) is the compile step. Both are CI-required (see
-  `.github/workflows/ci.yml`).
+  `.github/workflows/ci.yml`), alongside `npm run lint`, the renderer's own
+  lint and typecheck, `node --check` over every compiled `dist/` output, the
+  four `*.selftest.ts` suites (`pulse`, `reader`, `commands`, `claude-quota`),
+  `npm run perf:logic-selftest`, `npm run bundle:check`, and a separate
+  secret-scan job.
 
 ## Command registry (hardline)
 
