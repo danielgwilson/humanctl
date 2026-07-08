@@ -14,9 +14,25 @@
 // null so the caller falls back silently to the built-in glyph. Fixture mode
 // never calls this at all (it always uses glyphs).
 
+// Every step here is async on purpose. This module is reached from Electron's
+// MAIN process (electron/main.ts's icon handler), and AGENTS.md's rule is
+// absolute: never block the main process. `plutil` is a process SPAWN, and
+// spawning it synchronously stalls the main thread well past one 60fps frame,
+// i.e. a visibly dropped frame while the window is being dragged. The old
+// `execFileSync` form measured 31.9ms of steady-state main-process stall in
+// `npm run perf:eventloop`. That cost is real and user-facing, not a test
+// artifact: the icon cache lives in Electron userData, so it is cold on the
+// first launch of every install (and after any userData reset).
 import fs from 'fs';
 import path from 'path';
-import { execFileSync } from 'child_process';
+import { execFile } from 'child_process';
+import { promisify } from 'util';
+
+const execFileAsync = promisify(execFile);
+
+async function exists(p: string): Promise<boolean> {
+  try { await fs.promises.access(p); return true; } catch { return false; }
+}
 
 export type Harness = 'claude-code' | 'codex';
 
@@ -38,12 +54,13 @@ function plistPath(appPath: string): string {
 // repo), so no new runtime dependency is introduced to parse a binary or XML
 // plist. Returns the raw string value (extension may or may not be present;
 // Apple allows either) or null on any failure.
-export function readIconFileKey(appPath: string): string | null {
+export async function readIconFileKey(appPath: string): Promise<string | null> {
   const plist = plistPath(appPath);
-  if (!fs.existsSync(plist)) return null;
+  if (!(await exists(plist))) return null;
   let out: string;
   try {
-    out = execFileSync('plutil', ['-convert', 'json', '-o', '-', plist], { timeout: 4000, encoding: 'utf8' });
+    const r = await execFileAsync('plutil', ['-convert', 'json', '-o', '-', plist], { timeout: 4000, encoding: 'utf8' });
+    out = r.stdout;
   } catch {
     return null;
   }
@@ -56,14 +73,14 @@ export function readIconFileKey(appPath: string): string | null {
 // Resolve the icon filename to a real, readable .icns path under
 // Contents/Resources. CFBundleIconFile is sometimes recorded without its
 // extension (documented Apple behavior), so try both forms.
-export function resolveIconPath(appPath: string, iconFile: string): string | null {
+export async function resolveIconPath(appPath: string, iconFile: string): Promise<string | null> {
   const resourcesDir = path.join(appPath, 'Contents', 'Resources');
   const candidates = [
     path.join(resourcesDir, iconFile),
     path.join(resourcesDir, iconFile.endsWith('.icns') ? iconFile : `${iconFile}.icns`),
   ];
   for (const c of candidates) {
-    try { if (fs.statSync(c).isFile() && fs.statSync(c).size > 0) return c; } catch { /* try next */ }
+    try { const st = await fs.promises.stat(c); if (st.isFile() && st.size > 0) return c; } catch { /* try next */ }
   }
   return null;
 }
@@ -76,13 +93,13 @@ export type ResolveHarnessIconResult =
 // present and non-empty? Returns { ok: true, path } or { ok: false, reason }
 // -- callers use the reason for logging/debugging only; the UI-facing
 // behavior for ANY failure is identical (silent fallback to the glyph).
-export function resolveHarnessIconPath(harness: string): ResolveHarnessIconResult {
+export async function resolveHarnessIconPath(harness: string): Promise<ResolveHarnessIconResult> {
   const appPath = APP_PATHS[harness as Harness];
   if (!appPath) return { ok: false, reason: `unknown harness "${harness}"` };
-  if (!fs.existsSync(appPath)) return { ok: false, reason: `${appPath} not installed` };
-  const iconFile = readIconFileKey(appPath);
+  if (!(await exists(appPath))) return { ok: false, reason: `${appPath} not installed` };
+  const iconFile = await readIconFileKey(appPath);
   if (!iconFile) return { ok: false, reason: 'no CFBundleIconFile in Info.plist' };
-  const icnsPath = resolveIconPath(appPath, iconFile);
+  const icnsPath = await resolveIconPath(appPath, iconFile);
   if (!icnsPath) return { ok: false, reason: `icon file "${iconFile}" not found under Resources` };
   return { ok: true, path: icnsPath, appPath };
 }

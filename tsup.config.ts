@@ -49,7 +49,15 @@ export default defineConfig([
   },
   {
     name: 'electron-main',
-    entry: { main: 'electron/main.ts', preload: 'electron/preload.ts' },
+    // reader-service is the utilityProcess entry (electron/reader-service.ts,
+    // see AGENTS.md "Never block the Electron main process"): a separate
+    // Node process main.ts forks via utilityProcess.fork(path.join(__dirname,
+    // 'reader-service.js'), ...), so it must compile to
+    // dist/electron/reader-service.js alongside main.js/preload.js, with the
+    // SAME external config (../lib/ and 'electron' stay require()'d at
+    // runtime, never bundled) so it resolves lib/sessions from inside the
+    // asar exactly like main.js already does.
+    entry: { main: 'electron/main.ts', preload: 'electron/preload.ts', 'reader-service': 'electron/reader-service.ts' },
     outDir: 'dist/electron',
     format: ['cjs'],
     target: 'node20',
