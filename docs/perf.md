@@ -61,6 +61,50 @@ machine, this PR):
 Re-run this locally before every release; numbers drift with the machine and
 the current codebase, the table above is a point-in-time proof, not a promise.
 
+## LOCAL: `npm run perf:eventloop` (main-process stalls, required pre-release gate)
+
+    npm run perf:eventloop            # measure
+    npm run perf:eventloop:selfcheck  # prove the gate can still fail
+
+`perf:selftest` above is structurally blind to main-process blocking: it runs on
+an empty scratch home, and an empty fleet reads instantly. This gate launches the
+real app against a synthetic corpus of 410 transcripts (~173MB) under live write
+pressure, and instruments the main process with `perf_hooks.monitorEventLoopDelay`.
+
+It asserts on **`max`, the worst single stall**, never on a percentile. Window
+drag jank IS the individual long stall, and a percentile cannot see one: with the
+transcript reader blocking main, this app measured `max = 582.5ms` (roughly 35
+dropped frames) while `p99` read `3.2ms`, indistinguishable from idle.
+
+| Budget | Value |
+| --- | --- |
+| Worst steady-state main-process stall | < 16.7ms (one 60fps frame) |
+| Hard ceiling, any single window | 50ms (three dropped frames) |
+
+Steady state means after `did-finish-load`: main resets the delay histogram once
+the UI is up, so window creation is excluded and everything a user could feel is
+included. It resets again after each 2s sample, so every reported window is that
+window's own worst stall rather than a running high-water mark.
+
+**Verdict policy.** `max` is the statistic most sensitive to OS preemption, so a
+lone over-budget window on a loaded machine can mean nothing. The gate resolves
+that by reproducibility, never by a looser budget:
+
+- two or more over-budget windows: recurring main-process blocking, FAIL at once
+- any single window over the 50ms ceiling: a multi-frame freeze, FAIL, no retry
+- exactly one over-budget window under the ceiling: ambiguous, re-measure once.
+  Real one-time work reproduces (the harness-icon cold path is cold in every
+  fresh scratch userData, so its stall shows up in both runs and still fails);
+  machine noise does not.
+
+The gate prints `os.loadavg()` beside every number. Before reading a red as a
+regression, check it, and A/B against the previous release with
+`git diff --quiet <prev>..HEAD -- electron/ lib/`.
+
+`judge()` is pure and its cases are locked down by `perf:logic-selftest` in CI.
+`perf:eventloop:selfcheck` injects a 40ms main-thread stall and requires the gate
+to catch it: a gate that has never been observed to FAIL is decoration.
+
 ## CI: `npm run perf:logic-selftest` (pure logic, runs in CI)
 
     npm run perf:logic-selftest

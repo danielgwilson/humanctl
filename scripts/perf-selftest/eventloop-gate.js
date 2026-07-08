@@ -53,7 +53,74 @@ function killGroup(child) {
   catch { try { child.kill('SIGKILL'); } catch { /* gone */ } }
 }
 
+function loadavg1() { return os.loadavg()[0]; }
+
+// A single 36s launch is one sample of a noisy system. `max` is by construction
+// the statistic most sensitive to OS preemption, so on a loaded machine ONE
+// window can exceed the frame budget with nothing wrong in the app. The answer
+// is NOT a looser budget (that blinds the gate to the 31.9ms class of one-time
+// stall it exists to catch). The answer is REPRODUCIBILITY:
+//
+//   >= 2 over-budget windows   -> recurring main-process blocking. FAIL now.
+//   worst window > HARD_CEILING -> a multi-frame freeze. FAIL now, never retry.
+//   exactly 1 over-budget window -> ambiguous. Re-measure ONCE.
+//        reproduces (any over-budget window)  -> real one-time work. FAIL.
+//        does not reproduce (0 windows)       -> machine noise. PASS.
+//
+// Checked against every case this gate has actually seen:
+//   reader on main   17/17 windows over, 582ms  -> recurring, FAIL immediately
+//   injected 40ms/3s most windows over          -> recurring, FAIL immediately
+//   execFileSync(plutil) 31.9ms, ONE window     -> reproduces every run (the
+//                                                  icon cache is cold in every
+//                                                  fresh scratch userData), FAIL
+//   loadavg 26 blip, ONE window, 19-48ms        -> does not reproduce, PASS
+const HARD_CEILING_MS = 50; // three dropped frames: never a blip, never retried
 async function main() {
+  const first = await measure();
+  reportRun(first, 'run');
+  const verdict = judge(first);
+  if (verdict === 'retry') {
+    log(`one over-budget window (${first.worstMax.toFixed(1)}ms) and 1-min loadavg ${loadavg1().toFixed(1)}: ambiguous. Re-measuring once -- real one-time work reproduces, machine noise does not.`);
+    const second = await measure();
+    reportRun(second, 're-run');
+    if (second.overBudget.length > 0) {
+      finish(false, `REPRODUCED: a stall over the ${FRAME_BUDGET_MS}ms frame budget appeared in both runs (${first.worstMax.toFixed(1)}ms, then ${second.worstMax.toFixed(1)}ms). That is real one-time main-process work, not machine noise. Keep heavy/synchronous work off main (AGENTS.md).`);
+    }
+    finish(true, `worst steady-state stall ${first.worstMax.toFixed(1)}ms did not reproduce (re-run: ${second.worstMax.toFixed(1)}ms, 0/${second.steady.length} windows over budget). Machine noise, not main-process blocking.`);
+  }
+  finish(verdict === 'pass', verdict === 'pass'
+    ? `worst steady-state main-process stall ${first.worstMax.toFixed(1)}ms is within one 60fps frame on a realistic fleet.`
+    : `main-process event loop stalled ${first.worstMax.toFixed(1)}ms in steady state (${first.overBudget.length}/${first.steady.length} windows over the ${FRAME_BUDGET_MS}ms frame budget). Any stall longer than one frame drops a frame while the window is being dragged. Keep heavy/synchronous work off main (AGENTS.md: "Never block the Electron main process").`);
+}
+
+function judge(r) {
+  if (SELFCHECK) return r.overBudget.length > 0 ? 'fail' : 'pass'; // inverted by finish()
+  if (r.worstMax > HARD_CEILING_MS) return 'fail';
+  if (r.overBudget.length >= 2) return 'fail';
+  if (r.overBudget.length === 1) return 'retry';
+  return 'pass';
+}
+
+function reportRun(r, label) {
+  log(`${label}: samples ${r.all.length} (${r.steady.length} after the UI-loaded reset) | worst STEADY-STATE stall max=${r.worstMax.toFixed(1)}ms (budget < ${FRAME_BUDGET_MS}ms) | p99=${r.worstP99.toFixed(1)}ms (informational) | over-budget windows ${r.overBudget.length}/${r.steady.length} | worst 5: ${r.windowMaxes.slice(0, 5).map((v) => v.toFixed(1)).join(', ')}ms | 1-min loadavg ${r.loadavg.toFixed(1)}`);
+}
+
+function finish(passed, message) {
+  if (SELFCHECK) {
+    // Inverted: a ~40ms stall was injected into main, so the gate MUST catch it.
+    if (passed) {
+      console.error(`[perf:eventloop] SELFCHECK FAIL: main was blocked for ${SELFCHECK_STALL_MS}ms every 3s and the gate still passed. The gate is blind; it cannot be trusted to catch real blocking.`);
+      process.exit(1);
+    }
+    log(`SELFCHECK PASS: the gate caught the injected ${SELFCHECK_STALL_MS}ms stall. The gate can fail.`);
+    process.exit(0);
+  }
+  if (!passed) { console.error(`[perf:eventloop] FAIL: ${message}`); process.exit(1); }
+  log(`PASS: ${message}`);
+  process.exit(0);
+}
+
+async function measure() {
   const electronBin = require('electron');
   const repoRoot = path.join(__dirname, '..', '..');
   const mainEntry = path.join(repoRoot, 'dist', 'electron', 'main.js');
@@ -129,38 +196,23 @@ async function main() {
     process.exit(1);
   }
 
-  // Each sample is now the worst stall in its own 2s window (main resets the
-  // histogram after every print), so the SHAPE of a failure is legible:
-  // many over-budget windows = a recurring stall (a poll or watcher blocking
-  // main); exactly one = a one-off, which is either real one-time work (the
-  // icon cold path) or this machine being busy with something else. Both are
-  // reported; neither is silently tolerated.
-  const overBudgetWindows = steady.map((m) => +m[3]).filter((v) => v > FRAME_BUDGET_MS);
+  // Each sample is the worst stall in its own 2s window (main resets the
+  // histogram after every print), so the SHAPE of a failure is legible: many
+  // over-budget windows means a recurring stall; exactly one means a one-off,
+  // which judge() then resolves by re-measuring rather than by guessing.
   const windowMaxes = steady.map((m) => +m[3]).sort((a, b) => b - a);
-  log(`samples: ${all.length} (${steady.length} after the UI-loaded reset) | worst STEADY-STATE main-process stall: max=${worstMax.toFixed(1)}ms (budget < ${FRAME_BUDGET_MS}ms) | p99=${worstP99.toFixed(1)}ms (informational)`);
-  log(`over-budget windows: ${overBudgetWindows.length}/${steady.length} | worst 5 window maxes: ${windowMaxes.slice(0, 5).map((v) => v.toFixed(1)).join(', ')}ms`);
-  if (overBudgetWindows.length === 1) log(`shape: ONE over-budget window -- a one-off stall (real one-time work, or an unrelated process preempting main). Re-run on a quiet machine to tell those apart.`);
-  else if (overBudgetWindows.length > 1) log(`shape: ${overBudgetWindows.length} over-budget windows -- a RECURRING stall. This is main-process blocking, not machine noise.`);
+  const overBudget = windowMaxes.filter((v) => v > FRAME_BUDGET_MS);
+  const result = { all, steady, worstMax, worstP99, windowMaxes, overBudget, loadavg: loadavg1() };
   cleanup();
   process.removeListener('exit', cleanup);
-
-  const overBudget = worstMax > FRAME_BUDGET_MS;
-
-  if (SELFCHECK) {
-    // Inverted: a ~40ms stall was injected into main, so the gate MUST catch it.
-    if (!overBudget) {
-      console.error(`[perf:eventloop] SELFCHECK FAIL: main was blocked for ${SELFCHECK_STALL_MS}ms every 3s and the gate still reported max=${worstMax.toFixed(1)}ms within budget. The gate is blind; it cannot be trusted to catch real blocking. (p99 here was ${worstP99.toFixed(1)}ms -- that is exactly why this gate asserts on max.)`);
-      process.exit(1);
-    }
-    log(`SELFCHECK PASS: the gate caught the injected ${SELFCHECK_STALL_MS}ms stall (max=${worstMax.toFixed(1)}ms > ${FRAME_BUDGET_MS}ms budget; p99 stayed ${worstP99.toFixed(1)}ms, blind as ever). The gate can fail.`);
-    return;
-  }
-
-  if (overBudget) {
-    console.error(`[perf:eventloop] FAIL: main-process event loop stalled ${worstMax.toFixed(1)}ms in steady state, past the ${FRAME_BUDGET_MS}ms frame budget on a realistic fleet. Any stall longer than one frame drops a frame while the window is being dragged. Keep heavy/synchronous work off main (AGENTS.md: "Never block the Electron main process").`);
-    process.exit(1);
-  }
-  log(`PASS: worst steady-state main-process stall ${worstMax.toFixed(1)}ms is within one 60fps frame on a realistic fleet.`);
+  return result;
 }
 
-main().catch((e) => { console.error('[perf:eventloop] unexpected error:', e); process.exit(1); });
+// Exported for `npm run perf:logic-selftest`: judge() is the whole verdict
+// policy and it is pure, so it is testable without launching Electron. If this
+// file is required rather than run, do not launch anything.
+module.exports = { judge, FRAME_BUDGET_MS, HARD_CEILING_MS };
+
+if (require.main === module) {
+  main().catch((e) => { console.error('[perf:eventloop] unexpected error:', e); process.exit(1); });
+}

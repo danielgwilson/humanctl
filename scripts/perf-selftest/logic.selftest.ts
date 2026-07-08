@@ -146,6 +146,54 @@ check('budgetStatus: paused is true exactly at and above the daily cap, never a 
   } finally { process.env.HOME = prevHome; }
 });
 
+// ---- perf:eventloop verdict policy: pure, so it is testable without Electron ----
+//
+// The gate asserts on `max` (an individual stall IS window-drag jank; a
+// percentile cannot see one). But `max` is also the statistic most sensitive to
+// OS preemption, so a single over-budget window on a loaded machine is
+// ambiguous. The policy resolves that by REPRODUCIBILITY, never by a looser
+// budget: recurring stalls fail at once, a lone outlier must reproduce to fail.
+// Every case below is one this gate has actually seen in this repo.
+/* eslint-disable @typescript-eslint/no-var-requires */
+const { judge, FRAME_BUDGET_MS, HARD_CEILING_MS } = require('./eventloop-gate.js') as {
+  judge: (r: { worstMax: number; overBudget: number[]; steady: unknown[] }) => string;
+  FRAME_BUDGET_MS: number;
+  HARD_CEILING_MS: number;
+};
+function verdictFor(windows: number[]): string {
+  return judge({ worstMax: Math.max(0, ...windows), overBudget: windows.filter((v) => v > FRAME_BUDGET_MS), steady: windows });
+}
+
+check('perf gate policy: a clean run passes', () => {
+  assert.strictEqual(verdictFor([7.6, 6.4, 6.0]), 'pass');
+});
+
+check('perf gate policy: the reader blocking main (582ms, recurring) fails at once', () => {
+  assert.strictEqual(verdictFor([582.5, 120.3, 88.1, 40.2]), 'fail');
+});
+
+check('perf gate policy: an injected 40ms stall every 3s (recurring) fails at once', () => {
+  assert.strictEqual(verdictFor([42.9, 42.0, 41.6, 2.1]), 'fail');
+});
+
+check('perf gate policy: any single multi-frame freeze past the hard ceiling fails, never retried', () => {
+  assert.ok(84.0 > HARD_CEILING_MS);
+  assert.strictEqual(verdictFor([84.0, 9.1, 8.2]), 'fail');
+});
+
+check('perf gate policy: two over-budget windows are recurring, not noise', () => {
+  assert.strictEqual(verdictFor([18.1, 17.2, 9.0]), 'fail');
+});
+
+check('perf gate policy: ONE over-budget window is ambiguous and must be re-measured', () => {
+  // execFileSync(plutil) cost 31.9ms in exactly one window. It reproduces on
+  // every run (the icon cache is cold in each fresh scratch userData), so the
+  // re-measure turns this into a FAIL. A loadavg blip does not reproduce, so it
+  // turns into a PASS. Both start here.
+  assert.strictEqual(verdictFor([31.9, 8.1, 7.2]), 'retry');
+  assert.strictEqual(verdictFor([19.8, 15.1, 14.1]), 'retry');
+});
+
 // ---- harness icon extraction: pure path resolution, no Electron needed ----
 
 checkAsync('resolveHarnessIconPath: an unknown harness fails honestly, never throws', async () => {
