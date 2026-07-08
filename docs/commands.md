@@ -266,14 +266,12 @@ All three forms try the control socket first. If nothing is listening:
 
     npm run commands:selftest
 
-Plain node, zero network. Almost every case uses a temp `HOME` or a temp
-socket path; the one exception (`inbox.threads` proving the `note.post` ->
-thread-assembly join end to end) writes through the real `note.post` path
-and truncates its own appended line back off `~/.humanctl/notes.jsonl` in a
-`finally` block, verified byte-identical before/after (a pre-existing quirk
-in `lib/sessions.ts`, tracked separately, means `readNotes()` cannot be
-sandboxed by swapping `process.env.HOME` after the module's first
-`require()`, unlike the `controlDir()`-based writers). Covers: the
+Plain node, zero network, and no durable footprint: every case uses a temp
+`HOME` or a temp socket path. The `inbox.threads` case that proves the
+`note.post` -> thread-assembly join end to end is no exception, because both
+halves resolve `HOME` per call now: the writer through `controlDir()` in
+`lib/commands.ts`, the reader through `notesFile()` in `lib/sessions.ts`. The
+real `~/.humanctl/notes.jsonl` is never read and never written. Covers: the
 `COMMANDS` table shape, param validation (required / unknown / enum / type /
 truncation), `digestParams` shaping, registry dispatch (unknown command,
 missing handler, validation short-circuit, a throwing handler turned into

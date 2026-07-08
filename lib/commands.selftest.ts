@@ -221,25 +221,23 @@ async function run(): Promise<void> {
 
   // ---- inbox: threads assembled from notes + detected asks + persisted asks ----
 
-  // Note: lib/sessions.ts resolves NOTES_FILE from os.homedir() ONCE at module
-  // load (a pre-existing constant-capture quirk, tracked separately), so
-  // swapping process.env.HOME after the first require does not sandbox
-  // readNotes() the way it sandboxes controlDir()-based writers. This selftest
-  // must stay a no-op on the real ~/.humanctl/notes.jsonl (repo hygiene: a
-  // selftest never leaves durable side effects on the machine that ran it),
-  // so it writes through the REAL note.post path (proving the note.post ->
-  // inbox.threads join actually works end to end) and then truncates its own
-  // appended line back off the real file in a finally block.
+  // Both halves of the join now honour a HOME swap: note.post writes through
+  // controlDir(), and inbox.threads reads through sessions.ts's notesFile(),
+  // which resolves HOME per call. So this runs entirely inside a temp home and
+  // leaves no durable footprint on the machine that ran it, while still
+  // proving the note.post -> inbox.threads join end to end.
   await checkAsync('inbox.threads: a note with a session id becomes a thread with one note item', async () => {
-    const realNotesFile = path.join(os.homedir(), '.humanctl', 'notes.jsonl');
-    const sizeBefore = (() => { try { return fs.statSync(realNotesFile).size; } catch { return 0; } })();
     const sid = `selftest_${randomUUID().slice(0, 8)}`;
     const dir = tempDir('inbox-home');
     const log = createEventLog({ dir });
     const registry = createRegistry({ log });
+    const home = tempDir('inbox-real-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
     try {
       const posted = await registry.invoke('note.post', { message: 'PR is up for review', level: 'review', session: sid }, { source: 'test' });
       assert.strictEqual(posted.ok, true);
+      assert.ok(fs.existsSync(path.join(home, '.humanctl', 'notes.jsonl')), 'the note landed in the sandboxed home, not the real one');
       const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
       assert.strictEqual(result.ok, true);
       const threads = result.threads as any[];
@@ -248,9 +246,7 @@ async function run(): Promise<void> {
       assert.strictEqual(t.items[0].kind, 'note');
       assert.strictEqual(t.items[0].level, 'review');
     } finally {
-      // Truncate back to the exact pre-test size: note.post only appends, so
-      // this removes precisely the one line this test wrote, nothing else.
-      try { fs.truncateSync(realNotesFile, sizeBefore); } catch { /* best effort */ }
+      process.env.HOME = prevHome;
     }
   });
 

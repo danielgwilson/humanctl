@@ -63,7 +63,7 @@ import os from 'os';
 import path from 'path';
 import {
   listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes,
-  readNeedSignals, deriveNeedState, readAppended, primeTailCursor, readTimelinePage, HARNESSES,
+  readNeedSignals, deriveNeedState, readAppended, primeTailCursor, readTimelinePage, harnesses,
   type Harness,
 } from '../lib/sessions';
 import { resolveSessionRow, inboxThreads, isInboxRelevantChange } from '../lib/commands';
@@ -154,7 +154,7 @@ function scheduleInbox(): void {
 
 function watchSessions(): void {
   const ping = () => { if (watchTimer) clearTimeout(watchTimer); watchTimer = setTimeout(() => postToRenderer({ type: 'sessions:changed' }), 2500); };
-  const harnessDirs = HARNESSES.map((h) => h.dir);
+  const harnessDirs = harnesses().map((h) => h.dir);
   for (const dir of harnessDirs) {
     try {
       const w = fs.watch(dir, { recursive: true }, (_ev, fn) => {
@@ -301,7 +301,7 @@ parentPort.on('message', (e) => {
   handleRequest(e.data as ReaderRequest, postToMain);
 });
 
-// Start watching immediately: HARNESSES' dirs are fixed (~/.claude,
+// Start watching immediately: harnesses() dirs are fixed (~/.claude,
 // ~/.codex), so there is no handshake to wait for from main before attaching.
 watchSessions();
 console.log(`humanctl: reader-service up (pid ${process.pid})`);

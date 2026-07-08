@@ -246,10 +246,13 @@ have their own fixture-driven selftest (synthetic transcripts in a temp dir):
     npm run reader:selftest       # timeline paging + cursor math incl. rotation
 
 The command registry (param validation, the event log, the control socket,
-and inbox thread assembly) has its own selftest, no network and no durable
-real-data footprint (one case briefly appends then truncates one line of
-`~/.humanctl/notes.jsonl` to prove `note.post` -> `inbox.threads` end to
-end; see `docs/commands.md`'s Selftest section):
+and inbox thread assembly) has its own selftest: no network, and no durable
+real-data footprint at all. Every case that touches `~/.humanctl` runs inside
+a temp dir pointed at by `process.env.HOME`, which both the writer
+(`controlDir()` in `lib/commands.ts`) and the reader (`notesFile()` in
+`lib/sessions.ts`) resolve per call, so the `note.post` -> `inbox.threads`
+join is proven end to end without ever reading or writing the real
+`~/.humanctl/notes.jsonl` (see `docs/commands.md`'s Selftest section):
 
     npm run commands:selftest     # registry, event log, and socket round-trip
 

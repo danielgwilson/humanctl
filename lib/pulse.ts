@@ -473,7 +473,7 @@ interface SessionsCollectResult {
 }
 
 function collectSessions(config: PulseConfig, gitRepos: GitRepoResult[]): SessionsCollectResult {
-  const haveDirs = sessionsLib.HARNESSES.some((h) => fs.existsSync(h.dir));
+  const haveDirs = sessionsLib.harnesses().some((h) => fs.existsSync(h.dir));
   if (!haveDirs) return { rows: null, degraded: 'no session directories found (no Codex or Claude Code logs on this machine)' };
   let rows: SessionRow[];
   try {
@@ -523,7 +523,7 @@ function collectSessions(config: PulseConfig, gitRepos: GitRepoResult[]): Sessio
 // ---- notes adapter --------------------------------------------------------------
 
 function collectNotes(): { notes: import('./sessions').NoteRecord[] | null; degraded: string | null } {
-  if (!fs.existsSync(sessionsLib.NOTES_FILE)) return { notes: [], degraded: null }; // never posted a note: empty truth, not a failure
+  if (!fs.existsSync(sessionsLib.notesFile())) return { notes: [], degraded: null }; // never posted a note: empty truth, not a failure
   try {
     return { notes: sessionsLib.readNotes({ limit: 200 }), degraded: null };
   } catch (e) {

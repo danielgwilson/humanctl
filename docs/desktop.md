@@ -484,11 +484,19 @@ runtime, and notarizes via Apple's notary service. Without a cert installed,
 The renderer is React + TypeScript, built with Vite / electron-vite.
 
 - `lib/sessions.ts` is the reader. It scans `~/.codex/sessions` and
-  `~/.claude/projects`, reads each transcript by bounded slices, and returns
-  metadata, a per-session context map (`readBlocks`), and real token usage
-  (`readUsage`, cached by mtime). Bounded reads past the 12MB cap are
-  tail-anchored (the newest bytes, never the head) and say what they skipped
-  (`truncated`, `skippedHeadBytes`). `readTimelinePage` serves the detail
+  `~/.claude/projects` (both resolved from `$HOME` per call, never frozen at
+  import), reads each transcript by bounded slices, and returns metadata, a
+  per-session context map (`readBlocks`), and real token usage (`readUsage`,
+  cached by mtime). Bounded reads past the 12MB cap are tail-anchored (the
+  newest bytes, never the head) and say what they skipped (`truncated`,
+  `skippedHeadBytes`). Token usage is the one reader that is NOT bounded: a
+  bounded slice silently undercounts any transcript past the cap, so Claude
+  totals are accumulated whole-file through a line-aligned per-file byte cursor
+  and extended by exactly the appended bytes on later reads. Cost is summed over
+  per-model buckets, so a session that switches model mid-run is priced at each
+  model's own rate rather than entirely at the last one seen. The cursor map
+  lives in the reader-service process, so it survives the renderer's 20s poll;
+  a reader respawn just re-scans from zero. `readTimelinePage` serves the detail
   timeline in substantive-event-budgeted backward pages; `readAppended` reads
   only appended bytes through a line-aligned per-file cursor
   (`primeTailCursor`). `readDetail` adds the per-session last-exchange, Linear /

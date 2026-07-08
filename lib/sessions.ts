@@ -13,11 +13,20 @@ export type Harness = 'codex' | 'claude-code';
 export type SessionState = 'need' | 'work' | 'done' | 'idle' | 'block';
 export type SessionTier = 'hot' | 'drifting' | 'archived';
 
-const HOME = os.homedir();
-const HARNESSES: { name: Harness; dir: string }[] = [
-  { name: 'codex', dir: path.join(HOME, '.codex', 'sessions') },
-  { name: 'claude-code', dir: path.join(HOME, '.claude', 'projects') },
-];
+// HOME is resolved PER CALL, never frozen at require time. A module-load
+// `const HOME = os.homedir()` bakes the real home into every derived path for
+// the life of the process, so a selftest that swaps `process.env.HOME` after
+// the first import cannot sandbox this reader and ends up scanning (and, via
+// readNotes, reporting on) the developer's real ~/.codex, ~/.claude, and
+// ~/.humanctl. Same pattern as controlDir() in commands.ts.
+function home(): string { return process.env.HOME || os.homedir(); }
+function harnesses(): { name: Harness; dir: string }[] {
+  const h = home();
+  return [
+    { name: 'codex', dir: path.join(h, '.codex', 'sessions') },
+    { name: 'claude-code', dir: path.join(h, '.claude', 'projects') },
+  ];
+}
 
 const HEAD_BYTES = 256 * 1024; // enough for session meta + first real prompt
 const TAIL_BYTES = 128 * 1024; // enough for current state
@@ -520,13 +529,16 @@ export interface ListRecentOpts {
 const scanCache = new Map<string, { at: number; rows: SessionRow[] }>();
 const SCAN_TTL_MS = 1500;
 function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): SessionRow[] {
-  const key = `${maxAgeH}:${limit}:${!!includeAutomation}`;
+  // The resolved home is part of the key: without it a HOME swap inside the TTL
+  // window would be served rows scanned from the PREVIOUS home.
+  const h0 = home();
+  const key = `${h0}:${maxAgeH}:${limit}:${!!includeAutomation}`;
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < SCAN_TTL_MS) return hit.rows;
   const cutoff = Date.now() - maxAgeH * 3.6e6;
   const minYear = new Date(cutoff).getFullYear();
   const rows: SessionRow[] = [];
-  for (const h of HARNESSES) {
+  for (const h of harnesses()) {
     const files: string[] = [];
     walkJsonl(h.dir, files, minYear);
     for (const file of files) {
@@ -546,7 +558,7 @@ function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): 
         harness: h.name,
         id: path.basename(file).replace(/\.jsonl$/, ''),
         cwd,
-        repo: cwd ? cwd.replace(HOME, '~') : '',
+        repo: cwd ? cwd.replace(h0, '~') : '',
         title: title || '',
         customTitle: customTitle || '',
         lastRole: lastRole(file, h.name, st),
@@ -582,12 +594,13 @@ function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): 
 // (always present on macOS), keyed by thread id (the PK, so lookups are indexed),
 // batched for the displayed rows, cached by the DB mtime. Purely additive: any
 // failure (no sqlite3, locked DB, schema drift) just leaves customTitle unset.
-const CODEX_STATE_DB = path.join(HOME, '.codex', 'state_5.sqlite');
+function codexStateDb(): string { return path.join(home(), '.codex', 'state_5.sqlite'); }
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 const codexTitleCache = new Map<string, string>(); // `${uuid}:${dbMtime}` -> title ('' if none)
 function applyCodexTitles(rows: SessionRow[]): void {
+  const db = codexStateDb();
   let dbm: number;
-  try { dbm = fs.statSync(CODEX_STATE_DB).mtimeMs; } catch { return; }
+  try { dbm = fs.statSync(db).mtimeMs; } catch { return; }
   const need: string[] = [];
   for (const r of rows) {
     const m = String(r.id).match(UUID_RE);
@@ -601,7 +614,7 @@ function applyCodexTitles(rows: SessionRow[]): void {
   let qrows: { id: string; title: string }[] = [];
   try {
     const inList = need.map((u) => `'${u}'`).join(','); // uuids are hex, safe to inline
-    const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', CODEX_STATE_DB,
+    const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', db,
       `SELECT id, title FROM threads WHERE id IN (${inList}) AND title != ''`],
       { timeout: 4000, encoding: 'utf8', maxBuffer: 8 << 20 });
     qrows = raw.trim() ? JSON.parse(raw) : [];
@@ -648,7 +661,9 @@ export function listRecent(opts: ListRecentOpts = {}): SessionRow[] {
 // rough token estimate per block. Used by the desktop "context map" view.
 // Read-only; reads at most MAX_READ bytes from the start of the file.
 
-// Bounded read for the heavy per-session readers (blocks, detail, usage).
+// Bounded read for the heavy per-session readers (blocks, detail). Token usage
+// is NOT one of them: it needs every line, and gets there incrementally through
+// the per-file cursor in readClaudeUsage.
 // Files over the cap are read TAIL-ANCHORED (the newest 12MB), never the head:
 // the head of a 30MB transcript is typically a day old, and a 2026-07 audit of
 // live sessions found head-anchored reads rendering timelines up to 22h stale
@@ -1091,7 +1106,9 @@ export function readAppended(file: string, opts: { harness?: Harness | string } 
 // (message.usage + model), Codex in token_count events (cumulative totals +
 // live rate limits). We read it, estimate spend from pricing.ts, and surface
 // Codex rate limits as a real quota track. Cached by path+mtime+size so live
-// refresh does not re-read unchanged files. Read-only.
+// refresh does not re-read unchanged files; Claude totals are additionally
+// carried forward by a per-file byte cursor, so a changed file re-reads only
+// its appended bytes. Read-only.
 
 export interface UsageInfo {
   harness: Harness | string;
@@ -1108,34 +1125,118 @@ export interface UsageInfo {
 
 const usageCache = new Map<string, UsageInfo>();
 
-function readClaudeUsage(file: string): UsageInfo {
-  // Tail-anchored past the cap: on a 30MB transcript the head-anchored read
-  // reported a context% frozen at the 12MB boundary (a day stale on live
-  // sessions). Token totals past the cap cover the newest 12MB either way and
-  // are already labeled "est"; context%, model, and the live window come from
-  // the true last assistant turn.
-  let size = 0;
-  try { size = fs.statSync(file).size; } catch { /* size stays 0 */ }
-  const fromEnd = size > MAX_READ;
-  const lines = readSlice(file, MAX_READ, fromEnd).split('\n');
-  if (fromEnd && lines.length) lines.shift();
-  let inT = 0, out = 0, cr = 0, cc = 0, model = '', lastCtx = 0;
-  for (const ln of lines) {
-    if (!ln) continue;
-    const o = parse(ln);
-    const m = o && o.message;
-    if (!m || m.role !== 'assistant' || !m.usage) continue;
-    const u = m.usage;
-    inT += u.input_tokens || 0;
-    out += u.output_tokens || 0;
-    cr += u.cache_read_input_tokens || 0;
-    cc += u.cache_creation_input_tokens || 0;
-    if (m.model) model = m.model;
-    // the last assistant turn's input is the live context-window occupancy
-    lastCtx = (u.input_tokens || 0) + (u.cache_read_input_tokens || 0) + (u.cache_creation_input_tokens || 0);
+// Claude records usage per assistant message, so an honest whole-session total
+// needs every line of the transcript. Any single-ended bounded read undercounts
+// the moment the file outgrows the cap: a 30MB transcript read tail-anchored at
+// MAX_READ contributed only its newest 12MB to `tokens` and `costUSD`, silently
+// and always low. Transcripts are append-only, so the fix has the same shape as
+// the timeline tail cursors above: fold the whole file into running sums once,
+// then extend those sums by exactly the appended bytes on every later call.
+//
+// Two invariants make that safe:
+//   - Offsets are line-aligned BYTES. A partially flushed trailing line is left
+//     unconsumed and carried into the next read, so a line is never counted as
+//     two halves. ('\n' = 0x0a can never appear inside a multibyte UTF-8
+//     sequence, so slicing at newline bytes is codepoint-safe.)
+//   - An inode change (rotation) or a size shrink (truncation) means the sums no
+//     longer describe the file. They are discarded and the file is re-scanned
+//     from byte 0.
+//
+// Cost is accumulated into PER-MODEL buckets and priced bucket by bucket at the
+// end. The old code kept only the last model seen and priced the entire session
+// at that rate, so a session that ran Opus and then switched to Haiku was billed
+// end to end at Haiku's rate (and vice versa). A whole session is never priced
+// at one model again.
+//
+// The cursor map lives in whatever process owns the reader. In the desktop app
+// that is the long-lived reader-service utilityProcess, so cursors survive the
+// renderer's 20s poll and each poll re-reads only the appended bytes. A reader
+// respawn simply re-scans from 0, which is correct, just not free.
+const USAGE_CHUNK = 4 * 1024 * 1024;   // forward read unit
+const USAGE_CURSOR_CAP = 128;          // LRU bound on tracked files
+
+interface UsageBucket { inT: number; out: number; cr: number; cc: number }
+interface UsageCursor {
+  ino: number;
+  offset: number;    // line-aligned byte offset already folded into byModel
+  lastSize: number;
+  model: string;     // model in effect at `offset`, carried across chunks and calls
+  lastCtx: number;
+  byModel: Map<string, UsageBucket>;
+}
+const usageCursors = new Map<string, UsageCursor>(); // file -> cursor (insertion-ordered = LRU)
+
+function bucketFor(cur: UsageCursor, model: string): UsageBucket {
+  let b = cur.byModel.get(model);
+  if (!b) { b = { inT: 0, out: 0, cr: 0, cc: 0 }; cur.byModel.set(model, b); }
+  return b;
+}
+
+// Forward, chunked, line-aligned scan of [cur.offset, end): parses the complete
+// lines only, folds them into the cursor's per-model sums, and advances
+// cur.offset to the byte after the last consumed newline.
+function usageScanForward(file: string, cur: UsageCursor, end: number, chunkBytes?: number): void {
+  const chunk = chunkBytes || USAGE_CHUNK;
+  let pos = cur.offset;
+  let carry: Buffer = Buffer.alloc(0);
+  while (pos < end) {
+    const want = Math.min(chunk, end - pos);
+    const buf = readBytesRaw(file, pos, want);
+    if (!buf.length) break;
+    pos += buf.length;
+    const region: Buffer = carry.length ? Buffer.concat([carry, buf]) : buf;
+    const nl = region.lastIndexOf(0x0a);
+    if (nl < 0) { carry = region; if (buf.length < want) break; continue; } // no complete line yet
+    carry = region.subarray(nl + 1); // partial trailing line waits for its newline
+    for (const ln of region.subarray(0, nl + 1).toString('utf8').split('\n')) {
+      // Cheap pre-filter: a contributing line must serialize message.usage, and
+      // most transcript bytes are tool results that never do.
+      if (!ln || ln.indexOf('"usage"') < 0) continue;
+      const o = parse(ln);
+      const m = o && o.message;
+      if (!m || m.role !== 'assistant' || !m.usage) continue;
+      const u = m.usage;
+      if (m.model) cur.model = m.model; // a line without a model inherits the one in effect
+      const b = bucketFor(cur, cur.model);
+      const inT = u.input_tokens || 0, out = u.output_tokens || 0;
+      const cr = u.cache_read_input_tokens || 0, cc = u.cache_creation_input_tokens || 0;
+      b.inT += inT; b.out += out; b.cr += cr; b.cc += cc;
+      // the last assistant turn's input is the live context-window occupancy
+      cur.lastCtx = inT + cr + cc;
+    }
+    cur.offset = pos - carry.length;
+    if (buf.length < want) break; // file shrank mid-scan; the next call's stat resets it
   }
-  const p = priceFor(model);
-  const costUSD = (inT * p.in + out * p.out + cr * p.cacheRead + cc * p.cacheWrite) / 1e6;
+}
+
+export function readClaudeUsage(file: string, opts: { chunkBytes?: number } = {}): UsageInfo {
+  let st: fs.Stats | null;
+  try { st = fs.statSync(file); } catch { st = null; }
+  let cur = st ? usageCursors.get(file) : undefined;
+  if (st) {
+    if (!cur || cur.ino !== st.ino || st.size < cur.lastSize || st.size < cur.offset) {
+      cur = { ino: st.ino, offset: 0, lastSize: 0, model: '', lastCtx: 0, byModel: new Map() }; // first sight, rotation, or truncation
+    }
+    if (st.size > cur.offset) {
+      try { usageScanForward(file, cur, st.size, opts.chunkBytes); } catch { /* partial totals beat none */ }
+    }
+    cur.lastSize = st.size;
+    usageCursors.delete(file); usageCursors.set(file, cur); // reinsert at the tail: LRU
+    if (usageCursors.size > USAGE_CURSOR_CAP) {
+      const oldest = usageCursors.keys().next().value;
+      if (oldest !== undefined) usageCursors.delete(oldest);
+    }
+  }
+  let inT = 0, out = 0, cr = 0, cc = 0, costUSD = 0;
+  if (cur) {
+    for (const [model, b] of cur.byModel) {
+      const p = priceFor(model); // each model priced at its own rate, never the session's last
+      costUSD += (b.inT * p.in + b.out * p.out + b.cr * p.cacheRead + b.cc * p.cacheWrite) / 1e6;
+      inT += b.inT; out += b.out; cr += b.cr; cc += b.cc;
+    }
+  }
+  const model = cur ? cur.model : '';
+  const lastCtx = cur ? cur.lastCtx : 0;
   const ctxWin = contextWindowFor(model);
   return { harness: 'claude-code', model, metered: true, costUSD, apiEquivUSD: null, rateLimits: null,
     contextWindow: ctxWin, contextTokens: lastCtx, contextPct: ctxWin ? Math.min(100, Math.round((lastCtx / ctxWin) * 100)) : null,
@@ -1167,7 +1268,10 @@ function readCodexUsage(file: string): UsageInfo {
     tokens: { input: inT, cached, output: out, reasoning, total: tu.total_tokens || 0 } };
 }
 
-// Public: per-session usage. Cheap on repeat calls (mtime+size cache).
+// Public: per-session usage. Cheap on repeat calls (mtime+size cache), and cheap
+// on a MISS too for Claude: every append busts this key, but readClaudeUsage's
+// per-file cursor then reads only the appended bytes rather than re-reading the
+// whole transcript on every 20s poll.
 export function readUsage(file: string, harness: Harness | string): UsageInfo | null {
   let st: fs.Stats;
   try { st = fs.statSync(file); } catch { return null; }
@@ -1582,7 +1686,8 @@ export function aggregateSkills(opts: ListRecentOpts = {}): SkillAggregate {
 }
 
 // Agent inbox: notes posted by `humanctl note` to ~/.humanctl/notes.jsonl.
-export const NOTES_FILE = path.join(HOME, '.humanctl', 'notes.jsonl');
+// A function, not a const: see home() above.
+export function notesFile(): string { return path.join(home(), '.humanctl', 'notes.jsonl'); }
 const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
 
 export interface NoteRecord {
@@ -1600,7 +1705,7 @@ export interface NoteRecord {
 
 export function readNotes(opts: { limit?: number } = {}): NoteRecord[] {
   let txt: string;
-  try { txt = readSlice(NOTES_FILE, 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
+  try { txt = readSlice(notesFile(), 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
   if (!txt) return [];
   const notes = txt.split('\n').filter(Boolean).map((l) => {
     try {
@@ -1612,7 +1717,7 @@ export function readNotes(opts: { limit?: number } = {}): NoteRecord[] {
   return notes.slice(0, opts.limit || 100);
 }
 
-export { HARNESSES };
+export { harnesses };
 
 // CLI smoke: `node dist/lib/sessions.js` prints a quick table (read-only).
 if (require.main === module) {
