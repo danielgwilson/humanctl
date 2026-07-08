@@ -28,7 +28,7 @@ const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '
 //
 // STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
 // (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
-// in a full-height Linear/Slack-style layout: SidebarProvider wraps a
+// in a full-height sidebar layout: SidebarProvider wraps a
 // Sidebar (nav-sidebar.tsx) and a SidebarInset that owns the
 // header/content/context-bar column to its right. See DESIGN.md's
 // "Information architecture" section for the conformance statement.

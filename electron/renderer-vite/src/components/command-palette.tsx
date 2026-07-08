@@ -26,7 +26,7 @@ import { cn } from '@/lib/utils';
 import { cwdBase } from '@/lib/format';
 import type { AppState, SessionRow, ViewName } from '@/lib/types';
 
-// The Linear/Attio-style Cmd-K command palette: the fast keyboard-first way
+// The Cmd-K command palette: the fast keyboard-first way
 // to navigate + act, layered on top of (never instead of) the existing
 // mouse-driven nav/sidebar/actions. Consumes App's ALREADY-fetched state
 // (rows, view, theme, rightRailOpen) and its existing handlers -- no new

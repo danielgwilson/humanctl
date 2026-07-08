@@ -167,7 +167,7 @@ export function AppSidebar({
   );
 }
 
-// Linear-style "hover the left edge to peek the sidebar" affordance,
+// The "hover the left edge to peek the sidebar" affordance,
 // STAGE-OFFCANVAS (0.17.4). Rendered as a sibling of <AppSidebar> (App.tsx),
 // not nested inside it: the Sidebar primitive's own collapsed/offcanvas
 // state is expressed as a `left` position shift on a `fixed` div (see

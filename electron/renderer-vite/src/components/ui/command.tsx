@@ -36,7 +36,7 @@ function Command({
   )
 }
 
-// Top-anchored, not dead-centered (Linear/Attio reference, not a stock
+// Top-anchored, not dead-centered (a palette is a launcher, not a stock
 // centered shadcn dialog) -- overrides DialogContent's default
 // `top-[50%] ... translate-y-[-50%]` via twMerge so the palette sits in the
 // upper third of the window, closer to where the eye already lands after

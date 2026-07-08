@@ -2,6 +2,19 @@
 
 humanctl is an attention router for a scarce human running many coding-agent sessions. Every design decision serves one job: route the human to the next bounded decision with the least noise possible. When in doubt, subtract.
 
+> **`docs/design-system.md` is the law for colour, type, geometry, elevation, and
+> motion:** the token layer, the primitive vocabulary built on it, and the
+> arithmetic that binds them. Read it before touching a token, a font size, a
+> radius, a shadow, or a transition.
+>
+> This file remains the law for everything above the token layer: information
+> architecture, vocabulary, one owner per signal, row anatomy, no cards,
+> ScrollArea always, the bespoke-controls and accessibility hardline, the
+> performance SLOs, the born-clean rules, and the process rules. Nothing here is
+> superseded. Where the two documents once conflicted, `docs/design-system.md`
+> section 8 states the resolution, and the conflicting sentences below have been
+> corrected rather than left standing.
+
 ## The one rule
 
 **One owner per signal.** Every piece of information has exactly one home per screen. Adding a second home for a signal requires deleting the first. If a review adds a count, digest, or status that already renders elsewhere on the same screen, the PR is wrong by definition.
@@ -33,7 +46,7 @@ Nav (a full-height sidebar, offcanvas: fully hidden by default, NOT an icon rail
 
 Session states: `running`, `needs input`, `needs approval`, `blocked`, `stalled`, `stale`, `finished`, `archived`. The needs-* and blocked states carry a reason string rendered on hover or in detail ("asks a question", "interrupted", "note: blocked"). Note levels (`fyi`, `review`, `blocked`, `done`) appear only as chips on note items, never as session states. No other status words may be introduced.
 
-Colors are semantic and fixed per axis: state colors follow the existing map (needs-* amber family, blocked red family, running green family, finished/neutral gray, stale/archived dim). Harness identity is conveyed by icon, never by color.
+Colors are semantic and fixed per axis: needs-* amber family, blocked/stalled red family, running green family, finished blue family, stale/archived neutral. Harness identity is conveyed by icon, never by color; a vendor name never enters the token layer. The hues themselves are defined in `docs/design-system.md` section 1.6.
 
 ## Row anatomy (session rows, inbox threads)
 
@@ -46,7 +59,9 @@ Time ladder: `now`, `Nm`, `Nh`, weekday for this week, `M/D` beyond. Absolute ti
 
 ## Type, surface, density
 
-Existing tokens are law: Space Grotesk display, JetBrains Mono labels/metadata, the established accent and dark/light palettes. Flat surfaces, no cards, no shadows-as-hierarchy. Calm density: fewer, larger, complete rows beat many truncated ones. Every count renders with a noun. Empty states are quiet and instructive, never celebratory.
+Type, surfaces, and the palette are defined in `docs/design-system.md`, which is law. The one sentence to carry in your head: **mono is the chrome, sans is language.** Space Grotesk appears only in the view title and in prose addressed to a human (the message to the human, note bodies, chat, the composer, empty states, toasts); everything else, including session titles, nav labels, and button labels, is JetBrains Mono.
+
+Flat surfaces, no cards, no shadows-as-hierarchy. Calm density: fewer, larger, complete rows beat many truncated ones. Every count renders with a noun. Empty states are quiet and instructive, never celebratory.
 
 ## Performance SLOs (enforced by perf:selftest, a LOCAL gate; CI runs only perf:logic-selftest)
 
@@ -149,8 +164,12 @@ zinc/new-york look:
   (`components/ui/empty.tsx`, hand-ported in the house style rather than
   shadcn's stock dashed-border/icon-medallion card, which reads as a card),
   never a bespoke one-off `<div className="p-... text-ink3">` placeholder.
-  Quiet, mono, understated -- never celebratory (session-detail, Sessions,
-  Fleet, and Inbox's empty states are the current call sites).
+  Quiet, understated -- never celebratory (session-detail, Sessions,
+  Fleet, and Inbox's empty states are the current call sites). Both grades
+  are outline-free: no dashed border, no box, ever. A dashed box cannot be
+  drawn with an inset box-shadow, so it would need the one `border` property
+  the design system forbids, in order to reintroduce the exact card this rule
+  already rejects. Body copy is prose, and prose is never mono.
 - **Action feedback is `Sonner`** (`components/ui/sonner.tsx`, a single
   `<Toaster/>` mounted once in `App.tsx`), the one transient-feedback surface
   for a mutation that has no other visible confirmation (theme/engine/budget
@@ -174,10 +193,10 @@ variant, a Chip variant) before reaching for an inline `className` override.
   pin code entirely and gets keyboard navigation, focus management, and
   ARIA wiring for the rail from Radix for free. It also moves the rail from
   a fixed-position overlay spanning header-to-context-bar to a genuine
-  full-height column (Linear/Slack style), with the header and context bar
+  full-height column, with the header and context bar
   now insets to its right rather than full-width bars the rail floats over.
-- **Nav: icon rail (stage 2b) -> offcanvas + hover-peek (0.17.4, Linear/Attio
-  reference).** The collapsed icon rail was 48px (`SIDEBAR_WIDTH_ICON`), but
+- **Nav: icon rail (stage 2b) -> offcanvas + hover-peek (0.17.4).**
+  The collapsed icon rail was 48px (`SIDEBAR_WIDTH_ICON`), but
   the macOS `hiddenInset` traffic-light cluster's own footprint is ~80-90px
   including its left inset, so the lights always spilled past the rail's
   right edge -- no amount of border-tweaking fixed a rail narrower than the
@@ -191,7 +210,7 @@ variant, a Chip variant) before reaching for an inline `className` override.
   clears the lights and stays borderless there; never both, never a rule
   crossing the lights. A new pointer-only affordance, a thin fixed strip at
   the window's true left edge (below the traffic-light band, rendered only
-  while collapsed), opens the sidebar on a ~120ms debounced hover -- Linear's
+  while collapsed), opens the sidebar on a ~120ms debounced hover -- the
   "move to the edge to reveal" gesture -- layered on top of, not instead of,
   the accessible paths (the header's `PanelLeft` toggle, Cmd+backslash). This
   also retires the per-item tooltip-on-hover pattern from stage 2b: there is
