@@ -14,7 +14,7 @@ import { cn } from '@/lib/utils';
 // sidebar WHEN THE SIDEBAR IS EXPANDED -- see the offcanvas note below for
 // why that is no longer the whole story.
 //
-// STAGE-2E chrome pass: height dropped 52px -> 44px (Linear/Adio-compact;
+// STAGE-2E chrome pass: height dropped 52px -> 44px (compact chrome;
 // the bar had nothing in it but the wordmark and one button) and a `PanelLeft`
 // toggle was added on the left, symmetric with the existing `PanelRight`
 // toggle on the right -- the right drawer had a visible collapse control and
@@ -35,7 +35,7 @@ import { cn } from '@/lib/utils';
 //     that clears the lights, drops its bottom border entirely (no rule may
 //     cross the light band -- same reasoning as nav-sidebar.tsx's borderless
 //     SidebarHeader), and its PanelLeft toggle -- the first flex child --
-//     naturally lands just to the right of the lights, Linear's "collapsed
+//     naturally lands just to the right of the lights, the "collapsed
 //     title bar" layout.
 //   - expanded: the SIDEBAR's own header owns the corner (nav-sidebar.tsx);
 //     this header is inset to the sidebar's right and goes back to plain

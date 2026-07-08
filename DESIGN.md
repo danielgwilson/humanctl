@@ -193,7 +193,7 @@ variant, a Chip variant) before reaching for an inline `className` override.
   pin code entirely and gets keyboard navigation, focus management, and
   ARIA wiring for the rail from Radix for free. It also moves the rail from
   a fixed-position overlay spanning header-to-context-bar to a genuine
-  full-height column (Linear/Slack style), with the header and context bar
+  full-height column, with the header and context bar
   now insets to its right rather than full-width bars the rail floats over.
 - **Nav: icon rail (stage 2b) -> offcanvas + hover-peek (0.17.4).**
   The collapsed icon rail was 48px (`SIDEBAR_WIDTH_ICON`), but
@@ -210,7 +210,7 @@ variant, a Chip variant) before reaching for an inline `className` override.
   clears the lights and stays borderless there; never both, never a rule
   crossing the lights. A new pointer-only affordance, a thin fixed strip at
   the window's true left edge (below the traffic-light band, rendered only
-  while collapsed), opens the sidebar on a ~120ms debounced hover -- Linear's
+  while collapsed), opens the sidebar on a ~120ms debounced hover -- the
   "move to the edge to reveal" gesture -- layered on top of, not instead of,
   the accessible paths (the header's `PanelLeft` toggle, Cmd+backslash). This
   also retires the per-item tooltip-on-hover pattern from stage 2b: there is
