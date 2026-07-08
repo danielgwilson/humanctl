@@ -51,7 +51,9 @@ export default function App() {
   }, [rows]);
 
   const pins = useMemo(() => new Set(state.pins || []), [state.pins]);
-  const lastReadTs = state.lastReadTs || {};
+  // Memoized because the `|| {}` fallback otherwise allocates a fresh object on
+  // every render, which would re-run the unreadCount useMemo below every time.
+  const lastReadTs = useMemo(() => state.lastReadTs || {}, [state.lastReadTs]);
 
   const unreadCount = useMemo(() => {
     return threads.filter((t) => {

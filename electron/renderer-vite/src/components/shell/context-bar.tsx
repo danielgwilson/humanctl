@@ -2,6 +2,7 @@ import type { Status } from '@/lib/types';
 import { fmtResetClock, quotaCls } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
 // The SOLE home for the fleet digest, Codex quota, Claude quota ("n/a",
 // never fabricated), and
@@ -9,9 +10,19 @@ import { Separator } from '@/components/ui/separator';
 // -- there is no shadcn primitive for a persistent status bar; this is
 // exactly the kind of "commodity control" DESIGN.md does NOT ask us to
 // replace, and that is an honest finding in itself (see report).
+//
+// The two explanatory hovers below were browser-native `title=` attributes,
+// i.e. an OS tooltip, which DESIGN.md's bespoke-controls hardline forbids
+// wherever a bespoke one exists ("no native tooltip where a bespoke one
+// already exists"). They are now the same Radix `Tooltip` primitive
+// shell/header.tsx already uses one level up. The truncated-text `title=`
+// hints on virtualized list rows (thread-row, sessions-view, metrics-view,
+// session-detail) are deliberately left alone: those are overflow hints on
+// high-frequency-render rows, where mounting a Radix Tooltip per row would
+// add real per-row cost for no bespoke-chrome gain.
 function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number | null; resetsAt?: number; note?: string }) {
   const cls = quotaCls(pct);
-  return (
+  const body = (
     <span
       className={cn(
         'inline-flex flex-none items-center gap-1.5',
@@ -19,7 +30,6 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
         cls === 'q-red' && 'text-block',
         cls === 'q-na' && 'text-ink4',
       )}
-      title={note}
     >
       <span
         className={cn(
@@ -30,6 +40,15 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
       />
       {pct == null ? `${label} n/a` : `${label} ${pct}%${resetsAt ? `, resets ${fmtResetClock(resetsAt)}` : ''}`}
     </span>
+  );
+  // Codex's secondary (weekly) window is absent on plenty of fleets; with no
+  // note there is nothing to explain, so no tooltip is mounted at all.
+  if (!note) return body;
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>{body}</TooltipTrigger>
+      <TooltipContent>{note}</TooltipContent>
+    </Tooltip>
   );
 }
 
@@ -66,7 +85,12 @@ export function ContextBar({ status, ctxPct }: { status: Status | null; ctxPct?:
       {ctxPct != null && (
         <>
           <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
-          <span className="flex-none" title="context window fill for the open session">{ctxPct}% context</span>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <span className="flex-none">{ctxPct}% context</span>
+            </TooltipTrigger>
+            <TooltipContent>context window fill for the open session</TooltipContent>
+          </Tooltip>
         </>
       )}
     </footer>

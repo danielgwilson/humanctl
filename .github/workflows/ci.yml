@@ -34,6 +34,13 @@ jobs:
       - run: npm ci
       - run: npm run lint
       - run: npm run typecheck
+      # The renderer (electron/renderer-vite/) is the entire product UI and had
+      # NO lint and NO typecheck in any automation until these two steps existed.
+      # Both install the renderer's own node_modules on first use, and both use
+      # the renderer's own configs (its eslint.config.mjs and tsconfig.json); the
+      # root eslint config still ignores electron/** on purpose.
+      - run: npm run lint:renderer
+      - run: npm run typecheck:renderer
       - run: npm run build:lib
       - run: node --check dist/lib/sessions.js && node --check dist/lib/pulse.js && node --check dist/lib/commands.js && node --check dist/lib/span.js && node --check dist/lib/harness-icons.js && node --check dist/lib/summary-budget.js && node --check dist/bin/humanctl.js && node --check dist/electron/main.js && node --check dist/electron/preload.js
       - run: npm run pulse:selftest
@@ -44,4 +51,7 @@ jobs:
       # real perf:selftest (a live Electron + CDP gate) is LOCAL-only, run
       # before release via npm run app:install. See docs/perf.md.
       - run: npm run perf:logic-selftest
+      # Renderer bundle budget. This one DOES run in CI: it needs only a browser
+      # `vite build`, no Electron window and no display server. See docs/perf.md.
+      - run: npm run bundle:check
       - run: npm run build

@@ -55,6 +55,8 @@ machine, this PR):
 | 60s idle mutation batches | 0 | 0 |
 | Signature-gate mutation batches | 0 | 0 |
 | Heap growth over 20 cycles | non-monotonic | 0.0% |
+| Renderer bundle JS (`bundle:check`, runs in CI) | < 600.00 kB | 532.86 kB |
+| Renderer bundle CSS (`bundle:check`, runs in CI) | < 72.00 kB | 62.85 kB |
 
 Re-run this locally before every release; numbers drift with the machine and
 the current codebase, the table above is a point-in-time proof, not a promise.
@@ -83,3 +85,28 @@ This is the CI-safe subset; it is a complement to perf:selftest above, not a
 substitute for it. A change that only passes perf:logic-selftest has not
 proven anything about actual render performance, cold-open time, or the DOM
 mutation cadence -- only that the supporting pure logic is still correct.
+
+## CI: `npm run bundle:check` (renderer bundle budget, runs in CI)
+
+    npm run bundle:check
+
+The one perf-adjacent budget that CAN run in CI without a display server,
+because it needs only a browser build (`vite build`) and a `stat()`. It builds
+`electron/renderer-vite/` and fails if the emitted renderer JS or CSS exceeds
+its budget, printing actual vs budget for both.
+
+Budgets (`scripts/bundle-size-check.js`, restated in the SLO table above):
+**600.00 kB JS**, **72.00 kB CSS**, roughly 12 percent above the real
+2026-07-07 measurement (532.86 kB JS, 62.85 kB CSS). That is enough headroom
+for ordinary feature work and tight enough that one heavy new dependency trips
+it. This gate exists because nothing in the repo watched renderer bundle
+growth: a single careless import can add hundreds of KB with no symptom in
+review, and every KB of JS is parse + compile time sitting directly on the
+cold-open SLO's critical path.
+
+It is wired into CI (`.github/workflows/ci.yml`, the `verify` job) rather than
+only into `app:install`, because it is cheap (one `vite build`, under a second
+of check time after it) and because bundle growth is exactly the kind of drift
+that should be caught on the PR that causes it, not at release time. Raising a
+budget means editing `scripts/bundle-size-check.js` AND the SLO table above in
+the same commit, and saying why in the PR body.

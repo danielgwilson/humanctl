@@ -48,13 +48,17 @@ Time ladder: `now`, `Nm`, `Nh`, weekday for this week, `M/D` beyond. Absolute ti
 
 Existing tokens are law: Space Grotesk display, JetBrains Mono labels/metadata, the established accent and dark/light palettes. Flat surfaces, no cards, no shadows-as-hierarchy. Calm density: fewer, larger, complete rows beat many truncated ones. Every count renders with a noun. Empty states are quiet and instructive, never celebratory.
 
-## Performance SLOs (enforced by perf:selftest in CI)
+## Performance SLOs (enforced by perf:selftest, a LOCAL gate; CI runs only perf:logic-selftest)
+
+The five SLOs below are checked by `npm run perf:selftest`, which drives a real Electron window over CDP and therefore needs a display server. Today's CI runner has none, so perf:selftest is deliberately LOCAL-only: it is a required pre-release gate, wired into `npm run app:install`, and is NOT part of any CI workflow. CI runs `npm run perf:logic-selftest` instead, which proves only the supporting pure logic (the watcher filter, the summary-budget math, harness-icon path resolution, the PR-chip cache contract) and nothing about actual render performance. See `docs/perf.md` for the full split and a point-in-time table of measured numbers.
 
 - Cold open to interactive: under 1500 ms on fixture data.
 - Click to paint (row select, view switch): under 100 ms.
 - Idle: zero self-triggered refresh; only the declared poll cadence may cause work. Files the system writes must never live under directories the system watches. lib/commands.ts isInboxRelevantChange is the current enforcement point; extend it whenever a new system-written file is introduced.
 - DOM rebuilds are signature-gated: unchanged data must not rebuild.
 - Heap: steady state after 20 refresh cycles must not grow monotonically.
+
+Renderer bundle size is a separate, cheap budget that CI *can* check, because it needs only a browser build and no display server: `npm run bundle:check` (see `docs/perf.md`).
 
 ## Public-repo (born clean) UI rules
 

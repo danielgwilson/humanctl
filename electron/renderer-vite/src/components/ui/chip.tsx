@@ -78,7 +78,11 @@ export function Chip({
 }: Omit<React.ComponentProps<typeof Badge>, "variant"> &
   VariantProps<typeof chipVariants> & { dot?: boolean }) {
   const hue = HUE_VAR[String(variant ?? "idle")];
-  const showDot = !!hue && size !== "label";
+  // `dot` was accepted, typed, and then silently ignored (the renderer's new
+  // no-unused-vars gate caught it). Every existing `dot={false}` call site also
+  // passes `size="label"`, which already suppressed the dot, so honoring the
+  // prop is a no-op for today's UI and makes the API honest.
+  const showDot = dot && !!hue && size !== "label";
   return (
     <Badge
       variant="outline"

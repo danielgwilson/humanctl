@@ -18,6 +18,19 @@ import { displayTitle, harnessOf, messageToHuman, repoBase, threadItemTs, thread
 // hand-rolled contextmenu.js: positioning, Escape-to-close, arrow-key
 // navigation between items, and type-ahead all come from Radix for free
 // (contextmenu.js re-implements all of that by hand today, ~140 lines).
+//
+// The row is a real `<button>`, not a `div[role=button] tabIndex=0` with a
+// hand-rolled Enter/Space onKeyDown. It has no nested interactive children, and
+// ContextMenuTrigger's `asChild` accepts any element, so nothing forced the
+// div. The native element brings Enter/Space activation, the button role, and
+// focusability for free -- DESIGN.md's bespoke-controls rule explicitly prefers
+// native `<button>` semantics and only permits `role`/`tabindex`/keydown on
+// "anything else that is clickable". Sessions' row stays a div: it wraps a
+// nested `<Button>` (the pin toggle), and a button may not nest inside a
+// button. `w-full text-left` restores the two things a `<button>` changes vs a
+// `<div>` (shrink-to-fit width, centered text); everything else is identical.
+// `title=` stays: it is the truncated-repo-path overflow hint on a virtualized,
+// high-frequency-render row, not explanatory chrome.
 export function ThreadRow({
   thread,
   byId,
@@ -47,18 +60,14 @@ export function ThreadRow({
   const rowLabel = `${title}, ${state}, ${msg}${unread ? ', unread' : ''}`;
 
   const row = (
-    <div
-      role="button"
-      tabIndex={0}
+    <button
+      type="button"
       aria-label={rowLabel}
       title={thread.repo || ''}
       onClick={() => onSelect(thread.sessionId)}
       onDoubleClick={() => onOpenDetail(thread.sessionId)}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(thread.sessionId); }
-      }}
       className={cn(
-        'grid cursor-pointer grid-cols-[14px_1fr] items-start gap-2 border-b border-border border-l-2 border-l-transparent px-6 py-3 hover:bg-panel',
+        'grid w-full cursor-pointer grid-cols-[14px_1fr] items-start gap-2 border-b border-border border-l-2 border-l-transparent px-6 py-3 text-left hover:bg-panel',
         selected && 'border-l-iris bg-panel2',
       )}
     >
@@ -75,7 +84,7 @@ export function ThreadRow({
         </span>
         <span className="truncate font-mono text-[9px] text-ink4">{repoBase(thread, byId)}</span>
       </span>
-    </div>
+    </button>
   );
 
   return (
