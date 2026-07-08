@@ -13,11 +13,20 @@ export type Harness = 'codex' | 'claude-code';
 export type SessionState = 'need' | 'work' | 'done' | 'idle' | 'block';
 export type SessionTier = 'hot' | 'drifting' | 'archived';
 
-const HOME = os.homedir();
-const HARNESSES: { name: Harness; dir: string }[] = [
-  { name: 'codex', dir: path.join(HOME, '.codex', 'sessions') },
-  { name: 'claude-code', dir: path.join(HOME, '.claude', 'projects') },
-];
+// HOME is resolved PER CALL, never frozen at require time. A module-load
+// `const HOME = os.homedir()` bakes the real home into every derived path for
+// the life of the process, so a selftest that swaps `process.env.HOME` after
+// the first import cannot sandbox this reader and ends up scanning (and, via
+// readNotes, reporting on) the developer's real ~/.codex, ~/.claude, and
+// ~/.humanctl. Same pattern as controlDir() in commands.ts.
+function home(): string { return process.env.HOME || os.homedir(); }
+function harnesses(): { name: Harness; dir: string }[] {
+  const h = home();
+  return [
+    { name: 'codex', dir: path.join(h, '.codex', 'sessions') },
+    { name: 'claude-code', dir: path.join(h, '.claude', 'projects') },
+  ];
+}
 
 const HEAD_BYTES = 256 * 1024; // enough for session meta + first real prompt
 const TAIL_BYTES = 128 * 1024; // enough for current state
@@ -520,13 +529,16 @@ export interface ListRecentOpts {
 const scanCache = new Map<string, { at: number; rows: SessionRow[] }>();
 const SCAN_TTL_MS = 1500;
 function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): SessionRow[] {
-  const key = `${maxAgeH}:${limit}:${!!includeAutomation}`;
+  // The resolved home is part of the key: without it a HOME swap inside the TTL
+  // window would be served rows scanned from the PREVIOUS home.
+  const h0 = home();
+  const key = `${h0}:${maxAgeH}:${limit}:${!!includeAutomation}`;
   const hit = scanCache.get(key);
   if (hit && Date.now() - hit.at < SCAN_TTL_MS) return hit.rows;
   const cutoff = Date.now() - maxAgeH * 3.6e6;
   const minYear = new Date(cutoff).getFullYear();
   const rows: SessionRow[] = [];
-  for (const h of HARNESSES) {
+  for (const h of harnesses()) {
     const files: string[] = [];
     walkJsonl(h.dir, files, minYear);
     for (const file of files) {
@@ -546,7 +558,7 @@ function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): 
         harness: h.name,
         id: path.basename(file).replace(/\.jsonl$/, ''),
         cwd,
-        repo: cwd ? cwd.replace(HOME, '~') : '',
+        repo: cwd ? cwd.replace(h0, '~') : '',
         title: title || '',
         customTitle: customTitle || '',
         lastRole: lastRole(file, h.name, st),
@@ -582,12 +594,13 @@ function baseScan(maxAgeH: number, limit: number, includeAutomation?: boolean): 
 // (always present on macOS), keyed by thread id (the PK, so lookups are indexed),
 // batched for the displayed rows, cached by the DB mtime. Purely additive: any
 // failure (no sqlite3, locked DB, schema drift) just leaves customTitle unset.
-const CODEX_STATE_DB = path.join(HOME, '.codex', 'state_5.sqlite');
+function codexStateDb(): string { return path.join(home(), '.codex', 'state_5.sqlite'); }
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 const codexTitleCache = new Map<string, string>(); // `${uuid}:${dbMtime}` -> title ('' if none)
 function applyCodexTitles(rows: SessionRow[]): void {
+  const db = codexStateDb();
   let dbm: number;
-  try { dbm = fs.statSync(CODEX_STATE_DB).mtimeMs; } catch { return; }
+  try { dbm = fs.statSync(db).mtimeMs; } catch { return; }
   const need: string[] = [];
   for (const r of rows) {
     const m = String(r.id).match(UUID_RE);
@@ -601,7 +614,7 @@ function applyCodexTitles(rows: SessionRow[]): void {
   let qrows: { id: string; title: string }[] = [];
   try {
     const inList = need.map((u) => `'${u}'`).join(','); // uuids are hex, safe to inline
-    const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', CODEX_STATE_DB,
+    const raw = execFileSync('/usr/bin/sqlite3', ['-readonly', '-json', db,
       `SELECT id, title FROM threads WHERE id IN (${inList}) AND title != ''`],
       { timeout: 4000, encoding: 'utf8', maxBuffer: 8 << 20 });
     qrows = raw.trim() ? JSON.parse(raw) : [];
@@ -1582,7 +1595,8 @@ export function aggregateSkills(opts: ListRecentOpts = {}): SkillAggregate {
 }
 
 // Agent inbox: notes posted by `humanctl note` to ~/.humanctl/notes.jsonl.
-export const NOTES_FILE = path.join(HOME, '.humanctl', 'notes.jsonl');
+// A function, not a const: see home() above.
+export function notesFile(): string { return path.join(home(), '.humanctl', 'notes.jsonl'); }
 const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
 
 export interface NoteRecord {
@@ -1600,7 +1614,7 @@ export interface NoteRecord {
 
 export function readNotes(opts: { limit?: number } = {}): NoteRecord[] {
   let txt: string;
-  try { txt = readSlice(NOTES_FILE, 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
+  try { txt = readSlice(notesFile(), 512 * 1024, true); } catch { return []; } // bounded tail; file is append-only
   if (!txt) return [];
   const notes = txt.split('\n').filter(Boolean).map((l) => {
     try {
@@ -1612,7 +1626,7 @@ export function readNotes(opts: { limit?: number } = {}): NoteRecord[] {
   return notes.slice(0, opts.limit || 100);
 }
 
-export { HARNESSES };
+export { harnesses };
 
 // CLI smoke: `node dist/lib/sessions.js` prints a quick table (read-only).
 if (require.main === module) {

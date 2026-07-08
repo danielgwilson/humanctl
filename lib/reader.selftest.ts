@@ -8,7 +8,7 @@ import assert from 'assert';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
-import { readTimelinePage, readAppended, primeTailCursor, readBlocks, type TimelineEvent } from './sessions';
+import { readTimelinePage, readAppended, primeTailCursor, readBlocks, readNotes, listRecent, type TimelineEvent } from './sessions';
 
 let passed = 0;
 function check(name: string, fn: () => void): void {
@@ -241,6 +241,30 @@ check('readBlocks keeps the newest blocks when the cap trims', () => {
   assert.strictEqual(b.truncated, true);
   assert.strictEqual(b.blocks.length, 4000);
   assert.ok(/block 4299$/.test(b.blocks[b.blocks.length - 1].preview), 'newest block survives the trim');
+});
+
+// ---- HOME is re-resolved per call, never frozen at import time ----
+check('readNotes and listRecent follow a HOME swap made after import', () => {
+  const home = fs.mkdtempSync(path.join(os.tmpdir(), 'humanctl-home-'));
+  const prevHome = process.env.HOME;
+  process.env.HOME = home;
+  try {
+    fs.mkdirSync(path.join(home, '.humanctl'), { recursive: true });
+    fs.writeFileSync(path.join(home, '.humanctl', 'notes.jsonl'),
+      JSON.stringify({ id: 'n1', ts: iso(0), level: 'review', message: 'isolated note' }) + '\n');
+    const notes = readNotes();
+    assert.strictEqual(notes.length, 1, 'readNotes reads the swapped home, not the real one');
+    assert.strictEqual(notes[0].message, 'isolated note');
+    const proj = path.join(home, '.claude', 'projects', 'fixture-proj');
+    fs.mkdirSync(proj, { recursive: true });
+    fs.writeFileSync(path.join(proj, 'sess-1.jsonl'), uLine(0, 'fixture ask') + aLine(1, 'fixture answer'));
+    const rows = listRecent({ maxAgeH: 72, limit: 10, includeAutomation: true });
+    assert.ok(rows.length >= 1, 'the scan sees the fixture session under the swapped home');
+    assert.ok(rows.every((r) => r.path.startsWith(home)), 'the scan never leaks sessions from the real home');
+  } finally {
+    process.env.HOME = prevHome;
+    fs.rmSync(home, { recursive: true, force: true });
+  }
 });
 
 fs.rmSync(TMP, { recursive: true, force: true });
