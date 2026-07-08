@@ -42,6 +42,7 @@
     "renderer": "npm --prefix electron/renderer-vite run dev",
     "renderer:build": "npm --prefix electron/renderer-vite run build:browser",
     "renderer:serve": "npm run renderer:build && tsx scripts/serve-static.ts --dir electron/renderer-vite/dist --port 4188",
+    "screenshots": "node scripts/capture-screenshots.js",
     "desktop:sessions": "tsx lib/sessions.ts",
     "build:renderer-vite": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build",
     "app:build": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
