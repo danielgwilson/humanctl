@@ -53,8 +53,16 @@ function main() {
   const js = entries.filter((f) => f.endsWith('.js'));
   const css = entries.filter((f) => f.endsWith('.css'));
 
+  // Zero emitted files of EITHER kind must FAIL, never pass with a 0.00 kB
+  // reading. Otherwise any build change that relocates or inlines an artifact
+  // silently retires that budget forever and the gate reports a green it did
+  // not earn. A gate that cannot fail is decoration (see AGENTS.md).
   if (js.length === 0) {
     console.error(`[bundle:check] FAIL: no .js emitted into ${ASSETS_DIR}; the build did not produce a renderer bundle.`);
+    process.exit(1);
+  }
+  if (css.length === 0) {
+    console.error(`[bundle:check] FAIL: no .css emitted into ${ASSETS_DIR}; the build did not produce a renderer stylesheet, so the CSS budget below would be vacuously satisfied.`);
     process.exit(1);
   }
 

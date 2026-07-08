@@ -81,48 +81,71 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
     return counts;
   }, [rows]);
 
+  const tiles = (
+    <div className="flex divide-x divide-border border-b border-border">
+      <HeadlineTile value={status?.needsYou ?? 0} label="need you" />
+      <HeadlineTile value={status?.working ?? 0} label="moving" />
+      <HeadlineTile value={status?.sessions ?? total} label="total" />
+    </div>
+  );
+
+  const nextNote = (
+    <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink4">
+      next: a live force-directed graph of session relationships. this pass ships the flat shape overview only.
+    </div>
+  );
+
+  // An empty fleet has nothing to scroll, so it deliberately does NOT go inside
+  // a ScrollArea. Radix wraps its viewport children in a `display: table` box,
+  // and a percentage/flex height does not resolve against that, so `Empty`
+  // (which centers itself with `flex-1`) collapsed from the full pane to a
+  // single line of text jammed under the tiles: measured 218px -> 66.5px. A
+  // plain flex column gives `Empty` the definite height it needs. Do not
+  // "fix" this by moving the height onto viewportClassName; the table box
+  // still intervenes.
+  if (total === 0) {
+    return (
+      <div className="flex h-full flex-col overflow-hidden">
+        <ViewHeader icon={Command} title="Fleet" subtitle={`${total} sessions · the fleet's shape`} />
+        <div className="flex min-h-0 flex-1 flex-col">
+          {tiles}
+          <Empty>
+            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
+          </Empty>
+          {nextNote}
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={Command} title="Fleet" subtitle={`${total} ${total === 1 ? 'session' : 'sessions'} · the fleet's shape`} />
       <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
-        <div className="flex divide-x divide-border border-b border-border">
-          <HeadlineTile value={status?.needsYou ?? 0} label="need you" />
-          <HeadlineTile value={status?.working ?? 0} label="moving" />
-          <HeadlineTile value={status?.sessions ?? total} label="total" />
+        {tiles}
+
+        <SectionLabel>By state</SectionLabel>
+        <div>
+          {STATE_ORDER.map((s) => (
+            <CountBar key={s} label={STATE_META[s]?.label || s} count={byState[s]} total={total} indicator={STATE_INDICATOR[s]} />
+          ))}
         </div>
 
-        {total === 0 ? (
-          <Empty className="h-full">
-            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
-          </Empty>
-        ) : (
-          <>
-            <SectionLabel>By state</SectionLabel>
-            <div>
-              {STATE_ORDER.map((s) => (
-                <CountBar key={s} label={STATE_META[s]?.label || s} count={byState[s]} total={total} indicator={STATE_INDICATOR[s]} />
-              ))}
-            </div>
-
-            <SectionLabel>By harness</SectionLabel>
-            <div>
-              {HARNESS_ORDER.map((h) => (
-                <CountBar key={h} label={HARNESS_LABEL[h]} count={byHarness[h]} total={total} indicator={HARNESS_INDICATOR[h]} />
-              ))}
-            </div>
-
-            <SectionLabel>By tier</SectionLabel>
-            <div>
-              {TIER_ORDER.map((t) => (
-                <CountBar key={t} label={TIER_LABEL[t]} count={byTier[t]} total={total} indicator={TIER_INDICATOR[t]} />
-              ))}
-            </div>
-          </>
-        )}
-
-        <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink4">
-          next: a live force-directed graph of session relationships. this pass ships the flat shape overview only.
+        <SectionLabel>By harness</SectionLabel>
+        <div>
+          {HARNESS_ORDER.map((h) => (
+            <CountBar key={h} label={HARNESS_LABEL[h]} count={byHarness[h]} total={total} indicator={HARNESS_INDICATOR[h]} />
+          ))}
         </div>
+
+        <SectionLabel>By tier</SectionLabel>
+        <div>
+          {TIER_ORDER.map((t) => (
+            <CountBar key={t} label={TIER_LABEL[t]} count={byTier[t]} total={total} indicator={TIER_INDICATOR[t]} />
+          ))}
+        </div>
+
+        {nextNote}
       </ScrollArea>
     </div>
   );

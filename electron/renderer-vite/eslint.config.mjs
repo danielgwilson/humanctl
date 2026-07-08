@@ -45,29 +45,62 @@ export default tseslint.config(
   // eslint-plugin-react-hooks v7 folded the React Compiler rule family into its
   // `recommended` preset. This app does not run the React Compiler (vite.config
   // .ts and electron.vite.config.ts both use plain `@vitejs/plugin-react` with
-  // no babel-plugin-react-compiler), so those rules are lint for a compiler
-  // that is not in the build, and each one below flags correct, idiomatic React
-  // here. Only the four that actually fire are disabled; the rest of the family
-  // stays on, so a future violation is a real decision with real evidence
-  // rather than a pre-emptive blanket exemption.
+  // no babel-plugin-react-compiler), so these rules lint for a compiler that is
+  // not in the build.
+  //
+  // They are nonetheless scoped to the EXACT FILES that violate them, never to
+  // `src/**`. Three of them (purity, refs, set-state-in-effect) catch real React
+  // bugs independent of any compiler: an impure render breaks StrictMode's double
+  // render, a ref read during render ships a stale value. A `src/**` exemption
+  // would have retired that signal across all 35 renderer files to excuse five
+  // lines. Every violation is enumerated below; adding a new one means adding a
+  // file here on purpose, with evidence.
   {
-    files: ['src/**/*.{ts,tsx}'],
-    rules: {
-      // Flags `Date.now()` in a render body (App.tsx's synthesized thread
-      // timestamp) and vendored shadcn Sidebar's `Math.random()` skeleton width.
-      'react-hooks/purity': 'off',
-      // Flags use-timeline.ts's deliberate, documented latest-ref write
-      // (`rowRef.current = row`), the standard way to read a fresh value from an
-      // async callback without re-running the effect on every 20s fleet poll.
-      'react-hooks/refs': 'off',
-      // Flags the ordinary "sync to an external system on mount" effect:
-      // matchMedia (use-mobile), the window.humanctl IPC bridge (use-humanctl),
-      // and a fetch's own loading flag.
-      'react-hooks/set-state-in-effect': 'off',
-      // Reports "Compilation Skipped" for @tanstack/react-virtual. Meaningless
-      // without a compiler to skip.
-      'react-hooks/incompatible-library': 'off',
-    },
+    // src/App.tsx:174 -- `lastTs: new Date(Date.now() - ageMs)` on a synthesized
+    // thread. Impure, but the value is dead: the only readers of `lastTs` are
+    // inbox-logic.ts's sorters over the `threads` array, and this object never
+    // enters it. Purifying it needs an absolute timestamp plumbed through
+    // SessionRow (which carries only `ageMs`), so it stays a scoped exemption.
+    // ui/sidebar.tsx:693 -- vendored shadcn `SidebarMenuSkeleton`, `Math.random()`
+    // for a skeleton bar width. Zero call sites in this app today.
+    files: ['src/App.tsx', 'src/components/ui/sidebar.tsx'],
+    rules: { 'react-hooks/purity': 'off' },
+  },
+  {
+    // src/hooks/use-timeline.ts:130 -- `rowRef.current = row`, the latest-ref
+    // write that lets an async callback read a fresh value without re-running the
+    // effect on every 20s fleet poll. Safe here because the renderer uses no
+    // concurrent features: `rg 'useTransition|startTransition|Suspense|useDeferredValue' src/`
+    // returns nothing, so there is no discarded-render path to ship a stale ref.
+    files: ['src/hooks/use-timeline.ts'],
+    rules: { 'react-hooks/refs': 'off' },
+  },
+  {
+    // Five sites, all of them named (an earlier version of this comment listed
+    // three and quietly covered five):
+    //   src/hooks/use-mobile.ts:21        matchMedia subscription
+    //   src/hooks/use-humanctl.ts:60      window.humanctl IPC bridge attach
+    //   src/hooks/use-humanctl.ts:123     a fetch's own loading flag
+    //   src/hooks/use-timeline.ts:177     timeline page load
+    //   src/components/views/settings-view.tsx:43   setBudgetInput(String(dailyBudgetUSD))
+    // The first four are the ordinary "subscribe to an external system" pattern.
+    // The last is NOT: it is React's documented "adjust state when a prop changes"
+    // anti-pattern, costing an extra render pass on every budget change. It is
+    // listed here rather than silently swept in, and is worth replacing with a
+    // render-time derive or a keyed input.
+    files: [
+      'src/hooks/use-mobile.ts',
+      'src/hooks/use-humanctl.ts',
+      'src/hooks/use-timeline.ts',
+      'src/components/views/settings-view.tsx',
+    ],
+    rules: { 'react-hooks/set-state-in-effect': 'off' },
+  },
+  {
+    // Reports "Compilation Skipped" for @tanstack/react-virtual. Purely
+    // informational, and meaningless without a compiler to skip.
+    files: ['src/components/inbox/inbox-view.tsx', 'src/components/views/sessions-view.tsx'],
+    rules: { 'react-hooks/incompatible-library': 'off' },
   },
 
   // shadcn primitives in `src/components/ui/` intentionally co-export their cva
