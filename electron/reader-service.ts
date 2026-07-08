@@ -14,19 +14,33 @@
 // event loop absorbs the blocking, not main's; main.ts is now a thin async
 // relay (see spawnReader()/callReader() there).
 //
-// Protocol: main posts `{ id, cmd, args }` over `process.parentPort`; this
-// process replies `{ id, ok, result | error }`. It also proactively PUSHES
-// watcher events with no `id` (`{ type: 'sessions:changed' | 'inbox:fast' |
-// 'session:append', ... }`), which main forwards to the renderer unchanged
-// (`win.webContents.send(...)`), so the renderer's IPC surface
-// (window.humanctl.*) and event names are completely unchanged by this
-// refactor.
+// Two transports in and out of this process (see main.ts's comment above its
+// spawnReader()/brokerReaderPort() for the full rationale):
 //
-// RELAY-FIRST for this PR (lowest risk, keeps the renderer untouched). The
-// follow-on optimization -- a direct MessageChannelMain port between the
-// renderer and this process, paired with `useSyncExternalStore` in the
-// renderer so hot reads skip main's relay hop entirely -- is deliberately
-// NOT done here; see the comment on spawnReader() in main.ts.
+//  1. `process.parentPort` <-> main.ts's `reader`/`callReader()`: main posts
+//     `{ id, cmd, args }`, this process replies `{ id, ok, result | error }`
+//     on the SAME port. Used only for main's own needs now (control-socket/
+//     CLI dispatch, and the Electron-native action handlers that need a
+//     reader-backed lookup first) -- never the hot poll.
+//  2. A direct `MessagePortMain` handed to us by main over `parentPort`
+//     itself, as a one-off `{ type: 'renderer-port' }` message with the port
+//     transferred (`e.ports[0]`): this is the renderer's own end of a
+//     `MessageChannelMain` main brokered, and it is EXCLUSIVELY the
+//     renderer's. Every renderer-facing `window.humanctl` observation that
+//     used to relay through main (sessions.list/notes.list/inbox.threads/
+//     app.status/session.hot) is served here instead, replying on this same
+//     port, and the watcher push events (`sessions:changed` / `inbox:fast` /
+//     `session:append`) are posted on it too -- main never sees any of this
+//     traffic. main re-brokers a fresh one after every respawn of this
+//     process and after every renderer page load/reload, so a stale port
+//     here is simply replaced, never patched.
+//
+// app.status needs two bits only main can compute (APP_VERSION and
+// deepLinkApps(), which needs the Electron `app` module -- unavailable in a
+// utilityProcess): main sends them once per spawn as `{ type: 'init',
+// version, apps }` over parentPort (see `appMeta` below), so this process can
+// merge them into every app.status reply itself instead of main enriching
+// each one.
 //
 // This process must never auto-quit (HUMANCTL_SMOKE and friends are handled
 // entirely on the main-process side, which decides when to print the smoke
@@ -43,7 +57,7 @@
 // typing convenience across all process kinds). Import ONLY the type from
 // 'electron' (erased at compile time, no runtime require) and read the
 // value off `process` itself.
-import type { ParentPort } from 'electron';
+import type { ParentPort, MessagePortMain } from 'electron';
 import fs from 'fs';
 import os from 'os';
 import path from 'path';
@@ -60,17 +74,39 @@ if (!parentPort) {
   // fail loudly rather than silently sit there doing nothing.
   throw new Error('reader-service: no process.parentPort (must run as an Electron utilityProcess)');
 }
-const port = parentPort;
-function post(msg: unknown): void {
-  try { port.postMessage(msg); } catch { /* main may be gone during shutdown */ }
+function postToMain(msg: unknown): void {
+  try { parentPort.postMessage(msg); } catch { /* main may be gone during shutdown */ }
 }
+
+// The direct renderer <-> reader-service port (transport 2 above). Starts
+// null (nothing to push to before main brokers one); replaced wholesale, not
+// mutated, whenever a fresh `renderer-port` handshake arrives, so a stale
+// port from a since-reloaded page or a since-respawned prior instance of
+// this very process can never linger and receive traffic meant for its
+// replacement.
+let rendererPort: MessagePortMain | null = null;
+function postToRenderer(msg: unknown): void {
+  if (!rendererPort) return; // no port yet (early boot) or between a respawn and re-broker: push events are advisory, the next poll/reconnect catches up
+  try { rendererPort.postMessage(msg); } catch { /* port may be stale across a reload race; main will re-broker */ }
+}
+
+// version/apps main hands over once per spawn (see the header comment);
+// app.status merges these in below. Sane fallbacks if a request somehow
+// lands before 'init' does (should not happen -- see main.ts's spawnReader(),
+// which sends 'init' synchronously right after 'spawn' fires, well before
+// main could broker a port for the renderer to request anything over).
+let appMeta: { version: string; apps: { claude: boolean; codex: boolean } } = {
+  version: '0.0.0',
+  apps: { claude: false, codex: false },
+};
 
 // ---- fleet watcher (ported verbatim from the old electron/main.ts
 // watchSessions/pumpHot/scheduleHot/scheduleInbox -- only the transport
-// changed: `win.webContents.send(...)` there is `post({...})` here, which
-// main.ts's handleReaderMessage forwards to the renderer unchanged). Same
-// debounce constants, same coalescing behavior, same "never a re-scan storm"
-// invariant -- just running on this process's event loop instead of main's. ----
+// changed: `win.webContents.send(...)` there is `postToRenderer({...})` here,
+// straight onto the direct renderer port (main is not involved at all).
+// Same debounce constants, same coalescing behavior, same "never a re-scan
+// storm" invariant -- just running on this process's event loop instead of
+// main's. ----
 let watchTimer: NodeJS.Timeout | null = null;
 const watchers: fs.FSWatcher[] = [];
 let hotPath: string | null = null;
@@ -87,7 +123,7 @@ function pumpHot(): void {
   let res: ReturnType<typeof readAppended>;
   try { res = readAppended(hotPath, { harness: hotHarness || undefined }); } catch { return; }
   if (res.reset) {
-    post({ type: 'session:append', payload: { path: hotPath, reset: true, reason: res.reason } });
+    postToRenderer({ type: 'session:append', payload: { path: hotPath, reset: true, reason: res.reason } });
     return;
   }
   if (!res.events || (!res.events.length && !res.meta)) return;
@@ -97,7 +133,7 @@ function pumpHot(): void {
     need = deriveNeedState(readNeedSignals(hotPath, hotHarness as string, st), st, Date.now());
   } catch { /* advisory; the debounced list refresh still catches up */ }
   console.log(`humanctl: [reader] hot append ${res.events.length} events (read ${Date.now() - t0}ms) at ${Date.now()}`);
-  post({
+  postToRenderer({
     type: 'session:append',
     payload: { path: hotPath, events: res.events, meta: res.meta, need, end: res.end, size: res.size, at: Date.now() },
   });
@@ -109,7 +145,7 @@ function scheduleHot(): void {
 
 function pumpInbox(): void {
   inboxTimer = null;
-  post({ type: 'inbox:fast' });
+  postToRenderer({ type: 'inbox:fast' });
 }
 function scheduleInbox(): void {
   if (inboxTimer) return;
@@ -117,7 +153,7 @@ function scheduleInbox(): void {
 }
 
 function watchSessions(): void {
-  const ping = () => { if (watchTimer) clearTimeout(watchTimer); watchTimer = setTimeout(() => post({ type: 'sessions:changed' }), 2500); };
+  const ping = () => { if (watchTimer) clearTimeout(watchTimer); watchTimer = setTimeout(() => postToRenderer({ type: 'sessions:changed' }), 2500); };
   const harnessDirs = HARNESSES.map((h) => h.dir);
   for (const dir of harnessDirs) {
     try {
@@ -192,7 +228,12 @@ function sessionTimeline(p: SessionTarget & { before?: number }): Record<string,
 type Handler = (args: any) => unknown | Promise<unknown>;
 const HANDLERS: Record<string, Handler> = {
   'sessions.list': (p) => ({ rows: listRecent(p || {}) }),
-  'app.status': (p) => ({ status: accountStatus(p || {}) }),
+  // Merges in the version/apps main hands over at spawn (`appMeta`, set from
+  // the 'init' message on parentPort) so a renderer calling this directly
+  // over the port gets the exact same shape main's own registry handler used
+  // to produce (`Object.assign(status, { version, apps })`) -- see the
+  // header comment.
+  'app.status': (p) => ({ status: Object.assign(accountStatus(p || {}), appMeta) }),
   'notes.list': (p) => ({ notes: readNotes(p || {}) }),
   'inbox.threads': (p) => ({ threads: inboxThreads(p || {}) }),
   'skills.aggregate': (p) => ({ agg: aggregateSkills(p || {}) }),
@@ -217,8 +258,11 @@ const HANDLERS: Record<string, Handler> = {
 
 interface ReaderRequest { id: number; cmd: string; args?: unknown }
 
-port.on('message', (e) => {
-  const req = e.data as ReaderRequest;
+// Shared by both transports: dispatch one `{id, cmd, args}` to HANDLERS and
+// reply on whichever `reply` was handed in (parentPort for main's own
+// requests, the renderer port for the renderer's). Same dispatch, same reply
+// shape, either way -- HANDLERS has no notion of which channel asked.
+function handleRequest(req: ReaderRequest, reply: (msg: unknown) => void): void {
   if (!req || typeof req.id !== 'number' || typeof req.cmd !== 'string') return;
   const fn = HANDLERS[req.cmd];
   Promise.resolve()
@@ -226,8 +270,35 @@ port.on('message', (e) => {
       if (!fn) throw new Error(`reader-service: unknown cmd "${req.cmd}"`);
       return fn(req.args);
     })
-    .then((result) => post({ id: req.id, ok: true, result }))
-    .catch((err) => post({ id: req.id, ok: false, error: String((err as Error)?.message || err) }));
+    .then((result) => reply({ id: req.id, ok: true, result }))
+    .catch((err) => reply({ id: req.id, ok: false, error: String((err as Error)?.message || err) }));
+}
+
+// Attach the renderer-port's own request handler + push-event target. Called
+// once per `renderer-port` handshake (initial boot, every window reload,
+// every re-broker after this process itself respawns from a crash -- though
+// a respawn always starts this whole module fresh, so in practice this only
+// ever runs more than once per process instance across reloads).
+function attachRendererPort(p: MessagePortMain): void {
+  if (rendererPort) { try { rendererPort.close(); } catch { /* already gone */ } }
+  rendererPort = p;
+  rendererPort.on('message', (e) => handleRequest(e.data as ReaderRequest, (msg) => postToRenderer(msg)));
+  rendererPort.start();
+  console.log('humanctl: [reader] direct renderer port connected');
+}
+
+parentPort.on('message', (e) => {
+  const msg = e.data as { type?: string; version?: string; apps?: { claude: boolean; codex: boolean } };
+  if (msg && msg.type === 'renderer-port') {
+    const p = e.ports && e.ports[0];
+    if (p) attachRendererPort(p);
+    return;
+  }
+  if (msg && msg.type === 'init') {
+    appMeta = { version: msg.version || appMeta.version, apps: msg.apps || appMeta.apps };
+    return;
+  }
+  handleRequest(e.data as ReaderRequest, postToMain);
 });
 
 // Start watching immediately: HARNESSES' dirs are fixed (~/.claude,

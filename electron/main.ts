@@ -10,7 +10,7 @@
 // route through one registry, and every invoke is logged to
 // ~/.humanctl/events.jsonl. See docs/commands.md.
 
-import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage, utilityProcess, type UtilityProcess } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage, utilityProcess, MessageChannelMain, type UtilityProcess } from 'electron';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import path from 'path';
 // This compiled file lives at dist/electron/main.js (see tsup.config.ts), two
@@ -26,7 +26,7 @@ let APP_VERSION = '0.0.0';
 try { APP_VERSION = require('../package.json').version; } catch { /* fall back to 0.0.0 */ }
 import fs from 'fs';
 import os from 'os';
-import { execFile, execFileSync } from 'child_process';
+import { execFile } from 'child_process';
 // NOTE (AGENTS.md "Never block the Electron main process"): main.ts does NOT
 // import lib/sessions's fs/parse functions (listRecent, readBlocks, etc.) or
 // lib/commands's resolveSessionRow/inboxThreads for runtime use anymore.
@@ -45,20 +45,33 @@ let win: BrowserWindow | null = null;
 
 // ---- reader-service: the transcript fs/parse pipeline, off main ----
 // Spawned as a real, separate Node process (Electron utilityProcess), never
-// on the main/browser process. main.ts talks to it as a thin async relay:
-// post `{ id, cmd, args }`, await the matching `{ id, ok, result | error }`
-// reply. It also proactively pushes watcher events (no `id`), forwarded to
-// the renderer unchanged. See electron/reader-service.ts for the other side.
+// on the main/browser process.
 //
-// RELAY-FIRST for this PR: this keeps the renderer's window.humanctl surface
-// and every IPC channel name/shape completely unchanged (lowest risk for a
-// packaging-adjacent change). The follow-on optimization -- a direct
-// MessageChannelMain port handed to the renderer (via preload) so hot reads
-// (sessions:list polling, session:append) go renderer <-> reader-service
-// directly, paired with `useSyncExternalStore` in the renderer to subscribe
-// without round-tripping through main at all -- is deliberately NOT done
-// here; it is a bigger, separately-reviewable change once this relay has
-// proven itself in the wild.
+// TWO transport channels exist to it, deliberately kept separate:
+//  1. utilityProcess's own message channel (child.postMessage / child.on
+//     ('message', ...), i.e. the reader's process.parentPort on its side):
+//     a thin async relay -- post `{ id, cmd, args }`, await the matching
+//     `{ id, ok, result | error }` reply -- used ONLY for main's OWN needs
+//     (the control-socket/CLI path, and the Electron-native action handlers
+//     below that must resolve/pin/summarize/ask on main but still need a
+//     reader-backed lookup first). This is one-shot-ish, not the hot poll,
+//     so relaying its (small) replies through main is fine.
+//  2. A direct `MessageChannelMain` port, brokered by main (this section)
+//     and used EXCLUSIVELY by the renderer <-> reader-service: main hands
+//     one end to the reader-service (`reader.postMessage({ type:
+//     'renderer-port' }, [port1])`) and the other straight to the window's
+//     preload (`win.webContents.postMessage('reader-port', null, [port2])`),
+//     then never touches a message on it again. This is what actually fixes
+//     the perf gate: the hot poll (sessions.list/notes.list/inbox.threads/
+//     app.status, ~200 rows + ~200 threads, 4 calls every 20s or on every
+//     fs-watcher fire) and the live session:append stream now go straight
+//     renderer <-> reader-service, so main never structured-clone
+//     deserializes a reader reply and re-serializes it to the renderer --
+//     see electron/preload.ts and electron/reader-service.ts for the other
+//     two sides of this port. Main re-brokers a FRESH channel after a
+//     reader-service respawn (its old port1 died with the old process) and
+//     after every window `did-finish-load` (a reload discards the old
+//     page's port2), see brokerReaderPort() below.
 let reader: UtilityProcess | null = null;
 let readerSpawned = false; // pid is undefined (per Electron's docs) until 'spawn' fires; never post before then
 let readerBreakerOpen = false; // crash-loop breaker: stop respawning after too many fast crashes
@@ -70,11 +83,36 @@ const READER_CRASH_LIMIT = 5;
 const READER_RESPAWN_BASE_MS = 500;
 const READER_RESPAWN_MAX_MS = 8000;
 const READER_TIMEOUT_MS = 20000;
-// The renderer's currently-hot (open-in-dossier) session: the utility's
-// in-memory hot-path + tail-cursor state does not survive a crash, so main
-// remembers the last session:hot the renderer asked for and re-issues it
-// after a respawn (see spawnReader()'s 'spawn' handler).
-let lastHotArg: { path?: string; harness?: string } | null = null;
+// Has the window loaded its page (preload run, `ipcRenderer.on('reader-port',
+// ...)` registered) at least once? Gates brokerReaderPort() below: a port
+// handed to a webContents whose page has not run its preload's listener yet
+// is silently dropped (nothing missed on this side to re-queue -- that is
+// why the first broker always happens from did-finish-load, never earlier).
+let windowLoadedOnce = false;
+
+// Broker a FRESH direct renderer <-> reader-service MessageChannelMain port.
+// Called once the window has loaded (did-finish-load, including reloads) and
+// again on every reader-service respawn while the window is already up. Main
+// creates the channel, hands one end to each side, and never touches either
+// port again -- see the comment block above this section. A no-op until BOTH
+// sides are ready (reader spawned, window loaded at least once); whichever of
+// the two events happens last is the one that actually triggers the broker.
+function brokerReaderPort(): void {
+  if (!reader || !readerSpawned || !win || win.isDestroyed()) return;
+  const { port1, port2 } = new MessageChannelMain();
+  try {
+    reader.postMessage({ type: 'renderer-port' }, [port1]);
+  } catch (err) {
+    console.error(`humanctl: failed handing the renderer port to reader-service: ${String((err as Error)?.message || err)}`);
+    return;
+  }
+  try {
+    win.webContents.postMessage('reader-port', null, [port2]);
+    console.log('humanctl: brokered a fresh renderer <-> reader-service port');
+  } catch (err) {
+    console.error(`humanctl: failed handing the renderer port to the window: ${String((err as Error)?.message || err)}`);
+  }
+}
 
 interface PendingReaderReq { resolve: (result: Record<string, unknown>) => void; timer: NodeJS.Timeout }
 const pendingReaderReqs = new Map<number, PendingReaderReq>();
@@ -97,23 +135,20 @@ function callReader(cmd: string, args?: unknown): Promise<Record<string, unknown
   });
 }
 
+// Only handles id-keyed request/reply traffic now (main's own control-socket/
+// action calls, channel 1 above). The watcher push events (sessions:changed/
+// inbox:fast/session:append) used to be forwarded here to the renderer; the
+// reader-service now posts them straight onto the direct renderer port
+// instead (see electron/reader-service.ts's postToRenderer()), so main never
+// sees them at all -- nothing to relay, nothing lost.
 function handleReaderMessage(msg: unknown): void {
-  const m = msg as { id?: number; ok?: boolean; result?: Record<string, unknown>; error?: string; type?: string; payload?: unknown } | null;
-  if (!m || typeof m !== 'object') return;
-  if (typeof m.id === 'number') {
-    const p = pendingReaderReqs.get(m.id);
-    if (!p) return; // late reply after our own timeout already resolved the caller
-    pendingReaderReqs.delete(m.id);
-    clearTimeout(p.timer);
-    p.resolve(m.ok ? Object.assign({ ok: true }, m.result) : { ok: false, error: m.error || 'reader-service error' });
-    return;
-  }
-  // Proactive watcher push (no id): forward to the renderer unchanged, same
-  // channel names/payload shapes as when main read the fleet itself.
-  if (!win || win.isDestroyed()) return;
-  if (m.type === 'sessions:changed') win.webContents.send('sessions:changed');
-  else if (m.type === 'inbox:fast') win.webContents.send('inbox:fast');
-  else if (m.type === 'session:append') win.webContents.send('session:append', m.payload);
+  const m = msg as { id?: number; ok?: boolean; result?: Record<string, unknown>; error?: string } | null;
+  if (!m || typeof m !== 'object' || typeof m.id !== 'number') return;
+  const p = pendingReaderReqs.get(m.id);
+  if (!p) return; // late reply after our own timeout already resolved the caller
+  pendingReaderReqs.delete(m.id);
+  clearTimeout(p.timer);
+  p.resolve(m.ok ? Object.assign({ ok: true }, m.result) : { ok: false, error: m.error || 'reader-service error' });
 }
 
 // utilityProcess.fork can only be called after app 'ready' (Electron docs),
@@ -128,7 +163,19 @@ function spawnReader(): void {
     readerSpawned = true;
     readerRespawnAttempt = 0; // a clean spawn resets backoff; only a fast repeat crash trips the breaker
     console.log(`humanctl: reader-service spawned (pid ${child.pid})`);
-    if (lastHotArg) callReader('session.hot', lastHotArg).catch(() => { /* best effort re-establish */ });
+    // One-time (per spawn) hand-off of the bits app.status must merge in that
+    // only main can compute (APP_VERSION, and deepLinkApps() which needs the
+    // Electron `app` module -- unavailable in a utilityProcess): the reader
+    // now serves the renderer's app.status calls directly over the port
+    // (see brokerReaderPort() below), so it needs these cached values itself
+    // rather than main enriching every reply, same as it used to.
+    child.postMessage({ type: 'init', version: APP_VERSION, apps: deepLinkApps() });
+    // A fresh reader-service process means the OLD port1 (if any) died with
+    // it; re-broker so the renderer gets a live port again. Only do this for
+    // a genuine respawn-while-running -- on the very first boot the window
+    // has not loaded yet, so did-finish-load's own brokerReaderPort() call
+    // (below) is what fires the initial broker once both sides are ready.
+    if (windowLoadedOnce) brokerReaderPort();
   });
   // Pipe the utility's own stdout/stderr through so its logs (including its
   // "hot append" timing line) stay visible; does not touch main's OWN
@@ -247,8 +294,14 @@ function createWindow(): void {
 
   win.once('ready-to-show', () => { win!.show(); win!.focus(); });
 
-  win.webContents.once('did-finish-load', () => {
+  // `.on`, not `.once`: a window reload (HUMANCTL_DEV_URL's HMR reload path,
+  // or a manual reload) discards the page's JS context and the reader port
+  // its preload was holding, so every did-finish-load re-brokers a fresh one
+  // (brokerReaderPort() is a no-op until the reader is also spawned).
+  win.webContents.on('did-finish-load', () => {
     console.log('humanctl: window loaded');
+    windowLoadedOnce = true;
+    brokerReaderPort();
     // The reader-service starts its own fleet watcher as soon as it spawns
     // (electron/reader-service.ts's watchSessions(); its dirs are fixed), so
     // main has nothing to attach here anymore -- see spawnReader() above.
@@ -268,12 +321,15 @@ function createWindow(): void {
 
 // ---- realtime: sessions:changed / inbox:fast / session:append ----
 // All three now originate in the reader-service utilityProcess (its own
-// watchers over the harness transcript dirs + ~/.humanctl), which pushes them
-// here (handleReaderMessage, above) for a plain forward to the renderer.
-// main.ts itself no longer watches anything or holds any hot-path state
-// beyond `lastHotArg` (used only to re-establish the hot session across a
-// reader-service respawn). See electron/reader-service.ts for the watcher,
-// the debounce/coalesce constants, and the incremental hot-append pump.
+// watchers over the harness transcript dirs + ~/.humanctl), pushed straight
+// onto the direct renderer <-> reader-service MessagePort (see
+// brokerReaderPort() above and electron/reader-service.ts's
+// postToRenderer()). main.ts itself no longer watches anything, holds no
+// hot-path state, and never sees these events at all. See
+// electron/reader-service.ts for the watcher, the debounce/coalesce
+// constants, and the incremental hot-append pump; electron/preload.ts for
+// where the renderer's onSessionsChanged/onInboxFast/onSessionAppend
+// subscriptions now attach.
 
 // Honest capability probe: ask the OS which app (if any) handles each harness
 // deep link scheme. The renderer only offers "open in app" when a real handler
@@ -298,9 +354,19 @@ function deepLinkApps(): { claude: boolean; codex: boolean } {
 // plist unreadable, icon file missing, decode failure, empty image) resolves
 // to null so the caller falls back to the built-in glyph silently; this
 // function itself never throws.
+//
+// Async (never main.ts's doctrine-forbidden sync fs) for the path that runs
+// on EVERY boot: the warm-cache read/write below uses fs.promises.
+// `resolveHarnessIconPath` (lib/harness-icons.ts) stays sync -- it shells out
+// to `plutil` and stats a couple of fixed paths -- and `nativeImage`'s
+// decode/resize/toPNG have no async form in Electron at all; both only run
+// on a genuine cache MISS, i.e. at most once per harness ever on a given
+// machine (the result is cached to disk here, and in `iconCache` in memory
+// for the rest of this run), so that one-time cold path is an accepted,
+// clearly-scoped sync island rather than a per-boot cost.
 const ICON_SIZE = 40; // CSS px; @2x handled by nativeImage's own scale factors
 const iconCache = new Map<string, string | null>(); // harness -> data URL | null, populated once per app run
-function extractHarnessIcon(harness: string): string | null {
+async function extractHarnessIcon(harness: string): Promise<string | null> {
   if (iconCache.has(harness)) return iconCache.get(harness) ?? null;
   let dataUrl: string | null = null;
   try {
@@ -309,10 +375,10 @@ function extractHarnessIcon(harness: string): string | null {
     // Reuse a prior run's cached PNG when present; still re-derive from the
     // source .icns if the cache is missing (first run, or userData was
     // cleared), never from the repo or a watched dir either way.
-    if (fs.existsSync(cachePath)) {
-      const buf = fs.readFileSync(cachePath);
+    try {
+      const buf = await fs.promises.readFile(cachePath);
       if (buf && buf.length) dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
-    }
+    } catch { /* no cache yet (or unreadable): fall through to the cold path below */ }
     if (!dataUrl) {
       const resolved = resolveHarnessIconPath(harness);
       if (resolved.ok) {
@@ -321,7 +387,7 @@ function extractHarnessIcon(harness: string): string | null {
           const resized = img.resize({ width: ICON_SIZE, height: ICON_SIZE, quality: 'best' });
           const png = resized.toPNG();
           if (png && png.length) {
-            try { fs.mkdirSync(path.dirname(cachePath), { recursive: true }); fs.writeFileSync(cachePath, png); } catch { /* cache is best-effort; still return the data URL below */ }
+            try { await fs.promises.mkdir(path.dirname(cachePath), { recursive: true }); await fs.promises.writeFile(cachePath, png); } catch { /* cache is best-effort; still return the data URL below */ }
             dataUrl = `data:image/png;base64,${png.toString('base64')}`;
           }
         }
@@ -331,44 +397,55 @@ function extractHarnessIcon(harness: string): string | null {
   iconCache.set(harness, dataUrl);
   return dataUrl;
 }
-function harnessIcons(): { 'claude-code': string | null; codex: string | null } {
-  return { 'claude-code': extractHarnessIcon('claude-code'), codex: extractHarnessIcon('codex') };
+async function harnessIcons(): Promise<{ 'claude-code': string | null; codex: string | null }> {
+  const [claudeCode, codex] = await Promise.all([extractHarnessIcon('claude-code'), extractHarnessIcon('codex')]);
+  return { 'claude-code': claudeCode, codex };
 }
-// The renderer names the session open in the dossier; only that file gets the
-// immediate append pump. `from` seeds the cursor at the page's line-aligned
-// end so nothing between the page read and this call is lost. Purely an
-// in-memory watch pointer (which file the hot-append pump follows): it
-// mutates no durable state and spawns nothing, so it stays outside the
-// command registry as renderer-adjacent ephemera, same as scroll position.
-// The pointer itself now lives in the reader-service (its tail cursors are
-// process-local state); main only relays the request and remembers the arg
-// so it can re-establish the hot session if the reader-service respawns.
-ipcMain.handle('session:hot', (_e, arg: { path?: string; harness?: string; from?: number } | undefined) => {
-  lastHotArg = arg && arg.path ? { path: String(arg.path), harness: (arg.harness as string) || undefined } : null;
-  return callReader('session.hot', arg || {});
-});
+// `session:hot` (the renderer naming the session open in the dossier, so
+// only that file gets the immediate append pump) is now served directly by
+// the reader-service over the renderer port -- see electron/preload.ts's
+// setHotSession/`lastHotArg` (it re-issues the last hot arg itself after a
+// fresh port arrives, the same "re-establish across a respawn" job main used
+// to do here) and electron/reader-service.ts's `session.hot` handler. main no
+// longer sees this call at all, so there is no ipcMain handler for it here.
 
 // A Dock/Finder-launched app inherits a minimal PATH (/usr/bin:/bin:...), not the
 // user's shell PATH, so bare `claude` / `codex` are not found. Resolve the real
 // absolute path via the login shell (which sources the user's rc), cached, with a
 // dir scan as a fallback. This is why summaries failed only in the packaged app.
+// Async (never `execFileSync` on main: a full interactive login shell can take
+// the whole 6s timeout sourcing a slow .zshrc/.zprofile, which would stall
+// main's event loop for that entire span -- see AGENTS.md "Never block the
+// Electron main process"). Concurrent lookups for the same name share one
+// in-flight promise rather than spawning duplicate shells.
 const cliCache = new Map<string, string | null>();
-function resolveCli(name: string): string | null {
+const cliLookupInFlight = new Map<string, Promise<string | null>>();
+function resolveCliDirScan(name: string): string | null {
+  const home = os.homedir();
+  const cands = [`${home}/.local/bin/${name}`, `${home}/.bun/bin/${name}`, `/opt/homebrew/bin/${name}`, `/usr/local/bin/${name}`, `${home}/.npm-global/bin/${name}`];
+  return cands.find((c) => { try { return fs.existsSync(c); } catch { return false; } }) || null;
+}
+async function resolveCli(name: string): Promise<string | null> {
   if (cliCache.has(name)) return cliCache.get(name) ?? null;
-  let bin: string | null = null;
-  try {
-    const shell = process.env.SHELL || '/bin/zsh';
-    const out = execFileSync(shell, ['-ilc', `command -v ${name} 2>/dev/null`], { timeout: 6000, encoding: 'utf8' });
-    const line = out.split('\n').map((s) => s.trim()).filter(Boolean).pop();
-    if (line && path.isAbsolute(line) && fs.existsSync(line)) bin = line;
-  } catch { /* fall through to dir scan */ }
-  if (!bin) {
-    const home = os.homedir();
-    const cands = [`${home}/.local/bin/${name}`, `${home}/.bun/bin/${name}`, `/opt/homebrew/bin/${name}`, `/usr/local/bin/${name}`, `${home}/.npm-global/bin/${name}`];
-    bin = cands.find((c) => { try { return fs.existsSync(c); } catch { return false; } }) || null;
-  }
-  cliCache.set(name, bin);
-  return bin;
+  const inFlight = cliLookupInFlight.get(name);
+  if (inFlight) return inFlight;
+  const lookup = (async (): Promise<string | null> => {
+    let bin: string | null = null;
+    try {
+      const shell = process.env.SHELL || '/bin/zsh';
+      const out = await new Promise<string>((resolve, reject) => {
+        execFile(shell, ['-ilc', `command -v ${name} 2>/dev/null`], { timeout: 6000, encoding: 'utf8' },
+          (err, stdout) => { if (err) reject(err); else resolve(stdout); });
+      });
+      const line = out.split('\n').map((s) => s.trim()).filter(Boolean).pop();
+      if (line && path.isAbsolute(line) && fs.existsSync(line)) bin = line;
+    } catch { /* fall through to dir scan */ }
+    if (!bin) bin = resolveCliDirScan(name);
+    cliCache.set(name, bin);
+    return bin;
+  })();
+  cliLookupInFlight.set(name, lookup);
+  try { return await lookup; } finally { cliLookupInFlight.delete(name); }
 }
 
 interface TargetParams {
@@ -474,7 +551,7 @@ async function sessionSummarize(p: TargetParams & { engine?: string; auto?: bool
   const st = fs.statSync(arg.path as string);
   const key = `${engine}:${arg.path}:${st.mtimeMs}`;
   if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true, engine };
-  const bin = resolveCli(engine);
+  const bin = await resolveCli(engine);
   if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
   // Reuses the exact same reader-service call the session.detail IPC channel
   // makes (electron/reader-service.ts's sessionDetail): one relay, one shape,
@@ -607,7 +684,7 @@ async function atlasAsk(p: { question?: string; engine?: string }): Promise<Reco
   const question = String((p && p.question) || '').trim();
   if (!question) return { ok: false, error: 'no question' };
   const engine = p.engine === 'codex' ? 'codex' : 'claude';
-  const bin = resolveCli(engine);
+  const bin = await resolveCli(engine);
   if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
   const { runPulse } = require('../lib/pulse') as typeof import('../lib/pulse');
   let pulseSummary = '(pulse unavailable)';
@@ -682,7 +759,7 @@ async function sessionAsk(p: TargetParams & { question?: string }): Promise<Reco
   if (!question) return { ok: false, error: 'no question' };
   const codex = arg.harness === 'codex';
   const engine = codex ? 'codex' : 'claude';
-  const bin = resolveCli(engine);
+  const bin = await resolveCli(engine);
   if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
   const prompt = `${BTW_SENTINEL} ${question}`;
   const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
@@ -862,6 +939,15 @@ async function sessionReveal(p: TargetParams): Promise<Record<string, unknown>> 
 // blocking this refactor exists to remove. Only the Electron-specific
 // implementations (shell opens, process spawns, local UI state) are native to
 // this file.
+//
+// sessions.list / app.status / notes.list / inbox.threads keep this callReader
+// relay ONLY for the control-socket/CLI path now (e.g. `humanctl status`):
+// every registered command must stay reachable that way (AGENTS.md's command
+// registry rule). The renderer never calls these four through ipcMain anymore
+// -- IPC_ROUTES below has no entry for them -- it talks to the reader-service
+// directly over the port brokered above (electron/preload.ts), which is the
+// actual perf fix (main no longer marshals the hot poll's ~200 rows + ~200
+// threads on every call).
 const eventLog = createEventLog();
 const registry = createRegistry({
   log: eventLog,
@@ -871,7 +957,7 @@ const registry = createRegistry({
       if (!r.ok) return r; // fail soft: an honest error, never a fabricated status
       return { ok: true, status: Object.assign(r.status as object, { version: APP_VERSION, apps: deepLinkApps() }) };
     },
-    'app.harness-icons': () => ({ ok: true, icons: harnessIcons() }),
+    'app.harness-icons': async () => ({ ok: true, icons: await harnessIcons() }),
     'sessions.list': (p) => callReader('sessions.list', p || {}),
     'session.detail': (p) => callReader('session.detail', p || {}),
     'session.timeline': (p) => callReader('session.timeline', p || {}),
@@ -907,10 +993,12 @@ const registry = createRegistry({
 // The legacy channels that passed bare strings are wrapped into params objects
 // here so the renderer needs no changes.
 type IpcRoute = [string, string, ((arg: unknown) => Record<string, unknown>)?];
+// sessions:list / status:get / notes:get / inbox:threads are deliberately
+// ABSENT here (see the registry comment above): the renderer gets them
+// straight from the reader-service over the direct port now, never through
+// ipcMain, so main never marshals their (large, hot-polled) replies.
 const IPC_ROUTES: IpcRoute[] = [
   ['app:commands', 'app.commands', () => ({})],
-  ['sessions:list', 'sessions.list'],
-  ['status:get', 'app.status'],
   ['harness:icons', 'app.harness-icons', () => ({})],
   ['pulse:pr-chip', 'pulse.pr-chip'],
   ['summary:budget', 'summary.budget', (arg) => (arg && typeof arg === 'object' ? arg as Record<string, unknown> : {})],
@@ -918,8 +1006,6 @@ const IPC_ROUTES: IpcRoute[] = [
   ['sessions:timeline', 'session.timeline'],
   ['session:summarize', 'session.summarize'],
   ['session:ask', 'session.ask'],
-  ['notes:get', 'notes.list'],
-  ['inbox:threads', 'inbox.threads'],
   ['inbox:mark-read', 'inbox.mark-read'],
   ['inbox:mark-all-read', 'inbox.mark-all-read', () => ({})],
   ['atlas:ask', 'atlas.ask'],
@@ -1013,8 +1099,22 @@ app.whenReady().then(() => {
   // percentiles to stderr every 2s so scripts/perf-selftest/run.js can assert
   // p99 stays under budget on a realistic-scale synthetic fleet. The interval
   // is flag-gated and unref'd; it does not exist in production.
+  //
+  // `resolution` is the histogram's OWN resampling interval, not a "only
+  // report blocking coarser than this" knob -- on this Node/libuv build a
+  // completely idle process's p50/p99/max all sit within ~1.3ms of
+  // `resolution` itself (verified: resolution 20 -> ~21ms floor, 10 -> ~11ms,
+  // 2 -> ~2.3ms, scaling almost exactly with the parameter, even with ZERO
+  // application work on the loop). The gate's budget is 16.7ms (one 60fps
+  // frame); a resolution of 20 made the histogram's own floor exceed that
+  // budget before main did a single thing, so the gate could never pass
+  // regardless of how little real work main did. 2ms leaves ~14ms of
+  // headroom under budget for the noise floor while still clearly surfacing
+  // real blocking (verified: an artificial 40ms main-thread stall at this
+  // resolution shows up in `max` immediately, p50/p99 unaffected by the idle
+  // floor).
   if (process.env.HUMANCTL_PERF_EVENTLOOP) {
-    const eld = monitorEventLoopDelay({ resolution: 20 });
+    const eld = monitorEventLoopDelay({ resolution: 2 });
     eld.enable();
     const ms = (ns: number): number => ns / 1e6;
     const timer = setInterval(() => {
