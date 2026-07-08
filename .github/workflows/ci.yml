@@ -50,6 +50,14 @@ jobs:
       # Zero process spawns by construction: every case replays captured stdout
       # through an injected runner, so CI never invokes the `claude` CLI.
       - run: npm run quota:selftest
+      # electron/reader-service.ts's request/reply dispatch, transport
+      # handshake, and unknown-cmd handling. Fakes process.parentPort with a
+      # plain EventEmitter, so it never needs a real Electron utilityProcess.
+      - run: npm run reader-service:selftest
+      # lib/span.ts's daily span-of-control counts (codex/claude split, notes
+      # by level, missing-source-is-null contract) and the span.jsonl upsert.
+      # Empties PATH for its own process so it never spawns a real `gh`.
+      - run: npm run span:selftest
       # Pure-logic perf checks only (watcher filter, budget math, icon-path
       # resolution, PR-chip cache contract): CI has no display server, so the
       # real perf:selftest (a live Electron + CDP gate) is LOCAL-only, run

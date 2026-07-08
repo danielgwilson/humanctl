@@ -13,6 +13,6 @@
     "noEmit": true,
     "types": ["node"]
   },
-  "include": ["lib/**/*.ts", "bin/**/*.ts", "electron/main.ts", "electron/preload.ts", "electron/reader-service.ts"],
+  "include": ["lib/**/*.ts", "bin/**/*.ts", "electron/main.ts", "electron/preload.ts", "electron/reader-service.ts", "electron/reader-service.selftest.ts"],
   "exclude": ["node_modules", "dist", ".next", "src", "electron/renderer-vite"]
 }

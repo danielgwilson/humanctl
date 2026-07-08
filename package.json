@@ -34,6 +34,8 @@
     "reader:selftest": "tsx lib/reader.selftest.ts",
     "commands:selftest": "tsx lib/commands.selftest.ts",
     "quota:selftest": "tsx lib/claude-quota.selftest.ts",
+    "reader-service:selftest": "tsx electron/reader-service.selftest.ts",
+    "span:selftest": "tsx lib/span.selftest.ts",
     "perf:selftest": "npm run build:lib && npm run build:renderer-vite && node scripts/perf-selftest/run.js",
     "perf:eventloop": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js",
     "perf:eventloop:selfcheck": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js --selfcheck",
