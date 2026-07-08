@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.17.3",
+  "version": "0.18.0",
   "description": "A control plane for the human bottleneck.",
   "main": "dist/electron/main.js",
   "engines": {
@@ -41,7 +41,7 @@
     "build:renderer-vite": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build",
     "app:build": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
     "app:dmg": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
-    "app:install": "npm run app:build && npm run perf:selftest && bash scripts/install-app.sh && npm run smoke:packaged",
+    "app:install": "npm run app:build && npm run perf:selftest && npm run perf:eventloop && bash scripts/install-app.sh && npm run smoke:packaged",
     "smoke:packaged": "bash scripts/smoke-packaged.sh",
     "app:release": "npm run build:lib && npm run build:renderer-vite && electron-builder --mac dmg --config.mac.notarize=true",
     "notch:generate": "cd attic/notch/macos && xcodegen generate",

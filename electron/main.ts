@@ -10,7 +10,7 @@
 // route through one registry, and every invoke is logged to
 // ~/.humanctl/events.jsonl. See docs/commands.md.
 
-import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } from 'electron';
+import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage, utilityProcess, type UtilityProcess } from 'electron';
 import { monitorEventLoopDelay } from 'node:perf_hooks';
 import path from 'path';
 // This compiled file lives at dist/electron/main.js (see tsup.config.ts), two
@@ -27,18 +27,134 @@ try { APP_VERSION = require('../package.json').version; } catch { /* fall back t
 import fs from 'fs';
 import os from 'os';
 import { execFile, execFileSync } from 'child_process';
+// NOTE (AGENTS.md "Never block the Electron main process"): main.ts does NOT
+// import lib/sessions's fs/parse functions (listRecent, readBlocks, etc.) or
+// lib/commands's resolveSessionRow/inboxThreads for runtime use anymore.
+// Every observation that touches a session transcript is relayed to the
+// reader-service utilityProcess below (see spawnReader()/callReader()) so
+// that work runs on ITS event loop, never main's. BTW_SENTINEL is a plain
+// string constant (not reader work); the two types are erased at compile time.
+import { BTW_SENTINEL, type SessionRow } from '../lib/sessions';
 import {
-  listRecent, readBlocks, readUsage, readDetail, aggregateSkills, accountStatus, readNotes,
-  readNeedSignals, deriveNeedState, readAppended, primeTailCursor, HARNESSES, BTW_SENTINEL,
-  type Harness, type SessionRow,
-} from '../lib/sessions';
-import {
-  createRegistry, createEventLog, createControlServer, resolveSessionRow, inboxThreads,
-  appendAskLog, isInboxRelevantChange, attachmentsDir, type RegistryInvokeCtx,
+  createRegistry, createEventLog, createControlServer,
+  appendAskLog, attachmentsDir, type RegistryInvokeCtx,
 } from '../lib/commands';
 import { resolveHarnessIconPath, cachedIconPath } from '../lib/harness-icons';
 
 let win: BrowserWindow | null = null;
+
+// ---- reader-service: the transcript fs/parse pipeline, off main ----
+// Spawned as a real, separate Node process (Electron utilityProcess), never
+// on the main/browser process. main.ts talks to it as a thin async relay:
+// post `{ id, cmd, args }`, await the matching `{ id, ok, result | error }`
+// reply. It also proactively pushes watcher events (no `id`), forwarded to
+// the renderer unchanged. See electron/reader-service.ts for the other side.
+//
+// RELAY-FIRST for this PR: this keeps the renderer's window.humanctl surface
+// and every IPC channel name/shape completely unchanged (lowest risk for a
+// packaging-adjacent change). The follow-on optimization -- a direct
+// MessageChannelMain port handed to the renderer (via preload) so hot reads
+// (sessions:list polling, session:append) go renderer <-> reader-service
+// directly, paired with `useSyncExternalStore` in the renderer to subscribe
+// without round-tripping through main at all -- is deliberately NOT done
+// here; it is a bigger, separately-reviewable change once this relay has
+// proven itself in the wild.
+let reader: UtilityProcess | null = null;
+let readerSpawned = false; // pid is undefined (per Electron's docs) until 'spawn' fires; never post before then
+let readerBreakerOpen = false; // crash-loop breaker: stop respawning after too many fast crashes
+let readerCrashCount = 0;
+let readerCrashWindowStart = 0;
+let readerRespawnAttempt = 0;
+const READER_CRASH_WINDOW_MS = 60000;
+const READER_CRASH_LIMIT = 5;
+const READER_RESPAWN_BASE_MS = 500;
+const READER_RESPAWN_MAX_MS = 8000;
+const READER_TIMEOUT_MS = 20000;
+// The renderer's currently-hot (open-in-dossier) session: the utility's
+// in-memory hot-path + tail-cursor state does not survive a crash, so main
+// remembers the last session:hot the renderer asked for and re-issues it
+// after a respawn (see spawnReader()'s 'spawn' handler).
+let lastHotArg: { path?: string; harness?: string } | null = null;
+
+interface PendingReaderReq { resolve: (result: Record<string, unknown>) => void; timer: NodeJS.Timeout }
+const pendingReaderReqs = new Map<number, PendingReaderReq>();
+let nextReaderReqId = 1;
+
+// One request/reply round trip to the reader-service. ALWAYS resolves (never
+// rejects/throws): a down/crashed/breaker-tripped/timed-out reader resolves
+// `{ ok: false, error }` instead, so a reader hiccup degrades one read to an
+// honest failure rather than ever throwing into the renderer or hanging a
+// caller forever (per the spec: "reader calls should fail soft").
+function callReader(cmd: string, args?: unknown): Promise<Record<string, unknown>> {
+  return new Promise((resolve) => {
+    if (readerBreakerOpen) { resolve({ ok: false, error: 'reader-service unavailable (crash-looped)' }); return; }
+    if (!reader || !readerSpawned) { resolve({ ok: false, error: 'reader-service not ready' }); return; }
+    const id = nextReaderReqId++;
+    const timer = setTimeout(() => { pendingReaderReqs.delete(id); resolve({ ok: false, error: `reader-service timed out on "${cmd}"` }); }, READER_TIMEOUT_MS);
+    pendingReaderReqs.set(id, { resolve, timer });
+    try { reader.postMessage({ id, cmd, args }); }
+    catch (err) { clearTimeout(timer); pendingReaderReqs.delete(id); resolve({ ok: false, error: String((err as Error)?.message || err) }); }
+  });
+}
+
+function handleReaderMessage(msg: unknown): void {
+  const m = msg as { id?: number; ok?: boolean; result?: Record<string, unknown>; error?: string; type?: string; payload?: unknown } | null;
+  if (!m || typeof m !== 'object') return;
+  if (typeof m.id === 'number') {
+    const p = pendingReaderReqs.get(m.id);
+    if (!p) return; // late reply after our own timeout already resolved the caller
+    pendingReaderReqs.delete(m.id);
+    clearTimeout(p.timer);
+    p.resolve(m.ok ? Object.assign({ ok: true }, m.result) : { ok: false, error: m.error || 'reader-service error' });
+    return;
+  }
+  // Proactive watcher push (no id): forward to the renderer unchanged, same
+  // channel names/payload shapes as when main read the fleet itself.
+  if (!win || win.isDestroyed()) return;
+  if (m.type === 'sessions:changed') win.webContents.send('sessions:changed');
+  else if (m.type === 'inbox:fast') win.webContents.send('inbox:fast');
+  else if (m.type === 'session:append') win.webContents.send('session:append', m.payload);
+}
+
+// utilityProcess.fork can only be called after app 'ready' (Electron docs),
+// so this is invoked from app.whenReady() below, before createWindow().
+function spawnReader(): void {
+  if (readerBreakerOpen) return;
+  const entry = path.join(__dirname, 'reader-service.js');
+  const child = utilityProcess.fork(entry, [], { stdio: 'pipe' });
+  reader = child;
+  readerSpawned = false;
+  child.on('spawn', () => {
+    readerSpawned = true;
+    readerRespawnAttempt = 0; // a clean spawn resets backoff; only a fast repeat crash trips the breaker
+    console.log(`humanctl: reader-service spawned (pid ${child.pid})`);
+    if (lastHotArg) callReader('session.hot', lastHotArg).catch(() => { /* best effort re-establish */ });
+  });
+  // Pipe the utility's own stdout/stderr through so its logs (including its
+  // "hot append" timing line) stay visible; does not touch main's OWN
+  // stderr, which is what scripts/perf-selftest/eventloop-gate.js parses.
+  child.stdout?.on('data', (d) => process.stdout.write(d));
+  child.stderr?.on('data', (d) => process.stderr.write(d));
+  child.on('message', handleReaderMessage);
+  child.on('exit', (code) => {
+    console.error(`humanctl: reader-service exited (code ${code})`);
+    readerSpawned = false;
+    // Fail every in-flight request rather than leave a caller hanging until
+    // its own timeout; each still resolves (never rejects) per callReader's contract.
+    for (const [id, p] of pendingReaderReqs) { clearTimeout(p.timer); p.resolve({ ok: false, error: 'reader-service exited' }); pendingReaderReqs.delete(id); }
+    const now = Date.now();
+    if (now - readerCrashWindowStart > READER_CRASH_WINDOW_MS) { readerCrashWindowStart = now; readerCrashCount = 0; }
+    readerCrashCount++;
+    if (readerCrashCount > READER_CRASH_LIMIT) {
+      readerBreakerOpen = true;
+      console.error('humanctl: reader-service crash-looped; giving up on respawning it this run (reads will fail soft from here on)');
+      return;
+    }
+    const delay = Math.min(READER_RESPAWN_MAX_MS, READER_RESPAWN_BASE_MS * 2 ** readerRespawnAttempt);
+    readerRespawnAttempt++;
+    setTimeout(spawnReader, delay);
+  });
+}
 
 // ---- local UI state (pins + theme), persisted under userData, never the repo ----
 function statePath(): string { return path.join(app.getPath('userData'), 'state.json'); }
@@ -133,124 +249,31 @@ function createWindow(): void {
 
   win.webContents.once('did-finish-load', () => {
     console.log('humanctl: window loaded');
-    watchSessions();
+    // The reader-service starts its own fleet watcher as soon as it spawns
+    // (electron/reader-service.ts's watchSessions(); its dirs are fixed), so
+    // main has nothing to attach here anymore -- see spawnReader() above.
     if (process.env.HUMANCTL_SMOKE) {
-      let n = -1;
-      try { n = listRecent({ maxAgeH: 72, limit: 40 }).length; } catch { /* smoke count is advisory */ }
-      console.log(`HUMANCTL_SMOKE ok: ${n} sessions`);
-      app.quit();
+      (async () => {
+        let n = -1;
+        try {
+          const r = await callReader('sessions.list', { maxAgeH: 72, limit: 40 });
+          if (r.ok) n = (r.rows as unknown[]).length;
+        } catch { /* smoke count is advisory */ }
+        console.log(`HUMANCTL_SMOKE ok: ${n} sessions`);
+        app.quit();
+      })();
     }
   });
 }
 
-// ---- realtime: watch the session dirs, debounce, tell the renderer to refresh ----
-// Three speeds now. LIST refreshes (harness transcript dirs) stay behind the
-// 2.5s trailing debounce (a fleet of active agents writes constantly; the
-// scan is mtime-cached but not free). The HOT session, the one open in the
-// dossier, skips the debounce: its fs events run a cursor-based incremental
-// read of only the appended bytes and push the new events straight to the
-// renderer, so a message landing in the watched transcript appears in the
-// open dossier in well under 2 seconds. ~/.humanctl itself (notes.jsonl +
-// asks/) gets its own fast path: those are tiny appends, high-signal (a
-// posted note or a persisted ask answer), and cheap to react to, so they skip
-// the 2.5s list debounce entirely and push a dedicated inbox-refresh event on
-// a short coalesce window instead of waiting on the general list ping.
-let watchTimer: NodeJS.Timeout | null = null;
-const watchers: fs.FSWatcher[] = [];
-let hotPath: string | null = null, hotHarness: Harness | string | null = null, hotTimer: NodeJS.Timeout | null = null;
-const HOT_COALESCE_MS = 120;
-let inboxTimer: NodeJS.Timeout | null = null;
-const INBOX_COALESCE_MS = 200;
-
-function pumpHot(): void {
-  hotTimer = null;
-  if (!hotPath || !win || win.isDestroyed()) return;
-  const t0 = Date.now();
-  let res;
-  try { res = readAppended(hotPath, { harness: hotHarness || undefined }); } catch { return; }
-  if (res.reset) {
-    // rotation / truncation / oversized gap: tell the renderer to re-read a
-    // full page rather than splicing across a rewrite.
-    win.webContents.send('session:append', { path: hotPath, reset: true, reason: res.reason });
-    return;
-  }
-  if (!res.events || (!res.events.length && !res.meta)) return;
-  // Re-derive the state through the existing needs-you v3 logic (bounded tail
-  // read, keyed by mtime+size, so this is the same classifier the list uses).
-  let need = null;
-  try {
-    const st = fs.statSync(hotPath);
-    need = deriveNeedState(readNeedSignals(hotPath, hotHarness as string, st), st, Date.now());
-  } catch { /* advisory; the debounced list refresh will still catch up */ }
-  // epoch stamp makes append-to-render latency measurable from stdout
-  console.log(`humanctl: hot append ${res.events.length} events (read ${Date.now() - t0}ms) at ${Date.now()}`);
-  win.webContents.send('session:append', {
-    path: hotPath, events: res.events, meta: res.meta, need, end: res.end, size: res.size, at: Date.now(),
-  });
-}
-function scheduleHot(): void {
-  if (hotTimer) return;
-  hotTimer = setTimeout(pumpHot, HOT_COALESCE_MS);
-}
-
-function pumpInbox(): void {
-  inboxTimer = null;
-  if (win && !win.isDestroyed()) win.webContents.send('inbox:fast');
-}
-function scheduleInbox(): void {
-  if (inboxTimer) return;
-  inboxTimer = setTimeout(pumpInbox, INBOX_COALESCE_MS);
-}
-
-function watchSessions(): void {
-  // Trailing debounce: active agents write constantly, so coalesce a burst of
-  // fs events into one refresh. 2.5s keeps the UI live without pinning the main
-  // thread on the (now mtime-cached) session scan.
-  const ping = () => { if (watchTimer) clearTimeout(watchTimer); watchTimer = setTimeout(() => { if (win && !win.isDestroyed()) win.webContents.send('sessions:changed'); }, 2500); };
-  const harnessDirs = HARNESSES.map((h) => h.dir);
-  for (const dir of harnessDirs) {
-    try {
-      // macOS recursive fs.watch (FSEvents) reports files in subdirectories
-      // created after the watch attached (verified: fresh Codex date dirs
-      // surface as "2026/07/04/rollout-x.jsonl"), so both roots stay covered
-      // without re-attaching. filename can be null on some platforms; treat
-      // that as "maybe the hot file" (the pump stat-guards for free).
-      const w = fs.watch(dir, { recursive: true }, (_ev, fn) => {
-        ping();
-        if (hotPath && (!fn || path.join(dir, String(fn)) === hotPath)) scheduleHot();
-      });
-      w.on('error', () => { /* a watched dir vanishing must not crash the process */ });
-      watchers.push(w);
-    } catch { /* dir may not exist; ignore */ }
-  }
-  // ensure the inbox dir exists so its watcher attaches even before the first note
-  const inboxDir = path.join(os.homedir(), '.humanctl');
-  try { fs.mkdirSync(inboxDir, { recursive: true }); } catch { /* best effort */ }
-  try {
-    // notes.jsonl and asks/*.jsonl are small append-only writes; a short
-    // coalesce here (INBOX_COALESCE_MS) is cheap because the consumer side
-    // (inbox.threads) is itself mtime-cached (lib/sessions.ts's baseScan has
-    // a 1.5s TTL), so firing this more often than the list debounce does not
-    // add a second full session scan on every keystroke of a note.
-    //
-    // ~/.humanctl also holds the registry's OWN outputs (events.jsonl and its
-    // events.1.jsonl rotation today, more over time). Without a filter, every
-    // registered command's event-log append is itself a write inside this
-    // watched dir, which re-fires this callback, which schedules the very
-    // inbox refresh that just invoked more commands -- a closed, self-
-    // sustaining loop with no natural damping beyond the coalesce window.
-    // isInboxRelevantChange allowlists the two inputs the Inbox actually
-    // reads (notes.jsonl, asks/*.jsonl) so anything else under ~/.humanctl,
-    // present today or added later, is ignored here by construction.
-    const w = fs.watch(inboxDir, { recursive: true }, (_ev, fn) => {
-      if (!isInboxRelevantChange(fn)) return;
-      ping();
-      scheduleInbox();
-    });
-    w.on('error', () => { /* a watched dir vanishing must not crash the process */ });
-    watchers.push(w);
-  } catch { /* dir may not exist; ignore */ }
-}
+// ---- realtime: sessions:changed / inbox:fast / session:append ----
+// All three now originate in the reader-service utilityProcess (its own
+// watchers over the harness transcript dirs + ~/.humanctl), which pushes them
+// here (handleReaderMessage, above) for a plain forward to the renderer.
+// main.ts itself no longer watches anything or holds any hot-path state
+// beyond `lastHotArg` (used only to re-establish the hot session across a
+// reader-service respawn). See electron/reader-service.ts for the watcher,
+// the debounce/coalesce constants, and the incremental hot-append pump.
 
 // Honest capability probe: ask the OS which app (if any) handles each harness
 // deep link scheme. The renderer only offers "open in app" when a real handler
@@ -317,18 +340,12 @@ function harnessIcons(): { 'claude-code': string | null; codex: string | null } 
 // in-memory watch pointer (which file the hot-append pump follows): it
 // mutates no durable state and spawns nothing, so it stays outside the
 // command registry as renderer-adjacent ephemera, same as scroll position.
+// The pointer itself now lives in the reader-service (its tail cursors are
+// process-local state); main only relays the request and remembers the arg
+// so it can re-establish the hot session if the reader-service respawns.
 ipcMain.handle('session:hot', (_e, arg: { path?: string; harness?: string; from?: number } | undefined) => {
-  try {
-    hotPath = arg && arg.path ? String(arg.path) : null;
-    hotHarness = (arg && arg.harness) || null;
-    if (hotPath) {
-      primeTailCursor(hotPath, arg && typeof arg.from === 'number' ? arg.from : undefined);
-      // pump once right away: on reselection this catches up anything appended
-      // while the session was not hot, without waiting for its next fs event.
-      scheduleHot();
-    }
-    return { ok: true };
-  } catch (err) { return { ok: false, error: String((err as Error)?.message || err) }; }
+  lastHotArg = arg && arg.path ? { path: String(arg.path), harness: (arg.harness as string) || undefined } : null;
+  return callReader('session.hot', arg || {});
 });
 
 // A Dock/Finder-launched app inherits a minimal PATH (/usr/bin:/bin:...), not the
@@ -369,13 +386,17 @@ type ResolveTargetResult = { ok: true; target: TargetParams } | { ok: false; err
 // Resolve once, here, so every action shares the same rule. `need` names the
 // keys the handler cannot work without; when they are all present the params
 // pass through untouched (the renderer fast path, zero behavior change).
-function resolveTarget(p: TargetParams, need: string[]): ResolveTargetResult {
+// Resolution itself (a fleet scan keyed by id) is relayed to the
+// reader-service (see callReader('resolve-session-row', ...)); this function
+// is async purely because that round trip is, never because of local fs work.
+async function resolveTarget(p: TargetParams, need: string[]): Promise<ResolveTargetResult> {
   const have = (k: string) => p[k] !== undefined && p[k] !== null && p[k] !== '';
   if (need.every(have)) return { ok: true, target: p };
   if (!have('id') && !have('path')) return { ok: false, error: 'no session id or path' };
-  const r = resolveSessionRow((p.id || p.path) as string);
-  if (!r.ok || !r.row) return { ok: false, error: r.error, ambiguous: r.ambiguous };
-  return { ok: true, target: Object.assign({}, p, { id: r.row.id, path: r.row.path, harness: r.row.harness, cwd: p.cwd || r.row.cwd }) };
+  const r = await callReader('resolve-session-row', { id: (p.id || p.path) as string });
+  const row = r.row as SessionRow | undefined;
+  if (!r.ok || !row) return { ok: false, error: r.error as string | undefined, ambiguous: r.ambiguous as boolean | undefined };
+  return { ok: true, target: Object.assign({}, p, { id: row.id, path: row.path, harness: row.harness, cwd: p.cwd || row.cwd }) };
 }
 
 // ---- state mutations ----
@@ -392,15 +413,16 @@ function applyStatePatch(patch: Partial<UiState> | undefined, ctx?: RegistryInvo
   pushStateToRenderer(ctx);
   return { ok: true, state: next };
 }
-function pinSession(id: string, on: boolean, ctx?: RegistryInvokeCtx): Record<string, unknown> {
-  const r = resolveSessionRow(id);
-  if (!r.ok || !r.row) return { ok: false, error: r.error, ambiguous: r.ambiguous }; // pinning an id that matches nothing would be a silent no-op lie
+async function pinSession(id: string, on: boolean, ctx?: RegistryInvokeCtx): Promise<Record<string, unknown>> {
+  const r = await callReader('resolve-session-row', { id });
+  const row = r.row as SessionRow | undefined;
+  if (!r.ok || !row) return { ok: false, error: r.error, ambiguous: r.ambiguous }; // pinning an id that matches nothing would be a silent no-op lie
   const s = readState();
   const pins = new Set(Array.isArray(s.pins) ? s.pins : []);
-  if (on) pins.add(r.row.id); else pins.delete(r.row.id);
+  if (on) pins.add(row.id); else pins.delete(row.id);
   const res = applyStatePatch({ pins: [...pins] }, ctx);
   if (!res.ok) return res;
-  return { ok: true, id: r.row.id, pinned: on, pins: res.state.pins };
+  return { ok: true, id: row.id, pinned: on, pins: res.state.pins };
 }
 
 // Inbox unread state: lastReadTs[threadId] persists in state.json (same store
@@ -417,9 +439,10 @@ function markThreadRead(threadId: string, at: number | undefined, ctx?: Registry
   if (!res.ok) return res;
   return { ok: true, threadId: id, at: lastReadTs[id] };
 }
-function markAllThreadsRead(ctx?: RegistryInvokeCtx): Record<string, unknown> {
+async function markAllThreadsRead(ctx?: RegistryInvokeCtx): Promise<Record<string, unknown>> {
   const now = Date.now();
-  const threads = inboxThreads({});
+  const r = await callReader('inbox.threads', {});
+  const threads = (r.ok ? (r.threads as { sessionId: string }[]) : []) || [];
   const s = readState();
   const lastReadTs = Object.assign({}, s.lastReadTs || {});
   for (const t of threads) lastReadTs[t.sessionId] = now;
@@ -444,7 +467,7 @@ const SUMMARIZE_PROMPT = (ex: { lastUser?: string }, tail: string) => `Summarize
 // (nothing was spent) and must never blank out an existing stale summary (the
 // caller keeps showing the old one with its age label).
 async function sessionSummarize(p: TargetParams & { engine?: string; auto?: boolean }): Promise<Record<string, unknown>> {
-  const t = resolveTarget(p, ['path']);
+  const t = await resolveTarget(p, ['path']);
   if (!t.ok) return t as unknown as Record<string, unknown>;
   const arg = t.target;
   const engine = arg.engine === 'codex' ? 'codex' : 'claude';
@@ -453,9 +476,14 @@ async function sessionSummarize(p: TargetParams & { engine?: string; auto?: bool
   if (summaryCache.has(key)) return { ok: true, summary: summaryCache.get(key), cached: true, engine };
   const bin = resolveCli(engine);
   if (!bin) return { ok: false, error: `could not find the ${engine} CLI on your PATH`, engine };
-  const d = readDetail(arg.path as string, arg.harness as string) || ({} as { lastExchange?: { lastUser?: string } });
+  // Reuses the exact same reader-service call the session.detail IPC channel
+  // makes (electron/reader-service.ts's sessionDetail): one relay, one shape,
+  // no separate readDetail/readBlocks import here.
+  const detailRes = await callReader('session.detail', { path: arg.path, harness: arg.harness });
+  const d = (detailRes.ok ? (detailRes.detail as { lastExchange?: { lastUser?: string } } | null) : null) || {};
   const ex = d.lastExchange || {};
-  const tail = (readBlocks(arg.path as string, { harness: arg.harness }).blocks || []).slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
+  const blocks = (detailRes.ok ? (detailRes.data as { blocks?: { kind: string; preview: string }[] })?.blocks : []) || [];
+  const tail = blocks.slice(-16).map((b) => `[${b.kind}] ${b.preview}`).join('\n');
   const prompt = SUMMARIZE_PROMPT(ex, tail);
   if (arg.auto && engine === 'claude') {
     const { wouldExceedBudget } = require('../lib/summary-budget') as typeof import('../lib/summary-budget');
@@ -551,12 +579,16 @@ function readAtlasLog(limit = 200): Record<string, unknown>[] {
   return out.slice(-limit);
 }
 const ATLAS_TOP_N = 20;
-function atlasContext(): { rows: Record<string, unknown>[]; notes: Record<string, unknown>[] } {
-  const rows = listRecent({ maxAgeH: 24 * 30, limit: 200, withUsage: false })
+async function atlasContext(): Promise<{ rows: Record<string, unknown>[]; notes: Record<string, unknown>[] }> {
+  const listRes = await callReader('sessions.list', { maxAgeH: 24 * 30, limit: 200, withUsage: false });
+  const rowsRaw = (listRes.ok ? (listRes.rows as SessionRow[]) : []) || [];
+  const rows = rowsRaw
     .filter((r) => r.tier !== 'archived')
     .slice(0, ATLAS_TOP_N)
     .map((r: SessionRow) => ({ id: r.id.slice(0, 12), repo: r.repo, harness: r.harness, state: r.state, reason: r.stateReason, age: r.age }));
-  const notes = readNotes({ limit: 20 }).map((n) => ({ level: n.level, message: n.message, repo: n.repo, session: n.session ? n.session.slice(0, 12) : '', ts: n.ts }));
+  const notesRes = await callReader('notes.list', { limit: 20 });
+  const notesRaw = (notesRes.ok ? (notesRes.notes as { level: string; message: string; repo: string; session?: string; ts: string }[]) : []) || [];
+  const notes = notesRaw.map((n) => ({ level: n.level, message: n.message, repo: n.repo, session: n.session ? n.session.slice(0, 12) : '', ts: n.ts }));
   return { rows, notes };
 }
 const ATLAS_PROMPT = (ctx: { rows: unknown; notes: unknown }, pulseSummary: string, question: string) => `You are Atlas, the advisory chief-of-staff panel in humanctl, a control room for one human overseeing many autonomous coding-agent sessions. Answer the operator's question using ONLY the data below. Cite the specific sessions (by their short id) or lanes you are referring to. If the data does not cover the question, say "I don't see that in the current fleet data" rather than guessing. Be terse and concrete; no preamble, no fabricated actions (you are advisory only and cannot execute anything).
@@ -584,7 +616,7 @@ async function atlasAsk(p: { question?: string; engine?: string }): Promise<Reco
     const code = await runPulse({ json: false }, { out: (s: string) => { out += `${s}\n`; }, err: () => { /* Atlas still answers from notes + session states alone */ } });
     if (code === 0 && out.trim()) pulseSummary = out.trim().slice(0, 4000);
   } catch { /* Atlas still answers from notes + session states alone */ }
-  const ctx = atlasContext();
+  const ctx = await atlasContext();
   const prompt = ATLAS_PROMPT(ctx, pulseSummary, question);
   const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
   delete (env as Record<string, string | undefined>).CLAUDE_CODE_ENTRYPOINT;
@@ -643,7 +675,7 @@ async function atlasAsk(p: { question?: string; engine?: string }): Promise<Reco
 const ASK_TIMEOUT_MS = 90000;
 const AUTH_FAIL_RE = /\b(not logged in|please run \/login|invalid authentication credentials|invalid api key|not authenticated|failed to authenticate)\b/i;
 async function sessionAsk(p: TargetParams & { question?: string }): Promise<Record<string, unknown>> {
-  const t = resolveTarget(p, ['id', 'path']);
+  const t = await resolveTarget(p, ['id', 'path']);
   if (!t.ok) return t as unknown as Record<string, unknown>;
   const arg = t.target;
   const question = String(arg.question || '').trim();
@@ -673,8 +705,13 @@ async function sessionAsk(p: TargetParams & { question?: string }): Promise<Reco
     if (readState().askCodexAck !== true) {
       return { ok: false, needsAck: true, engine, error: 'Codex questions are written into the thread itself; confirm the disclosure first.' };
     }
-    let st: fs.Stats | null = null; try { st = fs.statSync(arg.path as string); } catch { /* stat is advisory */ }
-    const need = deriveNeedState(readNeedSignals(arg.path as string, arg.harness as string, st || undefined), st, Date.now());
+    // This gate exists to stop a Codex ask from appending into a thread the
+    // agent itself is actively writing into right now, so a reader-service
+    // hiccup must refuse (return an honest error) rather than silently treat
+    // an unknown state as safe.
+    const needRes = await callReader('need-state', { path: arg.path, harness: arg.harness });
+    if (!needRes.ok) return { ok: false, engine, error: `could not check whether this session is active: ${needRes.error}` };
+    const need = needRes.need as { state: string };
     if (need.state === 'work') {
       return { ok: false, engine, error: 'this session is working right now; a Codex ask would append into the live thread. Try again once it settles.' };
     }
@@ -743,7 +780,7 @@ async function sessionAsk(p: TargetParams & { question?: string }): Promise<Reco
 // has started but not yet settled; app 'will-quit' sweeps it.
 const inFlightAsks = new Map<string, { q: string; ts: string }>();
 async function sessionAskPersisted(p: TargetParams & { question?: string }): Promise<Record<string, unknown>> {
-  const t = resolveTarget(p, ['id', 'path']);
+  const t = await resolveTarget(p, ['id', 'path']);
   if (!t.ok) return t as unknown as Record<string, unknown>; // resolution failure: nothing to persist, nothing was in flight
   const sessionId = t.target.id as string | undefined;
   const question = String(t.target.question || '').trim();
@@ -764,8 +801,8 @@ function flushInFlightAsksAsInterrupted(): void {
 }
 
 // Open/resume the actual session in a Terminal window (hands it back to the human).
-function sessionResume(p: TargetParams): Record<string, unknown> {
-  const t = resolveTarget(p, ['id', 'harness', 'cwd']);
+async function sessionResume(p: TargetParams): Promise<Record<string, unknown>> {
+  const t = await resolveTarget(p, ['id', 'harness', 'cwd']);
   if (!t.ok) return t as unknown as Record<string, unknown>;
   const arg = t.target;
   const shq = (s: unknown) => `'${String(s).replace(/'/g, "'\\''")}'`;
@@ -790,7 +827,7 @@ function sessionResume(p: TargetParams): Record<string, unknown> {
 //   Codex desktop   codex://threads/<thread-uuid>    opens that thread in the app
 const UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
 async function sessionOpenApp(p: TargetParams): Promise<Record<string, unknown>> {
-  const t = resolveTarget(p, ['id', 'harness']);
+  const t = await resolveTarget(p, ['id', 'harness']);
   if (!t.ok) return t as unknown as Record<string, unknown>;
   const arg = t.target;
   try {
@@ -808,31 +845,39 @@ async function sessionOpenApp(p: TargetParams): Promise<Record<string, unknown>>
   }
 }
 
-function sessionReveal(p: TargetParams): Record<string, unknown> {
-  const t = resolveTarget(p, ['path']);
+async function sessionReveal(p: TargetParams): Promise<Record<string, unknown>> {
+  const t = await resolveTarget(p, ['path']);
   if (!t.ok) return t as unknown as Record<string, unknown>;
   shell.showItemInFolder(t.target.path as string);
   return { ok: true, path: t.target.path };
 }
 
 // ---- the registry: every IPC channel and the control socket route through it ----
-// Observations implemented purely over lib/ (sessions.list, notes.list,
-// pulse.run, ...) come from the registry's built-in direct handlers; only the
-// Electron-specific implementations are injected here.
+// Observations that touch a session transcript (sessions.list, session.detail,
+// session.timeline, skills.aggregate, notes.list, inbox.threads, app.status)
+// are explicitly overridden here to relay to the reader-service utilityProcess
+// (callReader) instead of falling through to lib/commands.ts's DIRECT_HANDLERS,
+// which call lib/sessions synchronously -- fine for the CLI (a one-shot
+// process with no window to keep responsive) but exactly the main-process
+// blocking this refactor exists to remove. Only the Electron-specific
+// implementations (shell opens, process spawns, local UI state) are native to
+// this file.
 const eventLog = createEventLog();
 const registry = createRegistry({
   log: eventLog,
   handlers: {
-    'app.status': (p) => ({ ok: true, status: Object.assign(accountStatus(p || {}), { version: APP_VERSION, apps: deepLinkApps() }) }),
-    'app.harness-icons': () => ({ ok: true, icons: harnessIcons() }),
-    'session.detail': (p) => {
-      // Same result shape the renderer has always consumed from sessions:read.
-      const t = resolveTarget(p, ['path']);
-      if (!t.ok) return t as unknown as Record<string, unknown>;
-      const detail = readDetail ? readDetail(t.target.path as string, t.target.harness as string) : null;
-      return { ok: true, data: readBlocks(t.target.path as string, { harness: t.target.harness }), usage: readUsage(t.target.path as string, t.target.harness as string), detail };
+    'app.status': async (p) => {
+      const r = await callReader('app.status', p || {});
+      if (!r.ok) return r; // fail soft: an honest error, never a fabricated status
+      return { ok: true, status: Object.assign(r.status as object, { version: APP_VERSION, apps: deepLinkApps() }) };
     },
-    'skills.aggregate': (p) => ({ ok: true, agg: aggregateSkills(p || {}) }),
+    'app.harness-icons': () => ({ ok: true, icons: harnessIcons() }),
+    'sessions.list': (p) => callReader('sessions.list', p || {}),
+    'session.detail': (p) => callReader('session.detail', p || {}),
+    'session.timeline': (p) => callReader('session.timeline', p || {}),
+    'skills.aggregate': (p) => callReader('skills.aggregate', p || {}),
+    'notes.list': (p) => callReader('notes.list', p || {}),
+    'inbox.threads': (p) => callReader('inbox.threads', p || {}),
     'session.summarize': (p) => sessionSummarize(p),
     'session.resume': (p) => sessionResume(p),
     'session.open-app': (p) => sessionOpenApp(p),
@@ -953,6 +998,12 @@ function startControlServer(): void {
 
 app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) { try { app.dock.setIcon(nativeImage.createFromPath(ICON_PATH)); } catch { /* icon is cosmetic */ } }
+  // Spawn the reader-service before the window loads content: utilityProcess
+  // can only be forked after 'ready' (Electron docs), and starting it first
+  // gives it a head start warming its own fs.watch + first scan while the
+  // renderer boots, so the first sessions:list poll is more likely to land
+  // after 'spawn' rather than racing it (callReader() fails soft either way).
+  spawnReader();
   createWindow();
   startControlServer();
   // PERF GATE INSTRUMENTATION (test-only, gated by HUMANCTL_PERF_EVENTLOOP;
@@ -978,6 +1029,11 @@ app.whenReady().then(() => {
 app.on('will-quit', () => {
   flushInFlightAsksAsInterrupted();
   if (controlServer) { try { controlServer.close(); } catch { /* best effort */ } }
+  // Electron tears down utilityProcess children with the app, but kill it
+  // explicitly so a repeated dev-loop run never leaves an orphaned
+  // reader-service holding its fs.watch handles open.
+  readerBreakerOpen = true; // stop any pending respawn timer from re-forking during shutdown
+  if (reader) { try { reader.kill(); } catch { /* best effort */ } }
 });
-app.on('window-all-closed', () => { for (const w of watchers) { try { w.close(); } catch { /* best effort */ } } if (process.platform !== 'darwin') app.quit(); });
+app.on('window-all-closed', () => { if (process.platform !== 'darwin') app.quit(); });
 app.on('activate', () => { if (BrowserWindow.getAllWindows().length === 0) createWindow(); });
