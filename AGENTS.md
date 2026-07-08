@@ -38,7 +38,8 @@ Operator notes for agents working in this repo. Start with `README.md` for what
   `npm run build:lib` (tsup) is the compile step. Both are CI-required (see
   `.github/workflows/ci.yml`), alongside `npm run lint`, the renderer's own
   lint and typecheck, `node --check` over every compiled `dist/` output, the
-  four `*.selftest.ts` suites (`pulse`, `reader`, `commands`, `claude-quota`),
+  six `*.selftest.ts` suites (`pulse`, `reader`, `commands`, `claude-quota`,
+  `reader-service`, `span`),
   `npm run perf:logic-selftest`, `npm run bundle:check`, and a separate
   secret-scan job.
 
@@ -268,6 +269,25 @@ join is proven end to end without ever reading or writing the real
 `~/.humanctl/notes.jsonl` (see `docs/commands.md`'s Selftest section):
 
     npm run commands:selftest     # registry, event log, and socket round-trip
+
+The reader-service (`electron/reader-service.ts`, the transcript pipeline
+running in its own Electron `utilityProcess`) has its own selftest: it fakes
+`process.parentPort` with a plain `EventEmitter` and points `HOME` at a temp
+dir before dynamically importing the module, so it runs under plain `tsx`
+with no real Electron and no real session data. Covers request/reply shape,
+unknown-cmd rejection, the `init` version/apps merge, and the renderer-port
+handshake (including a second handshake closing the first port). `quota.claude`
+is intentionally out of scope (see the file's header comment):
+
+    npm run reader-service:selftest   # transcript pipeline: dispatch, transports, handshake
+
+The span-of-control counter (`lib/span.ts`, behind `humanctl span`) has its
+own selftest: synthetic Codex rollouts and Claude Code sessions with
+`fs.utimesSync`-controlled mtimes prove the day-window and interactive/
+automation split, and `PATH` is emptied for the whole run so it never spawns
+a real `gh`:
+
+    npm run span:selftest         # daily codex/claude/notes counts + span.jsonl upsert
 
 The Claude subscription-quota read (`lib/claude-quota.ts`, behind the
 `quota.claude` command) parses the Claude Code CLI's non-interactive `/usage`
