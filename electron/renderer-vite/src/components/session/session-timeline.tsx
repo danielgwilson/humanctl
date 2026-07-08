@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef } from 'react';
 import type { RefObject } from 'react';
+import { Button } from '@/components/ui/button';
 import { Chip } from '@/components/ui/chip';
 import { Item, ItemContent, ItemHeader } from '@/components/ui/item';
 import { useTimeline } from '@/hooks/use-timeline';
@@ -179,14 +180,16 @@ export function SessionTimeline({
               </div>
             ) : (
               <div className="flex justify-center py-1.5">
-                <button
+                <Button
                   type="button"
+                  variant="ghost"
+                  size="sm"
                   onClick={handleLoadOlder}
                   disabled={tl.loadingOlder}
-                  className="font-mono text-[10px] tracking-wide text-ink3 hover:text-foreground disabled:cursor-default disabled:opacity-60"
+                  className="h-auto w-auto px-0 py-0 font-mono text-[10px] tracking-wide text-ink3 hover:bg-transparent hover:text-foreground disabled:cursor-default disabled:opacity-60"
                 >
                   {olderLabel}
-                </button>
+                </Button>
               </div>
             )}
             {tl.items.length === 0 ? (

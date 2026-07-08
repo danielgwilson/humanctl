@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.17.5",
+  "version": "0.17.6",
   "description": "A control plane for the human bottleneck.",
   "main": "dist/electron/main.js",
   "engines": {

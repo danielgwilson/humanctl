@@ -4,6 +4,7 @@ import { Input } from '@/components/ui/input';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Chip } from '@/components/ui/chip';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import {
   Item,
   ItemContent,
@@ -195,7 +196,11 @@ export function SessionDetail({
   const bodyViewportRef = useRef<HTMLDivElement | null>(null);
 
   if (!thread) {
-    return <div className="p-6 font-mono text-[12px] text-ink3">Select a thread to open it.</div>;
+    return (
+      <Empty className="h-full">
+        <EmptyDescription>Select a thread to open it.</EmptyDescription>
+      </Empty>
+    );
   }
   const title = row?.customTitle || row?.title || thread.title || thread.sessionId.slice(0, 10);
   const state = row?.state || 'idle';
@@ -223,9 +228,15 @@ export function SessionDetail({
           scrolls, always visible, the fix for the scroll-trap symptom. */}
       <div className="flex-none px-6 pb-3 pt-3">
         {onBack && (
-          <button type="button" onClick={onBack} className="mb-2 font-mono text-[10.5px] text-ink3 hover:text-foreground">
+          <Button
+            type="button"
+            variant="ghost"
+            size="sm"
+            onClick={onBack}
+            className="mb-2 h-auto w-fit justify-start px-0 py-0 font-mono text-[10.5px] text-ink3 hover:bg-transparent hover:text-foreground"
+          >
             &#8592; {backLabel || 'back'}
-          </button>
+          </Button>
         )}
         <div className="flex items-start gap-3">
           <HarnessGlyph harness={thread.harness} className="mt-0.5 text-[26px]" />
@@ -264,7 +275,9 @@ export function SessionDetail({
               </Fragment>
             ))
           ) : (
-            <div className="py-3 font-mono text-[11px] text-ink4">no updates in this thread yet.</div>
+            <Empty className="p-3">
+              <EmptyDescription className="text-ink4">no updates in this thread yet.</EmptyDescription>
+            </Empty>
           )}
         </ItemGroup>
 

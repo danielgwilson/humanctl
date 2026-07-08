@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { Item, ItemGroup, ItemSeparator } from '@/components/ui/item';
+import { Progress } from '@/components/ui/progress';
 import { ViewHeader } from '@/components/shell/view-header';
 import { useSkillAggregate } from '@/hooks/use-humanctl';
 import { fmtCadence, fmtResetClock, fmtTok, fmtUSD } from '@/lib/format';
@@ -109,9 +110,12 @@ export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Stat
               {topSkills.map(([name, count]) => (
                 <div key={name} className="flex items-center gap-3">
                   <span className="w-32 flex-none truncate font-mono text-[10.5px] text-ink3" title={name}>{name}</span>
-                  <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-panel2">
-                    <div className="h-full rounded-full bg-iris" style={{ width: `${Math.max(6, Math.round((count / maxSkillCount) * 100))}%` }} />
-                  </div>
+                  <Progress
+                    value={Math.max(6, Math.round((count / maxSkillCount) * 100))}
+                    indicator="iris"
+                    aria-label={`${name}: ${count}`}
+                    className="flex-1"
+                  />
                   <span className="w-6 flex-none text-right font-mono text-[10.5px] text-ink3">{count}</span>
                 </div>
               ))}

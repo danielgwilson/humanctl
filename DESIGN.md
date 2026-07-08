@@ -130,6 +130,28 @@ zinc/new-york look:
   (adopted in the shell v3 pass): use the shadcn primitive, restyled onto the
   humanctl palette via the `--color-*` token bridge in `globals.css`, not a
   hand-rolled popover/overlay.
+- **A segmented control is `ToggleGroup`** (`components/ui/toggle-group.tsx`,
+  built on shadcn's Toggle/ToggleGroup), never a hand-rolled `role="group"`
+  div of raw `<button>`s tracking `aria-pressed` itself. Mono labels, an iris
+  fill on the active option (settings-view's Theme and AI-summary-engine
+  pickers are the current call sites).
+- **A proportional bar is `Progress`** (`components/ui/progress.tsx`, built
+  on shadcn's Progress), never an inline `style={{ width: ... }}` fill over a
+  hand-rolled track div. The hue is a cva variant on the indicator (`iris`,
+  `need`/`block`/`work`/`idle`/`done`, `claude`/`codex`, `ink3`/`rule2`),
+  never a one-off className (Metrics' top-skills bars, Fleet's by-state/
+  by-harness/by-tier bars are the current call sites).
+- **An empty state is `Empty`/`EmptyTitle`/`EmptyDescription`**
+  (`components/ui/empty.tsx`, hand-ported in the house style rather than
+  shadcn's stock dashed-border/icon-medallion card, which reads as a card),
+  never a bespoke one-off `<div className="p-... text-ink3">` placeholder.
+  Quiet, mono, understated -- never celebratory (session-detail, Sessions,
+  Fleet, and Inbox's empty states are the current call sites).
+- **Action feedback is `Sonner`** (`components/ui/sonner.tsx`, a single
+  `<Toaster/>` mounted once in `App.tsx`), the one transient-feedback surface
+  for a mutation that has no other visible confirmation (theme/engine/budget
+  changes, mark-all-read, session resume). Flat panel2 surface, mono type,
+  never sonner's stock colored success/error iconography or shadow card.
 
 Every new view built on renderer-vite inherits this vocabulary rather than
 deriving a new one-off dialect. Extend the shared primitive (add a cva

@@ -1,9 +1,11 @@
 import { useMemo } from 'react';
 import { Command } from 'lucide-react';
 import { ViewHeader } from '@/components/shell/view-header';
+import { Progress, type progressIndicatorVariants } from '@/components/ui/progress';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import { STATE_META } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import type { Harness, SessionRow, SessionState, Status, Tier } from '@/lib/types';
+import type { VariantProps } from 'class-variance-authority';
 
 // Fleet is the SOLE home for "fleet shape" (DESIGN.md: "this view will add
 // the shape of the fleet, not a second list"; the complete row-per-session
@@ -22,23 +24,23 @@ import type { Harness, SessionRow, SessionState, Status, Tier } from '@/lib/type
 // quota in detail; the context bar also shows it) and should be added to
 // DESIGN.md's signal-ownership table alongside that one.
 
+type ProgressIndicator = NonNullable<VariantProps<typeof progressIndicatorVariants>['indicator']>;
+
 const STATE_ORDER: SessionState[] = ['need', 'block', 'work', 'idle', 'done'];
 const HARNESS_ORDER: Harness[] = ['claude-code', 'codex'];
 const TIER_ORDER: Tier[] = ['hot', 'drifting', 'archived'];
 const TIER_LABEL: Record<Tier, string> = { hot: 'hot (recent)', drifting: 'drifting', archived: 'archived' };
-const TIER_BAR_CLASS: Record<Tier, string> = { hot: 'bg-iris', drifting: 'bg-ink3', archived: 'bg-rule2' };
+const TIER_INDICATOR: Record<Tier, ProgressIndicator> = { hot: 'iris', drifting: 'ink3', archived: 'rule2' };
 const HARNESS_LABEL: Record<Harness, string> = { 'claude-code': 'claude', codex: 'codex' };
-const HARNESS_BAR_CLASS: Record<Harness, string> = { 'claude-code': 'bg-claude', codex: 'bg-codex' };
-const STATE_BAR_CLASS: Record<SessionState, string> = { need: 'bg-need', block: 'bg-block', work: 'bg-work', idle: 'bg-idle', done: 'bg-done' };
+const HARNESS_INDICATOR: Record<Harness, ProgressIndicator> = { 'claude-code': 'claude', codex: 'codex' };
+const STATE_INDICATOR: Record<SessionState, ProgressIndicator> = { need: 'need', block: 'block', work: 'work', idle: 'idle', done: 'done' };
 
-function CountBar({ label, count, total, barClass }: { label: string; count: number; total: number; barClass: string }) {
+function CountBar({ label, count, total, indicator }: { label: string; count: number; total: number; indicator: ProgressIndicator }) {
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
     <div className="flex items-center gap-3 px-6 py-1.5">
       <span className="w-28 flex-none truncate font-mono text-[10px] uppercase tracking-wider text-ink3">{label}</span>
-      <div className="h-[6px] flex-1 overflow-hidden rounded-full bg-panel2">
-        <div className={cn('h-full rounded-full', barClass)} style={{ width: `${pct}%` }} />
-      </div>
+      <Progress value={pct} indicator={indicator} aria-label={`${label}: ${count} of ${total}`} className="flex-1" />
       <span className="w-8 flex-none text-right font-mono text-[11px] text-ink3">{count}</span>
     </div>
   );
@@ -89,27 +91,29 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
         </div>
 
         {total === 0 ? (
-          <div className="p-12 text-center text-[12.5px] text-ink3">no sessions in the last 72h.</div>
+          <Empty className="h-full">
+            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
+          </Empty>
         ) : (
           <>
             <SectionLabel>By state</SectionLabel>
             <div>
               {STATE_ORDER.map((s) => (
-                <CountBar key={s} label={STATE_META[s]?.label || s} count={byState[s]} total={total} barClass={STATE_BAR_CLASS[s]} />
+                <CountBar key={s} label={STATE_META[s]?.label || s} count={byState[s]} total={total} indicator={STATE_INDICATOR[s]} />
               ))}
             </div>
 
             <SectionLabel>By harness</SectionLabel>
             <div>
               {HARNESS_ORDER.map((h) => (
-                <CountBar key={h} label={HARNESS_LABEL[h]} count={byHarness[h]} total={total} barClass={HARNESS_BAR_CLASS[h]} />
+                <CountBar key={h} label={HARNESS_LABEL[h]} count={byHarness[h]} total={total} indicator={HARNESS_INDICATOR[h]} />
               ))}
             </div>
 
             <SectionLabel>By tier</SectionLabel>
             <div>
               {TIER_ORDER.map((t) => (
-                <CountBar key={t} label={TIER_LABEL[t]} count={byTier[t]} total={total} barClass={TIER_BAR_CLASS[t]} />
+                <CountBar key={t} label={TIER_LABEL[t]} count={byTier[t]} total={total} indicator={TIER_INDICATOR[t]} />
               ))}
             </div>
           </>
