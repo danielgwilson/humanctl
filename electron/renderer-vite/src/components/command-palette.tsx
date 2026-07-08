@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/command';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { useSidebar } from '@/components/ui/sidebar';
+import { Icon } from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import { cwdBase } from '@/lib/format';
 import type { AppState, SessionRow, ViewName } from '@/lib/types';
@@ -133,7 +134,7 @@ export function CommandPalette({
         <CommandEmpty>No results.</CommandEmpty>
         <CommandGroup heading="Go to">
           {GO_TO_ITEMS.map((item) => {
-            const Icon = item.icon;
+            const GoToIcon = item.icon;
             const active = view === item.view;
             return (
               <CommandItem
@@ -144,7 +145,7 @@ export function CommandPalette({
                   close();
                 }}
               >
-                <Icon className={cn(active && 'text-iris')} aria-hidden="true" />
+                <Icon icon={GoToIcon} className={cn(active && 'text-iris')} aria-hidden="true" />
                 <span className="flex-1 truncate">{item.label}</span>
                 {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
               </CommandItem>
@@ -182,7 +183,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <CheckCheck aria-hidden="true" />
+            <Icon icon={CheckCheck} aria-hidden="true" />
             <span className="flex-1 truncate">Mark all read</span>
           </CommandItem>
           <CommandItem
@@ -192,7 +193,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <SunMoon aria-hidden="true" />
+            <Icon icon={SunMoon} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle theme</span>
             <CommandShortcut className="normal-case tracking-normal">{theme}</CommandShortcut>
           </CommandItem>
@@ -203,7 +204,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <PanelLeft className={cn(sidebarState === 'expanded' && 'text-iris')} aria-hidden="true" />
+            <Icon icon={PanelLeft} className={cn(sidebarState === 'expanded' && 'text-iris')} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle sidebar</span>
             <CommandShortcut className="normal-case tracking-normal">
               {sidebarState === 'expanded' ? 'open' : 'closed'}
@@ -216,7 +217,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <PanelRight className={cn(rightRailOpen && 'text-iris')} aria-hidden="true" />
+            <Icon icon={PanelRight} className={cn(rightRailOpen && 'text-iris')} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle chief-of-staff drawer</span>
             <CommandShortcut>A</CommandShortcut>
           </CommandItem>

@@ -2,6 +2,7 @@ import { PanelLeft, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
+import { Icon } from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 
 // Compact header: wordmark + version + the left-sidebar toggle and the
@@ -67,7 +68,7 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
                 sidebarOpen && 'border-iris-dim text-iris',
               )}
             >
-              <PanelLeft className="h-[15px] w-[15px]" aria-hidden="true" />
+              <Icon icon={PanelLeft} aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>toggle sidebar (&#8984;\)</TooltipContent>
@@ -99,7 +100,7 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
                 rightRailOpen && 'border-iris-dim text-iris',
               )}
             >
-              <PanelRight className="h-[15px] w-[15px]" aria-hidden="true" />
+              <Icon icon={PanelRight} aria-hidden="true" />
             </Button>
           </TooltipTrigger>
           <TooltipContent>chief-of-staff chat (a)</TooltipContent>
