@@ -5,6 +5,7 @@ import { ThreadRow } from './thread-row';
 import { SessionDetail } from '@/components/session/session-detail';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import type { InboxThread, SessionRow } from '@/lib/types';
 import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
 
@@ -89,9 +90,11 @@ export function InboxView({
         <InboxToolbar filter={filter} onChange={setFilter} />
         <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
           {list.length === 0 ? (
-            <div className="p-6 font-mono text-[12px] text-ink3">
-              No agent updates match. Agents post here via <code className="rounded bg-panel2 px-1.5 py-px">humanctl note</code>.
-            </div>
+            <Empty className="h-full">
+              <EmptyDescription>
+                No agent updates match. Agents post here via <code>humanctl note</code>.
+              </EmptyDescription>
+            </Empty>
           ) : (
             <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), width: '100%' }}>
               {rowVirtualizer.getVirtualItems().map((vRow) => {

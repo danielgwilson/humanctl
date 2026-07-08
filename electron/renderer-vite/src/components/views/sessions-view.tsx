@@ -2,9 +2,11 @@ import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { List, Bookmark } from 'lucide-react';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
+import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { Empty, EmptyDescription } from '@/components/ui/empty';
 import { ViewHeader } from '@/components/shell/view-header';
 import { cn } from '@/lib/utils';
 import { cwdBase, firstSentence, fmtUSD } from '@/lib/format';
@@ -107,18 +109,20 @@ function SessionRowItem({
           {cost && <span className="flex-none">· {cost}</span>}
         </span>
       </span>
-      <button
+      <Button
         type="button"
+        variant="ghost"
+        size="icon-xs"
         onClick={(e) => { e.stopPropagation(); onTogglePin(row.id); }}
         aria-label={pinned ? `unpin ${title}` : `pin ${title}`}
         title={pinned ? 'unpin' : 'pin'}
         className={cn(
-          'mt-0.5 flex h-6 w-6 flex-none items-center justify-center rounded text-ink4 hover:text-foreground',
+          'mt-0.5 flex-none rounded text-ink4 hover:bg-transparent hover:text-foreground',
           pinned && 'text-iris hover:text-iris',
         )}
       >
         <Bookmark className="size-[13px]" fill={pinned ? 'currentColor' : 'none'} aria-hidden="true" />
-      </button>
+      </Button>
     </div>
   );
 }
@@ -233,9 +237,13 @@ export function SessionsView({
       <SessionsToolbar filter={filter} onChange={setFilter} />
       <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
         {total === 0 ? (
-          <div className="p-12 text-center text-[12.5px] text-ink3">no sessions in the last 72h.</div>
+          <Empty className="h-full">
+            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
+          </Empty>
         ) : filtered.length === 0 ? (
-          <div className="p-12 text-center text-[12.5px] text-ink3">no sessions match.</div>
+          <Empty className="h-full">
+            <EmptyDescription className="text-[12.5px]">no sessions match.</EmptyDescription>
+          </Empty>
         ) : (
           <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), width: '100%' }}>
             {rowVirtualizer.getVirtualItems().map((vRow) => {

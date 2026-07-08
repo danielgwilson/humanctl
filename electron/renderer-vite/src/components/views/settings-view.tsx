@@ -1,11 +1,12 @@
 import { useEffect, useState } from 'react';
 import { Settings2 } from 'lucide-react';
+import { toast } from 'sonner';
 import { Item, ItemGroup, ItemSeparator } from '@/components/ui/item';
 import { Input } from '@/components/ui/input';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ViewHeader } from '@/components/shell/view-header';
 import { useSummaryBudget } from '@/hooks/use-humanctl';
 import { fmtUSD } from '@/lib/format';
-import { cn } from '@/lib/utils';
 import type { AppState } from '@/lib/types';
 
 // Settings is the SOLE home for persisted preferences (DESIGN.md: "Settings +
@@ -33,46 +34,6 @@ function SectionNote({ children }: { children: string }) {
   return <p className="px-6 pb-2 text-[11.5px] leading-relaxed text-ink3">{children}</p>;
 }
 
-// The bespoke segmented control (DESIGN.md's "no native/OS-default control"
-// hardline): mono labels, an iris fill for the active option, native <button>
-// semantics (keyboard + focus-visible come for free), never a stock
-// shadcn/Radix component -- this exact control has no primitive counterpart
-// in the component contract (chip.tsx/select.tsx/etc), so it is intentionally
-// hand-built rather than bent out of one of those.
-function Segmented<T extends string>({
-  options,
-  value,
-  onChange,
-  ariaLabel,
-}: {
-  options: { value: T; label: string }[];
-  value: T;
-  onChange: (v: T) => void;
-  ariaLabel: string;
-}) {
-  return (
-    <div role="group" aria-label={ariaLabel} className="inline-flex rounded-md border border-border bg-panel2 p-0.5">
-      {options.map((o) => {
-        const active = o.value === value;
-        return (
-          <button
-            key={o.value}
-            type="button"
-            aria-pressed={active}
-            onClick={() => onChange(o.value)}
-            className={cn(
-              'rounded-[5px] px-3 py-1 font-mono text-[10.5px] font-medium text-ink3 transition-colors hover:text-foreground',
-              active && 'bg-iris text-primary-foreground hover:text-primary-foreground',
-            )}
-          >
-            {o.label}
-          </button>
-        );
-      })}
-    </div>
-  );
-}
-
 export function SettingsView({ state, patch }: { state: AppState; patch: (next: Partial<AppState>) => void }) {
   const dailyBudgetUSD = state.summaryBudgetUSD ?? DEFAULT_BUDGET;
   const { budget } = useSummaryBudget(true, dailyBudgetUSD);
@@ -83,7 +44,9 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
   function commitBudget() {
     const v = Math.max(0.1, Number(budgetInput) || DEFAULT_BUDGET);
     setBudgetInput(String(v));
+    if (v === dailyBudgetUSD) return;
     patch({ summaryBudgetUSD: v });
+    toast(`daily budget: ${fmtUSD(v)}`);
   }
 
   return (
@@ -94,16 +57,21 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
             <span className="text-[12.5px] text-ink3">Theme</span>
-            <Segmented
-              ariaLabel="Theme"
+            <ToggleGroup
+              type="single"
+              aria-label="Theme"
               value={state.theme}
-              onChange={(t) => patch({ theme: t })}
-              options={[
-                { value: 'light', label: 'Light' },
-                { value: 'dark', label: 'Dark' },
-                { value: 'system', label: 'System' },
-              ]}
-            />
+              onValueChange={(v) => {
+                if (!v) return;
+                const next = v as AppState['theme'];
+                patch({ theme: next });
+                toast(`theme: ${next}`);
+              }}
+            >
+              <ToggleGroupItem value="light">Light</ToggleGroupItem>
+              <ToggleGroupItem value="dark">Dark</ToggleGroupItem>
+              <ToggleGroupItem value="system">System</ToggleGroupItem>
+            </ToggleGroup>
           </Item>
         </ItemGroup>
 
@@ -112,15 +80,20 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
             <span className="text-[12.5px] text-ink3">Engine</span>
-            <Segmented
-              ariaLabel="AI summary engine"
+            <ToggleGroup
+              type="single"
+              aria-label="AI summary engine"
               value={state.summarizer || 'claude'}
-              onChange={(v) => patch({ summarizer: v })}
-              options={[
-                { value: 'claude', label: 'Claude Code' },
-                { value: 'codex', label: 'Codex' },
-              ]}
-            />
+              onValueChange={(v) => {
+                if (!v) return;
+                const next = v as NonNullable<AppState['summarizer']>;
+                patch({ summarizer: next });
+                toast(`summary engine: ${next === 'codex' ? 'Codex' : 'Claude Code'}`);
+              }}
+            >
+              <ToggleGroupItem value="claude">Claude Code</ToggleGroupItem>
+              <ToggleGroupItem value="codex">Codex</ToggleGroupItem>
+            </ToggleGroup>
           </Item>
         </ItemGroup>
         <SectionNote>

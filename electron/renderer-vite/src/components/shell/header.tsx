@@ -1,5 +1,6 @@
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 
@@ -55,17 +56,19 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={toggleSidebar}
               aria-label={sidebarOpen ? 'collapse sidebar' : 'expand sidebar'}
               className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-ink3 transition-colors hover:text-foreground',
+                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
                 sidebarOpen && 'border-iris-dim text-iris',
               )}
             >
               <PanelLeft className="h-[15px] w-[15px]" aria-hidden="true" />
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent>toggle sidebar (&#8984;\)</TooltipContent>
         </Tooltip>
@@ -85,17 +88,19 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={onToggleRightRail}
               aria-label="toggle chief-of-staff chat"
               className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-ink3 transition-colors hover:text-foreground',
+                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
                 rightRailOpen && 'border-iris-dim text-iris',
               )}
             >
               <PanelRight className="h-[15px] w-[15px]" aria-hidden="true" />
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent>chief-of-staff chat (a)</TooltipContent>
         </Tooltip>

@@ -1,5 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarEdgePeek } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
@@ -13,7 +15,7 @@ import { FleetView } from '@/components/views/fleet-view';
 import { SessionsView } from '@/components/views/sessions-view';
 import { SettingsView } from '@/components/views/settings-view';
 import { useAppState, useFleetData, useSessionSummarize } from '@/hooks/use-humanctl';
-import type { InboxThread, SessionRow, ViewName } from '@/lib/types';
+import type { AppState, InboxThread, SessionRow, ViewName } from '@/lib/types';
 
 const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '3': 'fleet', '4': 'sessions' };
 
@@ -106,11 +108,21 @@ export default function App() {
     for (const t of threads) next[t.sessionId] = now;
     patch({ lastReadTs: next });
     window.humanctl?.markAllThreadsRead();
+    toast('marked all read');
   }
   function togglePin(id: string) {
     const next = new Set(pins);
     if (next.has(id)) next.delete(id); else next.add(id);
     patch({ pins: [...next] });
+  }
+  // Shared by the nav-sidebar theme picker and the command palette's
+  // "Toggle theme" action (both call this same prop, never a duplicated
+  // patch({theme}) call) so a theme change ALWAYS gets feedback no matter
+  // which entry point triggered it; Settings' own ToggleGroup fires its own
+  // toast alongside its own patch call for the same reason (settings-view.tsx).
+  function setTheme(theme: AppState['theme']) {
+    patch({ theme });
+    toast(`theme: ${theme}`);
   }
   async function askSession(id: string, question: string): Promise<string> {
     const row = byId.get(id);
@@ -122,9 +134,14 @@ export default function App() {
     return r?.ok ? (r.answer || '') : (r?.error || 'ask failed');
   }
   function resumeSession(row: SessionRow) {
-    if (!window.humanctl) return;
+    const engine = row.harness === 'codex' ? 'Codex' : 'Claude';
+    if (!window.humanctl) {
+      toast(`resume: ${engine} (demo, no bridge)`);
+      return;
+    }
     if (row.harness === 'codex') window.humanctl.openInApp({ id: row.id, path: row.path, harness: row.harness });
     else window.humanctl.resumeSession({ id: row.id, path: row.path, harness: row.harness, cwd: row.cwd });
+    toast(`resume: ${engine}`);
   }
   // AI summary generation is a durable per-session state mutation on the
   // real backend (session:summarize -> lib/commands.ts's registered
@@ -218,7 +235,7 @@ export default function App() {
           onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
           unreadCount={unreadCount}
           theme={state.theme}
-          onSetTheme={(t) => patch({ theme: t })}
+          onSetTheme={setTheme}
         />
         <SidebarEdgePeek />
         <SidebarInset className="h-full overflow-hidden">
@@ -283,12 +300,13 @@ export default function App() {
           onOpenSession={openDetail}
           onMarkAllRead={markAllRead}
           theme={state.theme}
-          onSetTheme={(t) => patch({ theme: t })}
+          onSetTheme={setTheme}
           rightRailOpen={state.rightRailOpen}
           onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })}
         />
       </SidebarProvider>
       <CosDrawer open={state.rightRailOpen} onOpenChange={(open) => patch({ rightRailOpen: open })} />
+      <Toaster />
     </TooltipProvider>
   );
 }
