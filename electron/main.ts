@@ -11,6 +11,7 @@
 // ~/.humanctl/events.jsonl. See docs/commands.md.
 
 import { app, BrowserWindow, ipcMain, shell, nativeTheme, nativeImage } from 'electron';
+import { monitorEventLoopDelay } from 'node:perf_hooks';
 import path from 'path';
 // This compiled file lives at dist/electron/main.js (see tsup.config.ts), two
 // directories below the packaged app root; electron-builder's `files` config
@@ -954,6 +955,25 @@ app.whenReady().then(() => {
   if (process.platform === 'darwin' && app.dock) { try { app.dock.setIcon(nativeImage.createFromPath(ICON_PATH)); } catch { /* icon is cosmetic */ } }
   createWindow();
   startControlServer();
+  // PERF GATE INSTRUMENTATION (test-only, gated by HUMANCTL_PERF_EVENTLOOP;
+  // never runs in the real app). Window-drag jank IS main-process event-loop
+  // blocking, which cold-open/click-to-paint on empty fixtures cannot see.
+  // This measures THIS (main) process's event-loop delay and logs the tail
+  // percentiles to stderr every 2s so scripts/perf-selftest/run.js can assert
+  // p99 stays under budget on a realistic-scale synthetic fleet. The interval
+  // is flag-gated and unref'd; it does not exist in production.
+  if (process.env.HUMANCTL_PERF_EVENTLOOP) {
+    const eld = monitorEventLoopDelay({ resolution: 20 });
+    eld.enable();
+    const ms = (ns: number): number => ns / 1e6;
+    const timer = setInterval(() => {
+      console.error(
+        `humanctl: eventloop p50=${ms(eld.percentile(50)).toFixed(1)}ms ` +
+        `p99=${ms(eld.percentile(99)).toFixed(1)}ms max=${ms(eld.max).toFixed(1)}ms`,
+      );
+    }, 2000);
+    timer.unref();
+  }
 });
 app.on('will-quit', () => {
   flushInFlightAsksAsInterrupted();
