@@ -2,6 +2,7 @@ import type { ReactNode } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { Item, ItemGroup, ItemSeparator } from '@/components/ui/item';
 import { Progress } from '@/components/ui/progress';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { ViewHeader } from '@/components/shell/view-header';
 import { useSkillAggregate } from '@/hooks/use-humanctl';
 import { fmtCadence, fmtResetClock, fmtTok, fmtUSD } from '@/lib/format';
@@ -53,7 +54,7 @@ export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Stat
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={LayoutGrid} title="Metrics" subtitle="spend, tokens, and quota" />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+      <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         <SectionLabel>Spend</SectionLabel>
         <ItemGroup>
           <StatRow
@@ -122,7 +123,7 @@ export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Stat
             </div>
           </>
         )}
-      </div>
+      </ScrollArea>
     </div>
   );
 }

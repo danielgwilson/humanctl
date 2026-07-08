@@ -3,6 +3,7 @@ import { Command } from 'lucide-react';
 import { ViewHeader } from '@/components/shell/view-header';
 import { Progress, type progressIndicatorVariants } from '@/components/ui/progress';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { STATE_META } from '@/lib/format';
 import type { Harness, SessionRow, SessionState, Status, Tier } from '@/lib/types';
 import type { VariantProps } from 'class-variance-authority';
@@ -83,7 +84,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={Command} title="Fleet" subtitle={`${total} ${total === 1 ? 'session' : 'sessions'} · the fleet's shape`} />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+      <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         <div className="flex divide-x divide-border border-b border-border">
           <HeadlineTile value={status?.needsYou ?? 0} label="need you" />
           <HeadlineTile value={status?.working ?? 0} label="moving" />
@@ -122,7 +123,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
         <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink4">
           next: a live force-directed graph of session relationships. this pass ships the flat shape overview only.
         </div>
-      </div>
+      </ScrollArea>
     </div>
   );
 }

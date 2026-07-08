@@ -158,7 +158,6 @@ export function useSummaryBudget(active: boolean, dailyBudgetUSD: number) {
       if (!cancelled) setBudget(r?.ok && r.budget ? r.budget : null);
     })();
     return () => { cancelled = true; };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [active, dailyBudgetUSD]);
 
   return { budget };

@@ -3,6 +3,7 @@ import { Settings2 } from 'lucide-react';
 import { toast } from 'sonner';
 import { Item, ItemGroup, ItemSeparator } from '@/components/ui/item';
 import { Input } from '@/components/ui/input';
+import { ScrollArea } from '@/components/ui/scroll-area';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ViewHeader } from '@/components/shell/view-header';
 import { useSummaryBudget } from '@/hooks/use-humanctl';
@@ -52,7 +53,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={Settings2} title="Settings" subtitle="preferences, persisted locally" />
-      <div className="min-h-0 flex-1 overflow-y-auto pb-8">
+      <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         <SectionLabel>Appearance</SectionLabel>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
@@ -133,7 +134,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
             </>
           )}
         </ItemGroup>
-      </div>
+      </ScrollArea>
     </div>
   );
 }
