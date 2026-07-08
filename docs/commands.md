@@ -33,6 +33,7 @@ writing:
 | `pulse.run` | observation | yes | `repo, lane, fresh` |
 | `pulse.pr-chip` | observation | yes | `repo*` (cache-only: reads `~/.humanctl/pulse-cache.json`, zero spawns) |
 | `summary.budget` | observation | yes | `dailyBudgetUSD` (today's always-on-summary spend vs. budget) |
+| `quota.claude` | observation | yes | (none) (spawns `claude` twice; see below) |
 | `app.commands` | observation | yes | (none) |
 | `app.harness-icons` | observation | no | (none) (runtime-extracted icons; app-only, needs `nativeImage`) |
 | `app.status` | observation | no | `maxAgeH, limit` |
@@ -131,6 +132,63 @@ to go fetch fresh data -- refreshing the underlying cache happens only when
 refresh action, or a future scheduled run). When the cache entry is older
 than 10 minutes the chip still renders, with an honest age label ("2/3 PRs ·
 as of 14m") rather than silently implying live data.
+
+## Claude subscription quota (`quota.claude`)
+
+Codex writes its own `rate_limits` into its rollout JSONL, so Codex quota just
+falls out of the session read (`lib/sessions.ts`). Claude Code transcripts
+genuinely carry no rate-limit data. The quota is still reachable, though: the
+CLI registers `/usage` twice, and the second registration is a `type: "local"`
+command with `supportsNonInteractive: true`, enabled only under `-p`.
+`lib/claude-quota.ts` drives exactly that:
+
+    claude -p "/usage" --safe-mode --output-format json --no-session-persistence < /dev/null
+
+Each flag is load-bearing, all verified against a real account:
+
+- The read **costs zero tokens**: the reply carries `num_turns: 0`,
+  `duration_api_ms: 0`, `total_cost_usd: 0`. It never reaches a model. Under the
+  hood the CLI does a `GET /api/oauth/usage` with its own OAuth token; humanctl
+  never reads, holds, or forwards that token, and never touches the Keychain.
+- `--safe-mode` is REQUIRED. Without it, every read spawns the user's MCP servers.
+- `--no-session-persistence` is REQUIRED: a fleet viewer must not appear in its
+  own fleet. Verified: zero new files under `~/.claude/projects`.
+- **Never `--bare`**: it strips OAuth and returns only a cost summary.
+- stdin is closed immediately (the `< /dev/null`), else the CLI waits on it.
+
+`claude auth status` is the cheap precondition (no HTTP): the read proceeds only
+on `loggedIn && apiProvider === "firstParty"`.
+
+Two things this command refuses to do. It never trusts an exit code (a transient
+OAuth 401 exits 0 with the error on stdout, so every decision comes from
+`is_error` plus the parsed content). And it never invents an epoch: Claude
+reports resets as a locale display string ("Jul 13 at 2am (America/Los_Angeles)")
+with no year and no timestamp, so it is carried and rendered verbatim as
+`resets_at_text`. Codex keeps its real `resets_at` epoch. The window labels are
+dynamic ("Current session", "Current week (all models)", "Current week
+(<model>)", plus others behind upstream feature flags), so the parser iterates
+whatever comes back and the UI renders whatever it gets; nothing enumerates three
+rows.
+
+**This is an undocumented dependency, stated plainly.** Both the non-interactive
+`/usage` variant (CLI >= 2.1.x) and the endpoint beneath it are undocumented.
+That is the same risk class as this repo's existing `claude://` / `codex://` deep
+links: if upstream changes, the read stops working and the UI degrades to `n/a`.
+Every failure mode -- no `claude` on PATH, signed out, an API-key/Bedrock/Vertex
+account, a timeout, a 401, unparseable output -- returns `{ok: true, quota: null}`,
+never an error and never a fabricated number, exactly like `pulse.pr-chip`'s
+cache-miss contract.
+
+The desktop app does NOT use the `direct` handler above. `electron/reader-service.ts`
+owns the spawn and a **5-minute TTL cache** (the windows are 5h and 7d; polling
+faster buys nothing and risks a 429), dedupes concurrent reads onto one child
+process, and caches null results too so a machine without `claude` stops retrying.
+There is **no new timer**: the renderer's existing 20-second fleet poll calls
+`quota.claude`, without awaiting it, so a cold 2-12s read never delays first paint
+and never touches the Electron main process. Fixture mode (`window.humanctl`
+absent) renders a synthetic quota and never shells out.
+
+    npm run quota:selftest   # parser + orchestration, zero spawns (captured stdout only)
 
 ## Always-on AI summary + budget
 

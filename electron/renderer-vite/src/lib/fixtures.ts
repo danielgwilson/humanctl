@@ -1,7 +1,7 @@
 // Synthetic fixture data. Used ONLY when window.humanctl is absent (plain
 // browser / vite dev with no Electron preload attached). OSS-safe: no real
 // ids, generic demo repo names, matches AGENTS.md's born-clean rule.
-import type { BudgetStatus, InboxThread, NoteItem, SessionRow, SkillAggregate, Status, TimelineEvent, TimelinePage } from './types';
+import type { BudgetStatus, ClaudeQuota, InboxThread, NoteItem, SessionRow, SkillAggregate, Status, TimelineEvent, TimelinePage } from './types';
 
 // FNV-1a, deterministic per-id seed so a given fixture session always shows
 // the same synthetic timeline across renders (no real randomness, so
@@ -68,6 +68,23 @@ export function fixtureStatus(): Status {
     codexQuota: { plan_type: 'pro', primary: { used_percent: 46, window_minutes: 300, resets_at: now + 36 * 60 }, secondary: { used_percent: 71, window_minutes: 10080, resets_at: now + 5 * 86400 } },
     needsYou, working, nearCompaction, sessions: FIXTURE_ROWS.length, pricingAsOf: '2026-06',
     generatedAt: new Date().toISOString(),
+  };
+}
+
+// Synthetic Claude quota. Fixture mode MUST NOT shell out: the browser dev loop
+// and every screenshot render this instead of spawning the `claude` CLI, so the
+// numbers below are invented and no real account is ever read (AGENTS.md's
+// born-clean rule). The shape deliberately exercises the dynamic-label path --
+// a session window plus two weekly windows, one of them per-model -- and the
+// verbatim `resets_at_text` string, which carries no epoch.
+export function fixtureClaudeQuota(): ClaudeQuota {
+  return {
+    at: Date.now(),
+    windows: [
+      { label: 'Current session', used_percent: 18, resets_at_text: 'today at 9pm (UTC)' },
+      { label: 'Current week (all models)', used_percent: 52, resets_at_text: 'Mon at 2am (UTC)' },
+      { label: 'Current week (Opus)', used_percent: 74, resets_at_text: 'Mon at 2am (UTC)' },
+    ],
   };
 }
 

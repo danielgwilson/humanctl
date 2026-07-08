@@ -1,11 +1,12 @@
-import type { Status } from '@/lib/types';
+import type { ClaudeQuota, Status } from '@/lib/types';
 import { fmtResetClock, quotaCls } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 
-// The SOLE home for the fleet digest, Codex quota, Claude quota ("n/a",
-// never fabricated), and
+// The SOLE home for the fleet digest, Codex quota, Claude quota (a real
+// percentage now, and still "n/a" rather than a fabricated number whenever the
+// CLI cannot answer), and
 // the open session's context-fill % (DESIGN.md one-owner rule). Plain markup
 // -- there is no shadcn primitive for a persistent status bar; this is
 // exactly the kind of "commodity control" DESIGN.md does NOT ask us to
@@ -62,9 +63,23 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
 // of the full-height sidebar), so it no longer needs its own
 // navPinned-driven marginLeft shift -- SidebarInset's flex layout owns that
 // offset for every row in the inset column, header included.
-export function ContextBar({ status, ctxPct }: { status: Status | null; ctxPct?: number | null }) {
+export function ContextBar({ status, claudeQuota, ctxPct }: { status: Status | null; claudeQuota?: ClaudeQuota | null; ctxPct?: number | null }) {
   const qp = status?.codexQuota?.primary;
   const qs = status?.codexQuota?.secondary;
+  // The bar shows ONE Claude percentage: the first window the CLI reports (the
+  // session window). Metrics owns every window in detail, so the bar does not
+  // grow a second digest -- the remaining windows and the verbatim reset text
+  // live in this item's tooltip, exactly as Codex's weekly window already does.
+  // Keeping the reset text out of the bar itself matters: Claude's is a full
+  // locale string ("Jul 13 at 2am (America/Los_Angeles)"), not Codex's short clock.
+  const cq = claudeQuota?.windows[0];
+  const cqRest = claudeQuota?.windows.slice(1) ?? [];
+  const claudeNote = cq
+    ? [
+        `${String(cq.label ?? 'current window').toLowerCase()}${cq.resets_at_text ? `, resets ${cq.resets_at_text}` : ''}`,
+        ...cqRest.map((w) => `${String(w.label ?? 'window').toLowerCase()} ${Math.round(w.used_percent)}%`),
+      ].join(' · ')
+    : 'requires a signed-in Claude subscription; read from the Claude Code CLI, never from transcripts';
   return (
     <footer
       className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-border bg-bg2 px-4 font-mono text-[10.5px] text-ink3"
@@ -81,7 +96,7 @@ export function ContextBar({ status, ctxPct }: { status: Status | null; ctxPct?:
       <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
       <QuotaItem label="codex" pct={qp?.used_percent != null ? Math.round(qp.used_percent) : null} resetsAt={qp?.resets_at} note={qs?.used_percent != null ? `weekly ${Math.round(qs.used_percent)}%` : undefined} />
       <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
-      <QuotaItem label="claude" pct={null} note="confirmed: Claude Code transcripts expose no rate-limit/window data, only token counts" />
+      <QuotaItem label="claude" pct={cq ? Math.round(cq.used_percent) : null} note={claudeNote} />
       {ctxPct != null && (
         <>
           <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />

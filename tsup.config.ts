@@ -17,6 +17,7 @@ export default defineConfig([
       'lib/pricing.ts',
       'lib/harness-icons.ts',
       'lib/summary-budget.ts',
+      'lib/claude-quota.ts',
     ],
     outDir: 'dist/lib',
     format: ['cjs'],

@@ -122,6 +122,10 @@ contextBridge.exposeInMainWorld('humanctl', {
   listCommands: () => ipcRenderer.invoke('app:commands'),
   listSessions: (opts: unknown) => callReaderPort('sessions.list', opts),
   getStatus: (opts: unknown) => callReaderPort('app.status', opts),
+  // Straight to the reader-service, which owns the >= 60s TTL cache and the
+  // `claude` spawn behind it -- never ipcMain, so a cold 2-12s read cannot
+  // touch the main process's event loop. Degrades to `{ok:true, quota:null}`.
+  getClaudeQuota: () => callReaderPort('quota.claude'),
   getHarnessIcons: () => ipcRenderer.invoke('harness:icons'),
   getPrChip: (repo: string) => ipcRenderer.invoke('pulse:pr-chip', { repo }),
   getNoteImage: (filename: string) => ipcRenderer.invoke('note:get-image', filename),

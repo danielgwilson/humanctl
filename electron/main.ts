@@ -974,6 +974,13 @@ const registry = createRegistry({
     'skills.aggregate': (p) => callReader('skills.aggregate', p || {}),
     'notes.list': (p) => callReader('notes.list', p || {}),
     'inbox.threads': (p) => callReader('inbox.threads', p || {}),
+    // MUST be relayed, not run here. lib/commands.ts's `quota.claude` direct
+    // handler spawns the `claude` CLI; left un-overridden, a control-socket
+    // call (`humanctl app quota.claude` against the running app) would execute
+    // that spawn -- and claude-quota's sync PATH probe -- on the MAIN process,
+    // and would miss the reader-service's cache entirely. Relaying gives the
+    // socket the same cached, off-main read the renderer gets.
+    'quota.claude': () => callReader('quota.claude'),
     'session.summarize': (p) => sessionSummarize(p),
     'session.resume': (p) => sessionResume(p),
     'session.open-app': (p) => sessionOpenApp(p),

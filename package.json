@@ -1,6 +1,6 @@
 {
   "name": "humanctl",
-  "version": "0.18.2",
+  "version": "0.18.3",
   "description": "A control plane for the human bottleneck.",
   "main": "dist/electron/main.js",
   "engines": {
@@ -33,6 +33,7 @@
     "pulse:selftest": "tsx lib/pulse.selftest.ts",
     "reader:selftest": "tsx lib/reader.selftest.ts",
     "commands:selftest": "tsx lib/commands.selftest.ts",
+    "quota:selftest": "tsx lib/claude-quota.selftest.ts",
     "perf:selftest": "npm run build:lib && npm run build:renderer-vite && node scripts/perf-selftest/run.js",
     "perf:eventloop": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js",
     "perf:eventloop:selfcheck": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js --selfcheck",

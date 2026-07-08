@@ -39,7 +39,7 @@ const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '
 // so it shares the same sidebar context to open it on a left-edge hover
 // (see nav-sidebar.tsx for why it cannot live nested inside AppSidebar).
 export default function App() {
-  const { rows, threads, status, demo, refresh } = useFleetData();
+  const { rows, threads, status, claudeQuota, demo, refresh } = useFleetData();
   const { state, patch } = useAppState();
   const { summarize, loadingId: summaryLoadingId, errors: summaryErrors } = useSessionSummarize();
   const [paletteOpen, setPaletteOpen] = useState(false);
@@ -280,14 +280,14 @@ export default function App() {
                 onTogglePin={togglePin}
               />
             ) : state.view === 'metrics' ? (
-              <MetricsView rows={rows} status={status} />
+              <MetricsView rows={rows} status={status} claudeQuota={claudeQuota} />
             ) : state.view === 'fleet' ? (
               <FleetView rows={rows} status={status} />
             ) : (
               <SettingsView state={state} patch={patch} />
             )}
           </div>
-          <ContextBar status={status} ctxPct={selectedRow?.contextPct ?? null} />
+          <ContextBar status={status} claudeQuota={claudeQuota} ctxPct={selectedRow?.contextPct ?? null} />
         </SidebarInset>
         {/* Rendered inside SidebarProvider (not SidebarInset) so it can call
             useSidebar().toggleSidebar() for its "toggle sidebar" action --
