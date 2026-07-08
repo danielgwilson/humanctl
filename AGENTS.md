@@ -133,6 +133,29 @@ rules exist to keep that class of bug from recurring as the app grows.
     stall and requires the gate to catch it, so the instrument is proven, not
     assumed. Run it whenever the gate's metric or instrumentation changes.
   Budget: worst steady-state stall < 16.7ms (one 60fps frame). See `docs/perf.md`.
+- **A gate that fails RANDOMLY gets ignored, which is as bad as one that cannot
+  fail. Resolve a lone outlier by REPRODUCIBILITY, never by a looser budget.**
+  `max` is the statistic most sensitive to OS preemption, so on a loaded machine
+  one window can exceed the frame budget with nothing wrong in the app (measured:
+  at `loadavg 26` on 10 CPUs the baseline window rose from 3-8ms to 12-15ms and
+  threw one 19-48ms outlier; at real idle the same build reported 0/17 windows
+  over budget and a 7.6ms worst stall). `judge()` in the gate therefore decides:
+  two or more over-budget windows means recurring main-process blocking, FAIL at
+  once; any single window past a 50ms hard ceiling is a multi-frame freeze, FAIL
+  at once, never retried; exactly one over-budget window under the ceiling is
+  ambiguous, so re-measure once. Real one-time work reproduces (the icon cold
+  path is cold in every fresh scratch userData, so its 31.9ms stall appears in
+  both runs and still FAILs); machine noise does not. `judge()` is pure and its
+  cases are locked down in `npm run perf:logic-selftest`, which runs in CI.
+- **Instrumenting the event loop perturbs the event loop; and measure the machine
+  before blaming the code.** `--js-flags=--trace-gc` writes to stdout (this gate
+  captures stderr) and slowed main enough to invent a 118ms window. A
+  `PerformanceObserver` on `gc` entries fires on every scavenge and took the gate
+  from 0/17 to 12/17 over-budget windows, while proving GC was not the cause (no
+  pause over 12ms). Record `os.loadavg()` next to every perf number (the gate
+  prints it), and before calling anything a regression, A/B against the previous
+  release: `git diff --quiet <prev>..HEAD -- electron/ lib/` settles it without
+  another run.
 - **"It only runs once, on a cache miss" is not an exemption.** The harness-icon
   cold path spawned `plutil` with `execFileSync` on main: 31.9ms of stall, i.e.
   two dropped frames, on the FIRST LAUNCH of every install (userData starts
