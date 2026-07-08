@@ -16,7 +16,7 @@ import { cn } from "@/lib/utils"
 // `.light`, see button.tsx's header comment for the full rationale), so
 // stock shadcn's `dark:` utilities are dropped here too.
 const toggleVariants = cva(
-  "inline-flex items-center justify-center whitespace-nowrap rounded-[5px] font-mono font-medium text-ink3 transition-colors outline-none hover:text-foreground focus-visible:ring-[3px] focus-visible:ring-ring/50 disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=on]:bg-iris data-[state=on]:text-primary-foreground data-[state=on]:hover:text-primary-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
+  "inline-flex items-center justify-center whitespace-nowrap rounded-[5px] font-mono font-medium text-ink3 transition-colors hover:text-foreground disabled:pointer-events-none disabled:opacity-50 aria-invalid:border-destructive aria-invalid:ring-destructive/20 data-[state=on]:bg-iris data-[state=on]:text-primary-foreground data-[state=on]:hover:text-primary-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
       variant: {

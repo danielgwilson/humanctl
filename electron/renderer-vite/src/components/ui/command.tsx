@@ -3,6 +3,7 @@ import { Command as CommandPrimitive } from "cmdk"
 import { SearchIcon } from "lucide-react"
 
 import { cn } from "@/lib/utils"
+import { Icon } from "@/components/ui/icon"
 import {
   Dialog,
   DialogContent,
@@ -84,7 +85,7 @@ function CommandInput({
       data-slot="command-input-wrapper"
       className="flex h-12 flex-none items-center gap-2.5 border-b border-border px-4"
     >
-      <SearchIcon className="size-[15px] flex-none text-ink4" aria-hidden="true" />
+      <Icon icon={SearchIcon} className="flex-none text-ink4" aria-hidden="true" />
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
@@ -167,7 +168,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-foreground outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-iris/14 data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:size-4 [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink3",
+        "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 text-[13px] text-foreground outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-iris/14 data-[selected=true]:text-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink3",
         className
       )}
       {...props}

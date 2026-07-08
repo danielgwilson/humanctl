@@ -192,14 +192,34 @@
   /* one shared focus-visible contract, ported from a11y-base in index.html:
      keyboard focus only, never on mouse/touch clicks. shadcn/Radix primitives
      already emit :focus-visible on their own interactive parts, so this rule
-     is inherited "for free" rather than re-declared per component. */
+     is inherited "for free" rather than re-declared per component.
+     docs/design-system.md section 8 (Reconciliation with DESIGN.md, the
+     "Focus indicator" row): this is the ONE focus indicator in the app.
+     Every per-primitive `focus-visible:ring-[3px]` (and its matching
+     `outline-none`) is a second owner and has been deleted in the same
+     change that landed this comment. No `border-radius` on the rule: that
+     property would set the FOCUSED ELEMENT's own radius, not the outline's,
+     and every modern engine already curves an outline to follow whatever
+     radius the element already has. This app's token layer has not yet
+     migrated to docs/design-system.md's oklch tokens (a separate stage), so
+     this still reads `var(--iris)` rather than the not-yet-defined
+     `var(--focus)` the doc names; same iris hue either way. */
   :focus {
     outline: none;
   }
   :focus-visible {
     outline: 2px solid var(--iris);
     outline-offset: 2px;
-    border-radius: 4px;
+  }
+  /* docs/design-system.md P9 + section 3.4: every lucide icon is 1px stroke,
+     universally, enforced once here so it holds even for a render that
+     bypasses components/ui/icon.tsx (the size choke point -- see that file).
+     `svg.lucide` is the class lucide-react's own Icon primitive puts on
+     every glyph it renders (see node_modules/lucide-react/dist/esm/Icon.js),
+     so this needs no per-icon className and survives new icons being added
+     without anyone remembering this rule exists. */
+  svg.lucide {
+    stroke-width: 1;
   }
   @media (prefers-reduced-motion: reduce) {
     *, *::before, *::after {

@@ -7,6 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { Icon } from '@/components/ui/icon';
 import { ViewHeader } from '@/components/shell/view-header';
 import { cn } from '@/lib/utils';
 import { cwdBase, firstSentence, fmtUSD } from '@/lib/format';
@@ -121,7 +122,7 @@ function SessionRowItem({
           pinned && 'text-iris hover:text-iris',
         )}
       >
-        <Bookmark className="size-[13px]" fill={pinned ? 'currentColor' : 'none'} aria-hidden="true" />
+        <Icon icon={Bookmark} size="sm" fill={pinned ? 'currentColor' : 'none'} aria-hidden="true" />
       </Button>
     </div>
   );

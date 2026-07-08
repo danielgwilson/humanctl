@@ -20,6 +20,7 @@ import {
   DropdownMenuSeparator,
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
+import { Icon } from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 import type { AppState } from '@/lib/types';
 
@@ -94,7 +95,7 @@ export function AppSidebar({
         <SidebarMenu className="gap-0.5 px-2">
           {NAV_ITEMS.map((item) => {
             const active = view === item.view;
-            const Icon = item.icon;
+            const NavIcon = item.icon;
             const unread = item.view === 'inbox' && unreadCount > 0;
             return (
               <SidebarMenuItem key={item.view}>
@@ -117,7 +118,7 @@ export function AppSidebar({
                   // alone would not reliably decide the winner.
                   className={cn(active && '!bg-iris/16 !text-foreground')}
                 >
-                  <Icon className={cn('size-4', active && 'text-iris')} aria-hidden="true" />
+                  <Icon icon={NavIcon} className={cn(active && 'text-iris')} aria-hidden="true" />
                   <span>{item.label}</span>
                 </SidebarMenuButton>
                 {unread && (
@@ -148,7 +149,7 @@ export function AppSidebar({
                 Y
               </span>
               <span className="flex-1 truncate text-[12.5px] font-semibold text-foreground">You</span>
-              <Settings2 className="text-muted-foreground" aria-hidden="true" />
+              <Icon icon={Settings2} className="text-muted-foreground" aria-hidden="true" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="end" className="w-56">
