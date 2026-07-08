@@ -29,9 +29,21 @@ const { makeCorpus } = require('./make-corpus');
 // watcher fire) regardless of fleet size -> a dropped frame on every scan.
 // Moving the reader into a utilityProcess removes that work from main, which
 // should collapse p99 well under a frame.
-const P99_BUDGET_MS = 16.7; // one 60fps frame
-const RUN_MS = 30000; // boot + one 20s poll cycle + margin, so the reader reads
+const FRAME_BUDGET_MS = 16.7; // one 60fps frame: any longer stall drops a frame mid-drag
+const RUN_MS = 36000; // boot + >20s of steady state, so a full 20s poll cycle lands after the UI-loaded reset
 const ELD_RE = /eventloop p50=([\d.]+)ms p99=([\d.]+)ms max=([\d.]+)ms/g;
+// main.ts prints this once, at did-finish-load, right after resetting the
+// histogram. Everything before it is boot; everything after it is felt.
+const RESET_MARKER = 'eventloop reset (UI loaded';
+
+// `--selfcheck` proves the gate can still FAIL: it makes main block for
+// SELFCHECK_STALL_MS on a timer and then INVERTS the verdict, so a clean
+// "PASS" from the injected-stall run is itself the failure. This exists
+// because this gate previously asserted on p99, which cannot see a single
+// long stall (a deliberate 40ms block leaves p99 at ~2.5ms and moves only
+// `max`), and so it passed a main process that was visibly janking.
+const SELFCHECK = process.argv.includes('--selfcheck');
+const SELFCHECK_STALL_MS = 40;
 
 function log(m) { console.log(`[perf:eventloop] ${m}`); }
 
@@ -52,8 +64,10 @@ async function main() {
   const corpus = makeCorpus(scratchHome);
   log(`corpus: ${corpus.totalFiles} transcripts (${corpus.claudeFiles} claude + ${corpus.codexFiles} codex), ${corpus.lines} lines each, ~${corpus.mb}MB`);
 
+  const childEnv = Object.assign({}, process.env, { HOME: scratchHome, HUMANCTL_PERF_EVENTLOOP: '1', ELECTRON_ENABLE_LOGGING: '1' });
+  if (SELFCHECK) childEnv.HUMANCTL_PERF_INJECT_STALL = String(SELFCHECK_STALL_MS);
   const child = spawn(electronBin, [mainEntry, `--user-data-dir=${scratchUserData}`], {
-    env: Object.assign({}, process.env, { HOME: scratchHome, HUMANCTL_PERF_EVENTLOOP: '1', ELECTRON_ENABLE_LOGGING: '1' }),
+    env: childEnv,
     stdio: ['ignore', 'pipe', 'pipe'],
     detached: process.platform !== 'win32',
   });
@@ -76,28 +90,66 @@ async function main() {
   await new Promise((r) => setTimeout(r, RUN_MS));
   clearInterval(writer);
 
-  // Take the WORST p99 the main process reported across the run.
-  let worstP99 = 0, worstMax = 0, samples = 0;
-  for (const m of stderr.matchAll(ELD_RE)) { samples++; worstP99 = Math.max(worstP99, +m[2]); worstMax = Math.max(worstMax, +m[3]); }
+  // ASSERT ON MAX, NOT p99. Window-drag jank is caused by INDIVIDUAL long
+  // stalls, and a percentile cannot see them: with resolution=2 a deliberate
+  // 40ms stall leaves p99 at ~2.5ms (indistinguishable from idle) and shows up
+  // only in max. Verified empirically with a bare Node process:
+  //   idle  @ res=2  -> p50 2.29  p99 2.46  max 2.59
+  //   +40ms @ res=2  -> p50 2.29  p99 2.49  max 42.34   <- only max moves
+  // p99 stays as an informational sustained-blocking signal.
+  //
+  // `max` is CUMULATIVE, so boot stalls cannot be dropped by ignoring early
+  // samples: the histogram never forgets its worst value. main.ts resets it
+  // once, at did-finish-load, and prints RESET_MARKER. Only samples after that
+  // marker are steady state, i.e. stalls that land while the UI is up and the
+  // user could be dragging the window.
+  const all = [...stderr.matchAll(ELD_RE)];
+  const markerAt = stderr.indexOf(RESET_MARKER);
+  const steady = markerAt >= 0 ? [...stderr.slice(markerAt).matchAll(ELD_RE)] : [];
+  let worstP99 = 0, worstMax = 0;
+  for (const m of steady) { worstP99 = Math.max(worstP99, +m[2]); worstMax = Math.max(worstMax, +m[3]); }
   killGroup(child);
   await new Promise((r) => setTimeout(r, 300));
 
-  if (samples === 0) {
+  if (all.length === 0) {
     console.error('[perf:eventloop] FAIL: no event-loop samples from main (did it boot? is HUMANCTL_PERF_EVENTLOOP wired?)');
     console.error(stderr.slice(-1500));
     cleanup();
     process.exit(1);
   }
+  if (markerAt < 0) {
+    console.error(`[perf:eventloop] FAIL: main never printed "${RESET_MARKER}" -- the window never finished loading, or the histogram reset was dropped from main.ts. Refusing to report a number measured against boot noise.`);
+    console.error(stderr.slice(-1500));
+    cleanup();
+    process.exit(1);
+  }
+  if (steady.length === 0) {
+    console.error(`[perf:eventloop] FAIL: ${all.length} samples, none after the UI-loaded reset; lengthen RUN_MS.`);
+    cleanup();
+    process.exit(1);
+  }
 
-  log(`samples: ${samples} | worst main-process event-loop delay p99=${worstP99.toFixed(1)}ms max=${worstMax.toFixed(1)}ms (budget p99 < ${P99_BUDGET_MS}ms)`);
+  log(`samples: ${all.length} (${steady.length} after the UI-loaded reset) | worst STEADY-STATE main-process stall: max=${worstMax.toFixed(1)}ms (budget < ${FRAME_BUDGET_MS}ms) | p99=${worstP99.toFixed(1)}ms (informational)`);
   cleanup();
   process.removeListener('exit', cleanup);
 
-  if (worstP99 > P99_BUDGET_MS) {
-    console.error(`[perf:eventloop] FAIL: main-process event-loop p99 ${worstP99.toFixed(1)}ms exceeds the ${P99_BUDGET_MS}ms frame budget on a realistic fleet -- main stalls past a frame on every scan, dropping frames while the window is dragged. Move the transcript reader off the main process (utilityProcess).`);
+  const overBudget = worstMax > FRAME_BUDGET_MS;
+
+  if (SELFCHECK) {
+    // Inverted: a ~40ms stall was injected into main, so the gate MUST catch it.
+    if (!overBudget) {
+      console.error(`[perf:eventloop] SELFCHECK FAIL: main was blocked for ${SELFCHECK_STALL_MS}ms every 3s and the gate still reported max=${worstMax.toFixed(1)}ms within budget. The gate is blind; it cannot be trusted to catch real blocking. (p99 here was ${worstP99.toFixed(1)}ms -- that is exactly why this gate asserts on max.)`);
+      process.exit(1);
+    }
+    log(`SELFCHECK PASS: the gate caught the injected ${SELFCHECK_STALL_MS}ms stall (max=${worstMax.toFixed(1)}ms > ${FRAME_BUDGET_MS}ms budget; p99 stayed ${worstP99.toFixed(1)}ms, blind as ever). The gate can fail.`);
+    return;
+  }
+
+  if (overBudget) {
+    console.error(`[perf:eventloop] FAIL: main-process event loop stalled ${worstMax.toFixed(1)}ms in steady state, past the ${FRAME_BUDGET_MS}ms frame budget on a realistic fleet. Any stall longer than one frame drops a frame while the window is being dragged. Keep heavy/synchronous work off main (AGENTS.md: "Never block the Electron main process").`);
     process.exit(1);
   }
-  log(`PASS: main-process event-loop p99 ${worstP99.toFixed(1)}ms within one 60fps frame on a realistic fleet.`);
+  log(`PASS: worst steady-state main-process stall ${worstMax.toFixed(1)}ms is within one 60fps frame on a realistic fleet.`);
 }
 
 main().catch((e) => { console.error('[perf:eventloop] unexpected error:', e); process.exit(1); });

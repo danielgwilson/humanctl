@@ -109,12 +109,36 @@ rules exist to keep that class of bug from recurring as the app grows.
   Horror of Blocking Electron's Main Process."
 - **The perf gate must exercise realistic-scale data AND measure main-process
   event-loop delay.** A fixture/empty-fleet gate is structurally blind to
-  main-process blocking. `perf:selftest` must run against a realistic-scale
-  synthetic corpus (100+ sessions, some large transcripts) and instrument the
-  main process with `perf_hooks.monitorEventLoopDelay`, asserting p99 stays
-  under ~16-20ms (hard-fail above ~50ms). Cold-open/click-to-paint on empty
-  fixtures cannot see this; the event-loop-delay p99 on real-scale data can.
-  See `docs/perf.md`.
+  main-process blocking. `npm run perf:eventloop` runs the app against a
+  realistic-scale synthetic corpus (410 transcripts, ~173MB, under live write
+  pressure) and instruments main with `perf_hooks.monitorEventLoopDelay`.
+  Cold-open/click-to-paint on empty fixtures cannot see this class of bug.
+- **Assert on `max`, never on a percentile (2026-07-07, learned the hard way).**
+  Window-drag jank IS the individual long stall, and percentiles cannot see
+  individual stalls. Measured, in this app, with main deliberately blocked for
+  40ms every 3s: `p99 = 2.8ms`, indistinguishable from idle; only `max` moved,
+  to 42.3ms. A p99-asserting gate passes an app that visibly janks. Three
+  further traps, all of which this repo fell into once:
+  - `monitorEventLoopDelay({resolution})` has a NOISE FLOOR of about
+    `resolution` (verified: 20 -> ~21ms idle, 10 -> ~11ms, 2 -> ~2.3ms, with
+    zero application work). A 16.7ms budget at `resolution: 20` can never pass,
+    and the floor gets misread as real blocking. Use `resolution: 2`.
+  - `max` is CUMULATIVE; the histogram never forgets. Dropping early samples in
+    the gate does NOT drop boot stalls. main.ts therefore calls `.reset()` once
+    at `did-finish-load` and prints a marker; the gate reads only past it. That
+    boundary excludes window creation and deliberately still includes anything
+    the user could feel, e.g. the harness-icon cold path.
+  - A gate that has never been observed to FAIL is decoration. Keep
+    `npm run perf:eventloop:selfcheck` working: it injects a 40ms main-thread
+    stall and requires the gate to catch it, so the instrument is proven, not
+    assumed. Run it whenever the gate's metric or instrumentation changes.
+  Budget: worst steady-state stall < 16.7ms (one 60fps frame). See `docs/perf.md`.
+- **"It only runs once, on a cache miss" is not an exemption.** The harness-icon
+  cold path spawned `plutil` with `execFileSync` on main: 31.9ms of stall, i.e.
+  two dropped frames, on the FIRST LAUNCH of every install (userData starts
+  empty), landing right when the user reaches for the window. Making the spawn
+  async took the worst steady-state stall to 13.4ms. Sync process spawns on main
+  are as forbidden as sync fs; amortization is not a defense.
 
 ## UI PRs: screenshots and one-owner audit (hardline)
 

@@ -32,6 +32,7 @@
     "commands:selftest": "tsx lib/commands.selftest.ts",
     "perf:selftest": "npm run build:lib && npm run build:renderer-vite && node scripts/perf-selftest/run.js",
     "perf:eventloop": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js",
+    "perf:eventloop:selfcheck": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js --selfcheck",
     "perf:logic-selftest": "tsx scripts/perf-selftest/logic.selftest.ts",
     "desktop": "npm run build:lib && electron dist/electron/main.js",
     "renderer": "npm --prefix electron/renderer-vite run dev",

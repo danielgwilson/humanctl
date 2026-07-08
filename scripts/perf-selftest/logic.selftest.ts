@@ -37,6 +37,23 @@ function check(name: string, fn: () => void): void {
     process.exitCode = 1;
   }
 }
+// The harness-icon resolvers are async (they spawn `plutil`, which must never
+// be spawned synchronously off Electron's main process; see AGENTS.md). This
+// file is CJS, so it cannot use top-level await: async checks queue here and
+// are awaited before the summary prints.
+const pendingChecks: Promise<void>[] = [];
+function checkAsync(name: string, fn: () => Promise<void>): void {
+  pendingChecks.push(
+    fn().then(
+      () => { passed += 1; },
+      (e) => {
+        console.error(`FAIL ${name}`);
+        console.error(e && (e as Error).stack ? (e as Error).stack : e);
+        process.exitCode = 1;
+      },
+    ),
+  );
+}
 function tempHome(label: string): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), `humanctl-perflogic-${label}-`));
   return dir;
@@ -131,13 +148,13 @@ check('budgetStatus: paused is true exactly at and above the daily cap, never a 
 
 // ---- harness icon extraction: pure path resolution, no Electron needed ----
 
-check('resolveHarnessIconPath: an unknown harness fails honestly, never throws', () => {
-  const r = resolveHarnessIconPath('not-a-real-harness');
+checkAsync('resolveHarnessIconPath: an unknown harness fails honestly, never throws', async () => {
+  const r = await resolveHarnessIconPath('not-a-real-harness');
   assert.strictEqual(r.ok, false);
-  assert.match(r.reason, /unknown harness/);
+  assert.match((r as { reason: string }).reason, /unknown harness/);
 });
 
-check('resolveHarnessIconPath: a harness whose app is not installed on THIS machine falls back honestly', () => {
+checkAsync('resolveHarnessIconPath: a harness whose app is not installed on THIS machine falls back honestly', async () => {
   // This selftest must pass on any machine (including CI, where neither app
   // is installed), so it only asserts the SHAPE of the failure, never
   // requires the app to be present. lib/harness-icons.js's APP_PATHS point
@@ -145,8 +162,8 @@ check('resolveHarnessIconPath: a harness whose app is not installed on THIS mach
   // (verified separately in the PR's manual acceptance pass, never here),
   // resolution should succeed instead -- either outcome is a valid, honest
   // { ok, ... } shape, never a throw.
-  const claude = resolveHarnessIconPath('claude-code');
-  const codex = resolveHarnessIconPath('codex');
+  const claude = await resolveHarnessIconPath('claude-code');
+  const codex = await resolveHarnessIconPath('codex');
   for (const r of [claude, codex]) {
     assert.ok(typeof r.ok === 'boolean');
     if (!r.ok) assert.ok(typeof r.reason === 'string' && r.reason.length > 0);
@@ -154,17 +171,17 @@ check('resolveHarnessIconPath: a harness whose app is not installed on THIS mach
   }
 });
 
-check('resolveIconPath: tries both with and without the .icns extension (CFBundleIconFile is sometimes recorded bare)', () => {
+checkAsync('resolveIconPath: tries both with and without the .icns extension (CFBundleIconFile is sometimes recorded bare)', async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'humanctl-icontest-'));
   const resourcesRoot = path.join(dir, 'App.app', 'Contents', 'Resources');
   fs.mkdirSync(resourcesRoot, { recursive: true });
   fs.writeFileSync(path.join(resourcesRoot, 'icon.icns'), 'fake-icns-bytes');
   const appPath = path.join(dir, 'App.app');
-  const withExt = resolveIconPath(appPath, 'icon.icns');
-  const withoutExt = resolveIconPath(appPath, 'icon');
+  const withExt = await resolveIconPath(appPath, 'icon.icns');
+  const withoutExt = await resolveIconPath(appPath, 'icon');
   assert.strictEqual(withExt, path.join(resourcesRoot, 'icon.icns'));
   assert.strictEqual(withoutExt, path.join(resourcesRoot, 'icon.icns'), 'a bare CFBundleIconFile value must still resolve to the real .icns file');
-  const missing = resolveIconPath(appPath, 'nope');
+  const missing = await resolveIconPath(appPath, 'nope');
   assert.strictEqual(missing, null);
 });
 
@@ -244,8 +261,12 @@ check('prChip: a degraded gh entry for the repo yields no chip rather than a fab
   } finally { process.env.HOME = prevHome; }
 });
 
-if (process.exitCode) {
-  console.error(`perf logic selftest: FAILED (${passed} passed before failure)`);
-} else {
-  console.log(`perf logic selftest: ok (${passed} checks)`);
-}
+// Await the queued async checks (harness-icon resolution) before summarizing,
+// otherwise their failures would land after this process reported "ok".
+void Promise.all(pendingChecks).then(() => {
+  if (process.exitCode) {
+    console.error(`perf logic selftest: FAILED (${passed} passed before failure)`);
+  } else {
+    console.log(`perf logic selftest: ok (${passed} checks)`);
+  }
+});

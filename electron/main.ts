@@ -89,6 +89,9 @@ const READER_TIMEOUT_MS = 20000;
 // is silently dropped (nothing missed on this side to re-queue -- that is
 // why the first broker always happens from did-finish-load, never earlier).
 let windowLoadedOnce = false;
+// Set only under HUMANCTL_PERF_EVENTLOOP: resets the event-loop histogram once
+// the UI is up, so the gate measures felt stalls and not window creation.
+let perfEldReset: (() => void) | null = null;
 
 // Broker a FRESH direct renderer <-> reader-service MessageChannelMain port.
 // Called once the window has loaded (did-finish-load, including reloads) and
@@ -300,6 +303,11 @@ function createWindow(): void {
   // (brokerReaderPort() is a no-op until the reader is also spawned).
   win.webContents.on('did-finish-load', () => {
     console.log('humanctl: window loaded');
+    // Perf gate only: the UI is up, so drop the boot-time samples and measure
+    // the stalls a user could actually feel from here on (see the histogram
+    // setup in app.whenReady). Reset once, not on every reload, so a reload
+    // cannot silently erase a stall the gate should have caught.
+    if (perfEldReset && !windowLoadedOnce) perfEldReset();
     windowLoadedOnce = true;
     brokerReaderPort();
     // The reader-service starts its own fleet watcher as soon as it spawns
@@ -355,15 +363,17 @@ function deepLinkApps(): { claude: boolean; codex: boolean } {
 // to null so the caller falls back to the built-in glyph silently; this
 // function itself never throws.
 //
-// Async (never main.ts's doctrine-forbidden sync fs) for the path that runs
-// on EVERY boot: the warm-cache read/write below uses fs.promises.
-// `resolveHarnessIconPath` (lib/harness-icons.ts) stays sync -- it shells out
-// to `plutil` and stats a couple of fixed paths -- and `nativeImage`'s
-// decode/resize/toPNG have no async form in Electron at all; both only run
-// on a genuine cache MISS, i.e. at most once per harness ever on a given
-// machine (the result is cached to disk here, and in `iconCache` in memory
-// for the rest of this run), so that one-time cold path is an accepted,
-// clearly-scoped sync island rather than a per-boot cost.
+// Async end to end (never main.ts's doctrine-forbidden sync fs or sync spawn).
+// The warm-cache read/write uses fs.promises; `resolveHarnessIconPath`
+// (lib/harness-icons.ts) is async too, because it shells out to `plutil` and a
+// SYNCHRONOUS spawn cost 31.9ms of main-process stall -- two dropped frames --
+// as measured by `npm run perf:eventloop`. "It only runs on a cache miss" is
+// not an excuse: userData starts empty, so the miss happens on the first
+// launch of every install, after boot, exactly when the user is grabbing the
+// window. The one irreducible sync island is `nativeImage`'s
+// decode/resize/toPNG, which Electron exposes in no async form; it is a pixel
+// decode of a single small .icns with no process spawn and no path lookups,
+// and the gate is what holds it honest.
 const ICON_SIZE = 40; // CSS px; @2x handled by nativeImage's own scale factors
 const iconCache = new Map<string, string | null>(); // harness -> data URL | null, populated once per app run
 async function extractHarnessIcon(harness: string): Promise<string | null> {
@@ -380,7 +390,7 @@ async function extractHarnessIcon(harness: string): Promise<string | null> {
       if (buf && buf.length) dataUrl = `data:image/png;base64,${buf.toString('base64')}`;
     } catch { /* no cache yet (or unreadable): fall through to the cold path below */ }
     if (!dataUrl) {
-      const resolved = resolveHarnessIconPath(harness);
+      const resolved = await resolveHarnessIconPath(harness);
       if (resolved.ok) {
         const img = nativeImage.createFromPath(resolved.path);
         if (img && !img.isEmpty()) {
@@ -1113,10 +1123,37 @@ app.whenReady().then(() => {
   // real blocking (verified: an artificial 40ms main-thread stall at this
   // resolution shows up in `max` immediately, p50/p99 unaffected by the idle
   // floor).
+  //
+  // `max` is CUMULATIVE: the histogram never forgets its worst sample, so a
+  // stall during window creation would keep pinning `max` for the rest of the
+  // run and no amount of "ignore the first N samples" in the gate can remove
+  // it. To make "steady state" mean something, the histogram is RESET exactly
+  // once, at `did-finish-load`: the UI is up from that instant on, so every
+  // stall after it is one the user can feel (this deliberately still includes
+  // the harness-icon cold path, which runs when the renderer first asks for
+  // icons -- that stall is real, and on a first launch it lands while the user
+  // is reaching for the window).
+  // Gate self-check (`npm run perf:eventloop:selfcheck`): deliberately block
+  // main on a timer so the gate has a known-bad process to catch. A gate that
+  // has never been observed to FAIL is decoration, and this one shipped once
+  // already while asserting a statistic (p99) that is mathematically blind to
+  // individual stalls. Env-gated, off in every real run.
+  if (process.env.HUMANCTL_PERF_INJECT_STALL) {
+    const stallMs = Number(process.env.HUMANCTL_PERF_INJECT_STALL) || 40;
+    const stallTimer = setInterval(() => {
+      const end = Date.now() + stallMs;
+      while (Date.now() < end) { /* deliberately block the event loop */ }
+    }, 3000);
+    stallTimer.unref();
+  }
   if (process.env.HUMANCTL_PERF_EVENTLOOP) {
     const eld = monitorEventLoopDelay({ resolution: 2 });
     eld.enable();
     const ms = (ns: number): number => ns / 1e6;
+    perfEldReset = () => {
+      eld.reset();
+      console.error('humanctl: eventloop reset (UI loaded; steady state begins)');
+    };
     const timer = setInterval(() => {
       console.error(
         `humanctl: eventloop p50=${ms(eld.percentile(50)).toFixed(1)}ms ` +
