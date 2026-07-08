@@ -129,7 +129,18 @@ async function main() {
     process.exit(1);
   }
 
+  // Each sample is now the worst stall in its own 2s window (main resets the
+  // histogram after every print), so the SHAPE of a failure is legible:
+  // many over-budget windows = a recurring stall (a poll or watcher blocking
+  // main); exactly one = a one-off, which is either real one-time work (the
+  // icon cold path) or this machine being busy with something else. Both are
+  // reported; neither is silently tolerated.
+  const overBudgetWindows = steady.map((m) => +m[3]).filter((v) => v > FRAME_BUDGET_MS);
+  const windowMaxes = steady.map((m) => +m[3]).sort((a, b) => b - a);
   log(`samples: ${all.length} (${steady.length} after the UI-loaded reset) | worst STEADY-STATE main-process stall: max=${worstMax.toFixed(1)}ms (budget < ${FRAME_BUDGET_MS}ms) | p99=${worstP99.toFixed(1)}ms (informational)`);
+  log(`over-budget windows: ${overBudgetWindows.length}/${steady.length} | worst 5 window maxes: ${windowMaxes.slice(0, 5).map((v) => v.toFixed(1)).join(', ')}ms`);
+  if (overBudgetWindows.length === 1) log(`shape: ONE over-budget window -- a one-off stall (real one-time work, or an unrelated process preempting main). Re-run on a quiet machine to tell those apart.`);
+  else if (overBudgetWindows.length > 1) log(`shape: ${overBudgetWindows.length} over-budget windows -- a RECURRING stall. This is main-process blocking, not machine noise.`);
   cleanup();
   process.removeListener('exit', cleanup);
 

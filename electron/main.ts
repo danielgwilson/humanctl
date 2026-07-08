@@ -1154,11 +1154,19 @@ app.whenReady().then(() => {
       eld.reset();
       console.error('humanctl: eventloop reset (UI loaded; steady state begins)');
     };
+    // Reset after every print, so each line is the worst stall WITHIN that 2s
+    // window instead of a running high-water mark. A recurring stall (a poll
+    // blocking main) then appears in most windows; a one-off (the icon cold
+    // path, or an unrelated process preempting us) appears in exactly one.
+    // Without this, one bad window pins `max` for the whole run and the report
+    // cannot tell you whether the problem recurs.
+    let win = 0;
     const timer = setInterval(() => {
       console.error(
         `humanctl: eventloop p50=${ms(eld.percentile(50)).toFixed(1)}ms ` +
-        `p99=${ms(eld.percentile(99)).toFixed(1)}ms max=${ms(eld.max).toFixed(1)}ms`,
+        `p99=${ms(eld.percentile(99)).toFixed(1)}ms max=${ms(eld.max).toFixed(1)}ms win=${win++}`,
       );
+      eld.reset();
     }, 2000);
     timer.unref();
   }
