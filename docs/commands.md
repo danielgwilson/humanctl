@@ -41,6 +41,7 @@ writing:
 | `app.set-state` | action | no | `patch*` |
 | `app.set-view` | action | no | `view*` (`inbox\|metrics\|fleet\|sessions\|settings`) |
 | `app.set-nav` | action | no | `pinned*` |
+| `app.set-cos-drawer` | action | no | `open*` (chief-of-staff summonable drawer; persisted) |
 | `app.set-theme` | action | no | `theme*` (`light\|dark\|system`) |
 | `app.set-engine` | action | no | `engine*` (`claude\|codex`) |
 | `inbox.mark-read` | action | no | `threadId*, at` |
