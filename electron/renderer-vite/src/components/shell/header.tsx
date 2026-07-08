@@ -1,5 +1,6 @@
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Button } from '@/components/ui/button';
 import { useSidebar } from '@/components/ui/sidebar';
 import { cn } from '@/lib/utils';
 
@@ -9,14 +10,9 @@ import { cn } from '@/lib/utils';
 // icon button is shadcn's Tooltip (a Radix primitive): keyboard focus and
 // ARIA wiring (role="tooltip", aria-describedby) come from Radix for free.
 //
-// STAGE 2B: this header now renders inside SidebarInset, to the RIGHT of
-// the full-height sidebar, not spanning the full window from x=0. The old
-// `pl-20` left padding existed only to clear the macOS traffic lights when
-// this header still spanned the whole window; the lights now sit over the
-// sidebar's own SidebarHeader instead (see nav-sidebar.tsx), so this header
-// goes back to a plain symmetric px-6. It keeps its own drag region (the
-// window is still frameless) with no-drag islands around each interactive
-// button, same as before.
+// STAGE 2B: this header renders inside SidebarInset, to the RIGHT of the
+// sidebar WHEN THE SIDEBAR IS EXPANDED -- see the offcanvas note below for
+// why that is no longer the whole story.
 //
 // STAGE-2E chrome pass: height dropped 52px -> 44px (Linear/Adio-compact;
 // the bar had nothing in it but the wordmark and one button) and a `PanelLeft`
@@ -26,28 +22,53 @@ import { cn } from '@/lib/utils';
 // the SAME `useSidebar().toggleSidebar()` Cmd+\ already calls
 // (components/ui/sidebar.tsx), so the button and the chord can never drift
 // out of sync with each other or with the persisted `AppState.navPinned`.
+//
+// STAGE-OFFCANVAS (0.17.4): the sidebar is now `collapsible="offcanvas"`
+// (nav-sidebar.tsx), not "icon" -- collapsed means FULLY HIDDEN, no rail, so
+// SidebarInset (and this Header inside it) spans the WHOLE window from x=0
+// whenever the sidebar is collapsed, sliding this header's top-left corner
+// directly under the macOS traffic lights (frameless titleBarStyle,
+// electron/main.ts; the lights + their left inset occupy roughly the
+// window's first ~76px). "Who owns the traffic-light band" is therefore
+// state-aware, read from `useSidebar().state`:
+//   - collapsed: THIS header owns the corner. It gets left padding (pl-76px)
+//     that clears the lights, drops its bottom border entirely (no rule may
+//     cross the light band -- same reasoning as nav-sidebar.tsx's borderless
+//     SidebarHeader), and its PanelLeft toggle -- the first flex child --
+//     naturally lands just to the right of the lights, Linear's "collapsed
+//     title bar" layout.
+//   - expanded: the SIDEBAR's own header owns the corner (nav-sidebar.tsx);
+//     this header is inset to the sidebar's right and goes back to plain
+//     symmetric padding and its normal bottom border.
+// Both states keep the existing drag region (the window is still frameless)
+// with no-drag islands around each interactive button.
 export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { demo: boolean; version?: string; rightRailOpen: boolean; onToggleRightRail: () => void }) {
   const { state: sidebarState, toggleSidebar } = useSidebar();
   const sidebarOpen = sidebarState === 'expanded';
   return (
     <header
-      className="flex h-[44px] shrink-0 items-center gap-3 border-b border-border bg-bg2 px-6"
+      className={cn(
+        'flex h-[44px] shrink-0 items-center gap-3 bg-bg2 pr-6',
+        sidebarOpen ? 'border-b border-border pl-6' : 'pl-[76px]',
+      )}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={toggleSidebar}
               aria-label={sidebarOpen ? 'collapse sidebar' : 'expand sidebar'}
               className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-ink3 transition-colors hover:text-foreground',
+                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
                 sidebarOpen && 'border-iris-dim text-iris',
               )}
             >
               <PanelLeft className="h-[15px] w-[15px]" aria-hidden="true" />
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent>toggle sidebar (&#8984;\)</TooltipContent>
         </Tooltip>
@@ -67,17 +88,19 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <button
+            <Button
               type="button"
+              variant="ghost"
+              size="icon"
               onClick={onToggleRightRail}
               aria-label="toggle chief-of-staff chat"
               className={cn(
-                'inline-flex h-7 w-7 items-center justify-center rounded-md border border-border text-ink3 transition-colors hover:text-foreground',
+                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
                 rightRailOpen && 'border-iris-dim text-iris',
               )}
             >
               <PanelRight className="h-[15px] w-[15px]" aria-hidden="true" />
-            </button>
+            </Button>
           </TooltipTrigger>
           <TooltipContent>chief-of-staff chat (a)</TooltipContent>
         </Tooltip>

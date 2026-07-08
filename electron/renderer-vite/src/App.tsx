@@ -1,10 +1,13 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
+import { toast } from 'sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
+import { Toaster } from '@/components/ui/sonner';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
-import { AppSidebar } from '@/components/shell/nav-sidebar';
+import { AppSidebar, SidebarEdgePeek } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
 import { ContextBar } from '@/components/shell/context-bar';
 import { CosDrawer } from '@/components/shell/cos-drawer';
+import { CommandPalette } from '@/components/command-palette';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { SessionDetail } from '@/components/session/session-detail';
 import { MetricsView } from '@/components/views/metrics-view';
@@ -12,7 +15,7 @@ import { FleetView } from '@/components/views/fleet-view';
 import { SessionsView } from '@/components/views/sessions-view';
 import { SettingsView } from '@/components/views/settings-view';
 import { useAppState, useFleetData, useSessionSummarize } from '@/hooks/use-humanctl';
-import type { InboxThread, SessionRow, ViewName } from '@/lib/types';
+import type { AppState, InboxThread, SessionRow, ViewName } from '@/lib/types';
 
 const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '3': 'fleet', '4': 'sessions' };
 
@@ -26,14 +29,20 @@ const VIEW_FOR_KEY: Record<string, ViewName> = { '1': 'inbox', '2': 'metrics', '
 // STAGE 2B: the shell moved from a fixed-position hover-expand nav rail
 // (grid-rows layout, deleted nav-rail.tsx) to the shadcn Sidebar primitive
 // in a full-height Linear/Slack-style layout: SidebarProvider wraps a
-// collapsible="icon" Sidebar (nav-sidebar.tsx) and a SidebarInset that owns
-// the header/content/context-bar column to its right. See DESIGN.md's
-// "Information architecture" section for the conformance statement and the
-// recorded tooltip-on-hover / full-height deviation from shell v3.
+// Sidebar (nav-sidebar.tsx) and a SidebarInset that owns the
+// header/content/context-bar column to its right. See DESIGN.md's
+// "Information architecture" section for the conformance statement.
+//
+// STAGE-OFFCANVAS (0.17.4): the Sidebar is now collapsible="offcanvas"
+// (fully hidden when collapsed, not an icon rail); <SidebarEdgePeek/> is
+// rendered here as a sibling of <AppSidebar/>, both inside SidebarProvider,
+// so it shares the same sidebar context to open it on a left-edge hover
+// (see nav-sidebar.tsx for why it cannot live nested inside AppSidebar).
 export default function App() {
   const { rows, threads, status, demo, refresh } = useFleetData();
   const { state, patch } = useAppState();
   const { summarize, loadingId: summaryLoadingId, errors: summaryErrors } = useSessionSummarize();
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, SessionRow>();
@@ -99,11 +108,21 @@ export default function App() {
     for (const t of threads) next[t.sessionId] = now;
     patch({ lastReadTs: next });
     window.humanctl?.markAllThreadsRead();
+    toast('marked all read');
   }
   function togglePin(id: string) {
     const next = new Set(pins);
     if (next.has(id)) next.delete(id); else next.add(id);
     patch({ pins: [...next] });
+  }
+  // Shared by the nav-sidebar theme picker and the command palette's
+  // "Toggle theme" action (both call this same prop, never a duplicated
+  // patch({theme}) call) so a theme change ALWAYS gets feedback no matter
+  // which entry point triggered it; Settings' own ToggleGroup fires its own
+  // toast alongside its own patch call for the same reason (settings-view.tsx).
+  function setTheme(theme: AppState['theme']) {
+    patch({ theme });
+    toast(`theme: ${theme}`);
   }
   async function askSession(id: string, question: string): Promise<string> {
     const row = byId.get(id);
@@ -115,9 +134,14 @@ export default function App() {
     return r?.ok ? (r.answer || '') : (r?.error || 'ask failed');
   }
   function resumeSession(row: SessionRow) {
-    if (!window.humanctl) return;
+    const engine = row.harness === 'codex' ? 'Codex' : 'Claude';
+    if (!window.humanctl) {
+      toast(`resume: ${engine} (demo, no bridge)`);
+      return;
+    }
     if (row.harness === 'codex') window.humanctl.openInApp({ id: row.id, path: row.path, harness: row.harness });
     else window.humanctl.resumeSession({ id: row.id, path: row.path, harness: row.harness, cwd: row.cwd });
+    toast(`resume: ${engine}`);
   }
   // AI summary generation is a durable per-session state mutation on the
   // real backend (session:summarize -> lib/commands.ts's registered
@@ -157,19 +181,27 @@ export default function App() {
 
   // Global keyboard shortcuts (DESIGN.md's nav paragraph): 1/2/3/4 switch
   // views (and close any open session detail, matching the old nav rail's
-  // onNavigate), 'a' summons/dismisses the chief-of-staff drawer. Cmd/Ctrl+\
-  // (the sidebar expand/collapse toggle) is handled inside SidebarProvider
-  // itself (components/ui/sidebar.tsx's SIDEBAR_KEYBOARD_SHORTCUT), not
-  // here. This is ONE declared `keydown` listener on `window`, mounted for
-  // App's lifetime and removed on unmount -- an event listener, not a
-  // recurring timer/poller, so it is outside AGENTS.md's declared-cadence
-  // rule, but its lifecycle is stated here per that rule's spirit. Ignored
-  // whenever a modifier key is held (so Cmd+1, Cmd+\, etc. are not
-  // double-handled) or focus is in an input/textarea/contenteditable (so
-  // these keys never fire while typing in the Inbox search box or a
-  // composer).
+  // onNavigate), 'a' summons/dismisses the chief-of-staff drawer, Cmd/Ctrl+K
+  // toggles the command palette. Cmd/Ctrl+\ (the sidebar expand/collapse
+  // toggle) is handled inside SidebarProvider itself
+  // (components/ui/sidebar.tsx's SIDEBAR_KEYBOARD_SHORTCUT), not here. This
+  // is ONE declared `keydown` listener on `window`, mounted for App's
+  // lifetime and removed on unmount -- an event listener, not a recurring
+  // timer/poller, so it is outside AGENTS.md's declared-cadence rule, but
+  // its lifecycle is stated here per that rule's spirit.
+  //
+  // Cmd/Ctrl+K is checked FIRST, before the modifier/input-focus guards
+  // below: unlike the bare 1/2/3/4/a keys (which must stay silent while the
+  // human is typing in a search box or composer), a global palette chord
+  // should fire everywhere, including while an input has focus -- Esc
+  // (handled by cmdk/Dialog itself) is the symmetric way back out.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
@@ -203,8 +235,9 @@ export default function App() {
           onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
           unreadCount={unreadCount}
           theme={state.theme}
-          onSetTheme={(t) => patch({ theme: t })}
+          onSetTheme={setTheme}
         />
+        <SidebarEdgePeek />
         <SidebarInset className="h-full overflow-hidden">
           <Header demo={demo} version={status?.version} rightRailOpen={state.rightRailOpen} onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })} />
           <div className="relative min-h-0 flex-1 overflow-hidden">
@@ -254,8 +287,26 @@ export default function App() {
           </div>
           <ContextBar status={status} ctxPct={selectedRow?.contextPct ?? null} />
         </SidebarInset>
+        {/* Rendered inside SidebarProvider (not SidebarInset) so it can call
+            useSidebar().toggleSidebar() for its "toggle sidebar" action --
+            its actual overlay is Radix-portaled to <body>, so this sibling
+            position never affects the sidebar/inset flex layout above. */}
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          rows={rows}
+          view={state.view}
+          onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
+          onOpenSession={openDetail}
+          onMarkAllRead={markAllRead}
+          theme={state.theme}
+          onSetTheme={setTheme}
+          rightRailOpen={state.rightRailOpen}
+          onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })}
+        />
       </SidebarProvider>
       <CosDrawer open={state.rightRailOpen} onOpenChange={(open) => patch({ rightRailOpen: open })} />
+      <Toaster />
     </TooltipProvider>
   );
 }
