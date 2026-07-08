@@ -1,10 +1,11 @@
-import { useEffect, useMemo } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { TooltipProvider } from '@/components/ui/tooltip';
 import { SidebarProvider, SidebarInset } from '@/components/ui/sidebar';
 import { AppSidebar, SidebarEdgePeek } from '@/components/shell/nav-sidebar';
 import { Header } from '@/components/shell/header';
 import { ContextBar } from '@/components/shell/context-bar';
 import { CosDrawer } from '@/components/shell/cos-drawer';
+import { CommandPalette } from '@/components/command-palette';
 import { InboxView } from '@/components/inbox/inbox-view';
 import { SessionDetail } from '@/components/session/session-detail';
 import { MetricsView } from '@/components/views/metrics-view';
@@ -39,6 +40,7 @@ export default function App() {
   const { rows, threads, status, demo, refresh } = useFleetData();
   const { state, patch } = useAppState();
   const { summarize, loadingId: summaryLoadingId, errors: summaryErrors } = useSessionSummarize();
+  const [paletteOpen, setPaletteOpen] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, SessionRow>();
@@ -162,19 +164,27 @@ export default function App() {
 
   // Global keyboard shortcuts (DESIGN.md's nav paragraph): 1/2/3/4 switch
   // views (and close any open session detail, matching the old nav rail's
-  // onNavigate), 'a' summons/dismisses the chief-of-staff drawer. Cmd/Ctrl+\
-  // (the sidebar expand/collapse toggle) is handled inside SidebarProvider
-  // itself (components/ui/sidebar.tsx's SIDEBAR_KEYBOARD_SHORTCUT), not
-  // here. This is ONE declared `keydown` listener on `window`, mounted for
-  // App's lifetime and removed on unmount -- an event listener, not a
-  // recurring timer/poller, so it is outside AGENTS.md's declared-cadence
-  // rule, but its lifecycle is stated here per that rule's spirit. Ignored
-  // whenever a modifier key is held (so Cmd+1, Cmd+\, etc. are not
-  // double-handled) or focus is in an input/textarea/contenteditable (so
-  // these keys never fire while typing in the Inbox search box or a
-  // composer).
+  // onNavigate), 'a' summons/dismisses the chief-of-staff drawer, Cmd/Ctrl+K
+  // toggles the command palette. Cmd/Ctrl+\ (the sidebar expand/collapse
+  // toggle) is handled inside SidebarProvider itself
+  // (components/ui/sidebar.tsx's SIDEBAR_KEYBOARD_SHORTCUT), not here. This
+  // is ONE declared `keydown` listener on `window`, mounted for App's
+  // lifetime and removed on unmount -- an event listener, not a recurring
+  // timer/poller, so it is outside AGENTS.md's declared-cadence rule, but
+  // its lifecycle is stated here per that rule's spirit.
+  //
+  // Cmd/Ctrl+K is checked FIRST, before the modifier/input-focus guards
+  // below: unlike the bare 1/2/3/4/a keys (which must stay silent while the
+  // human is typing in a search box or composer), a global palette chord
+  // should fire everywhere, including while an input has focus -- Esc
+  // (handled by cmdk/Dialog itself) is the symmetric way back out.
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      if ((e.key === 'k' || e.key === 'K') && (e.metaKey || e.ctrlKey) && !e.altKey) {
+        e.preventDefault();
+        setPaletteOpen((open) => !open);
+        return;
+      }
       if (e.metaKey || e.ctrlKey || e.altKey) return;
       const target = e.target as HTMLElement | null;
       const tag = target?.tagName;
@@ -260,6 +270,23 @@ export default function App() {
           </div>
           <ContextBar status={status} ctxPct={selectedRow?.contextPct ?? null} />
         </SidebarInset>
+        {/* Rendered inside SidebarProvider (not SidebarInset) so it can call
+            useSidebar().toggleSidebar() for its "toggle sidebar" action --
+            its actual overlay is Radix-portaled to <body>, so this sibling
+            position never affects the sidebar/inset flex layout above. */}
+        <CommandPalette
+          open={paletteOpen}
+          onOpenChange={setPaletteOpen}
+          rows={rows}
+          view={state.view}
+          onNavigate={(v) => { closeDetail(); patch({ view: v }); }}
+          onOpenSession={openDetail}
+          onMarkAllRead={markAllRead}
+          theme={state.theme}
+          onSetTheme={(t) => patch({ theme: t })}
+          rightRailOpen={state.rightRailOpen}
+          onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })}
+        />
       </SidebarProvider>
       <CosDrawer open={state.rightRailOpen} onOpenChange={(open) => patch({ rightRailOpen: open })} />
     </TooltipProvider>
