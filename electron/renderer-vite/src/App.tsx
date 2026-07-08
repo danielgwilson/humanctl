@@ -86,14 +86,25 @@ export default function App() {
   // reachable via the nav and the 20s poll); it exists so the perf SLOs stay
   // enforceable against the React renderer. Not a registered command:
   // renderer-only view state + a re-fetch of already-registered reads.
+  //
+  // setTheme and openDetail (scripts/capture-screenshots.js) are the same
+  // kind of renderer-only view state, not a registered command: setTheme
+  // routes through the exact `patch({ theme })` call the settings toggle
+  // uses (settings-view.tsx), so `patch` stays the one owner of the theme
+  // signal instead of the screenshot script poking document.documentElement
+  // directly. openDetail opens session detail on a given fixture id, or the
+  // first known session when no id is given, so the capture script never
+  // has to hardcode a fixture id.
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
     w.__humanctlPerf = {
       setView: (v: ViewName) => patch({ view: v, selectedId: undefined }),
       refresh,
+      setTheme: (t: 'dark' | 'light') => patch({ theme: t }),
+      openDetail: (id?: string) => patch({ selectedId: id || rows[0]?.id }),
     };
     return () => { delete w.__humanctlPerf; };
-  }, [patch, refresh]);
+  }, [patch, refresh, rows]);
 
   function markRead(threadId: string) {
     const t = threads.find((x) => x.sessionId === threadId);

@@ -1,11 +1,12 @@
 import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
-// electron/, lib/, bin/, scripts/perf-selftest/, and scripts/bundle-size-check.js
-// are separate runtimes (the Electron renderer + main + preload, the TS
-// backend/CLI shared by the desktop app and the CLI, and the plain-Node perf and
-// bundle-budget harnesses), not part of the Next app, so they are not linted by
-// the Next config. They are gated by `tsc --noEmit` (npm run typecheck), the
+// electron/, lib/, bin/, scripts/perf-selftest/, scripts/bundle-size-check.js,
+// and scripts/capture-screenshots.js are separate runtimes (the Electron
+// renderer + main + preload, the TS backend/CLI shared by the desktop app and
+// the CLI, and the plain-Node perf, bundle-budget, and screenshot-capture
+// harnesses), not part of the Next app, so they are not linted by the Next
+// config. They are gated by `tsc --noEmit` (npm run typecheck), the
 // pulse/commands/reader/perf selftests, the boot smoke, and
 // scripts/secret-scan.sh instead. Lazy require() calls in these files are
 // deliberate (keeps every CLI command that does not need pulse/summary-budget
@@ -28,6 +29,7 @@ const eslintConfig = [
       "bin/**",
       "scripts/perf-selftest/**",
       "scripts/bundle-size-check.js",
+      "scripts/capture-screenshots.js",
       "dist/**",
     ],
   },

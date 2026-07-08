@@ -169,6 +169,15 @@ rules exist to keep that class of bug from recurring as the app grows.
 
 ## UI PRs: screenshots and one-owner audit (hardline)
 
+`npm run screenshots -- --out screenshots/<stage>` produces the full gate set
+in item 1 below mechanically: `scripts/capture-screenshots.js` builds and
+serves the renderer's browser bundle, drives it headless over CDP (system
+Chrome, not Electron -- see the script's header), and captures all five
+views in both themes plus session detail in both themes, 12 PNGs, on fixture
+data only. It never touches real session data or `~/.humanctl`. One command,
+one-shot: every timeout inside it bounds a single script run and nothing it
+starts survives the process exiting.
+
 Every UI-visible change, in every PR:
 
 1. Attach full-app screenshots covering all views, in both themes, on fixture
