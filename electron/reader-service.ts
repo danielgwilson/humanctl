@@ -67,6 +67,7 @@ import {
   type Harness,
 } from '../lib/sessions';
 import { resolveSessionRow, inboxThreads, isInboxRelevantChange } from '../lib/commands';
+import { readClaudeQuota, type ClaudeQuota } from '../lib/claude-quota';
 
 const parentPort = (process as NodeJS.Process & { parentPort?: ParentPort }).parentPort;
 if (!parentPort) {
@@ -191,6 +192,50 @@ function setHot(arg: { path?: string; harness?: string; from?: number } | undefi
   return { ok: true };
 }
 
+// ---- claude quota cache (NOT a timer) ----
+// `quota.claude` (lib/claude-quota.ts) spawns the `claude` CLI twice and takes
+// 2-12 seconds. Three rules govern it here:
+//
+//  1. It runs in THIS process, never on main (AGENTS.md: "Never block the
+//     Electron main process"; "'It only runs once, on a cache miss' is not an
+//     exemption" -- the harness-icon execFileSync cost 31.9ms of main-thread
+//     stall). It is an async execFile with a timeout and an AbortSignal.
+//  2. NO NEW TIMER (AGENTS.md: "Declare every timer"). Nothing here polls. The
+//     renderer's EXISTING 20-second fleet poll calls `quota.claude`, and this
+//     cache turns all but one call in every TTL window into a memory read.
+//  3. TTL is 5 minutes, well past the required 60s floor. The windows this
+//     reports are 5-hour and 7-day; at a full 5h burn a 1% change takes ~3
+//     minutes, so polling faster than this buys literally nothing and only
+//     risks a 429 on the endpoint underneath.
+//
+// A null result (no binary / signed out / API-key account / 401 / timeout) is
+// cached exactly like a real one, so a machine with no `claude` on it stops
+// re-spawning after the first attempt instead of trying again every 20s.
+const QUOTA_TTL_MS = 5 * 60 * 1000;
+let quotaCache: { at: number; value: ClaudeQuota | null } | null = null;
+// Dedupes concurrent callers onto one spawn: two polls that overlap a cold read
+// (or a `sessions:changed` refresh landing mid-read) share the in-flight promise
+// rather than each starting their own `claude` process.
+let quotaInFlight: Promise<ClaudeQuota | null> | null = null;
+
+// Returns the bare payload; both transports wrap it as `{ok: true, ...result}`
+// (see main.ts's handleReaderMessage and preload.ts's handlePortMessage), the
+// same convention every sibling handler below follows.
+async function claudeQuotaCached(): Promise<{ quota: ClaudeQuota | null; cachedAt: number | null }> {
+  if (quotaCache && Date.now() - quotaCache.at < QUOTA_TTL_MS) {
+    return { quota: quotaCache.value, cachedAt: quotaCache.at };
+  }
+  if (!quotaInFlight) {
+    // readClaudeQuota never rejects, but a .catch here means a future refactor
+    // of it cannot wedge this cache with a permanently-rejected in-flight promise.
+    quotaInFlight = readClaudeQuota()
+      .catch(() => null)
+      .then((value) => { quotaCache = { at: Date.now(), value }; quotaInFlight = null; return value; });
+  }
+  const value = await quotaInFlight;
+  return { quota: value, cachedAt: quotaCache ? quotaCache.at : null };
+}
+
 // ---- observation handlers (moved off main; same shapes main.ts's IPC
 // handlers/lib/commands.ts's DIRECT_HANDLERS returned before this refactor,
 // so the renderer sees byte-identical results, just relayed) ----
@@ -237,6 +282,10 @@ const HANDLERS: Record<string, Handler> = {
   'notes.list': (p) => ({ notes: readNotes(p || {}) }),
   'inbox.threads': (p) => ({ threads: inboxThreads(p || {}) }),
   'skills.aggregate': (p) => ({ agg: aggregateSkills(p || {}) }),
+  // Async: awaits the `claude` spawn only on a cold or expired cache (see
+  // claudeQuotaCached above). This process's event loop absorbs the wait, and
+  // an execFile child does not block even that -- main never sees any of it.
+  'quota.claude': () => claudeQuotaCached(),
   'session.detail': (p) => sessionDetail(p || {}),
   'session.timeline': (p) => sessionTimeline(p || {}),
   // Bounded tail read + the needs-you v3 classifier for one file, used by

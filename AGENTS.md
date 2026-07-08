@@ -256,6 +256,14 @@ join is proven end to end without ever reading or writing the real
 
     npm run commands:selftest     # registry, event log, and socket round-trip
 
+The Claude subscription-quota read (`lib/claude-quota.ts`, behind the
+`quota.claude` command) parses the Claude Code CLI's non-interactive `/usage`
+output. Its selftest performs ZERO process spawns: every case replays captured
+stdout through an injected runner, so it never invokes the `claude` CLI and
+never touches a real account (see `docs/commands.md`):
+
+    npm run quota:selftest        # /usage parser + degradation paths, no spawns
+
 Perf has its own two-gate split (see `docs/perf.md` for the full rationale):
 a LOCAL gate that drives a real Electron window and is required before
 release, and a CI-safe pure-logic subset:

@@ -116,6 +116,26 @@ export const COMMANDS: CommandDecl[] = [
     desc: 'today\'s always-on-summary spend estimate (USD) against the configured daily budget (lib/summary-budget.ts), for the honest pause chip',
     params: { dailyBudgetUSD: { type: 'number' } },
   },
+  // Spawns `claude` twice (auth status, then the non-interactive `/usage`), so
+  // it is a registered command by the hardline above, and `observation` rather
+  // than `action` on the same grounds as pulse.run: it spawns, but it reads
+  // only and mutates no durable state.
+  //
+  // DEPENDENCY, STATED HONESTLY: this reads Claude Code's UNDOCUMENTED
+  // non-interactive `/usage` local command (CLI >= 2.1.x, a `type: "local"`
+  // command variant with `supportsNonInteractive: true`, enabled only under
+  // `-p`), which itself fetches an UNDOCUMENTED OAuth usage endpoint using the
+  // CLI's own token. humanctl never touches that token or the Keychain, and the
+  // read costs zero tokens (`num_turns: 0`, `total_cost_usd: 0` -- it never
+  // reaches a model). Same risk class as this repo's existing `claude://` /
+  // `codex://` deep links: if upstream changes it, the read stops working and
+  // degrades to `n/a`. It never fabricates a number, and nothing else in the
+  // app depends on it. See lib/claude-quota.ts.
+  {
+    name: 'quota.claude', kind: 'observation', direct: true,
+    desc: 'Claude subscription quota windows, read from the Claude Code CLI\'s non-interactive `/usage` command (zero tokens, never reaches a model). Undocumented upstream dependency; degrades to quota:null (never a fabricated number) when the CLI is absent, signed out, or on an API-key/Bedrock/Vertex account.',
+    params: {},
+  },
   // ---- app-only commands (handlers injected by electron/main.ts) ----
   {
     name: 'app.harness-icons', kind: 'observation',
@@ -724,6 +744,17 @@ const DIRECT_HANDLERS: Record<string, CommandHandler> = {
     return { ok: true, budget: budgetStatus(daily) };
   },
   'app.commands': () => ({ ok: true, commands: listCommands() }),
+  // A degraded read (no `claude` binary, signed out, API-key account, timeout,
+  // OAuth 401, unparseable output) is `{ok: true, quota: null}`, never an
+  // error: exactly pulse.pr-chip's contract, and for the same reason -- "we
+  // cannot know right now" is an honest answer, not a fault. The desktop app
+  // does NOT reach this handler; electron/reader-service.ts owns the cached
+  // copy so the spawn stays off the main process. This path is what
+  // `humanctl app quota.claude` uses when the app is not running.
+  'quota.claude': async () => {
+    const { readClaudeQuota } = require('./claude-quota') as typeof import('./claude-quota');
+    return { ok: true, quota: await readClaudeQuota() };
+  },
 };
 
 export interface RegistryInvokeCtx {

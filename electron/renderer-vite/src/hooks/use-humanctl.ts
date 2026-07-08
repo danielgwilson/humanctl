@@ -4,8 +4,8 @@
 // lib/fixtures.ts -- the whole UI renders and is fully driveable without
 // launching Electron.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, BudgetStatus, InboxThread, NoteItem, SessionRow, SkillAggregate, Status } from '../lib/types';
-import { FIXTURE_NOTES, FIXTURE_ROWS, FIXTURE_SKILL_AGGREGATE, fixtureBudgetStatus, fixtureStatus, fixtureThreads } from '../lib/fixtures';
+import type { AppState, BudgetStatus, ClaudeQuota, InboxThread, NoteItem, SessionRow, SkillAggregate, Status } from '../lib/types';
+import { FIXTURE_NOTES, FIXTURE_ROWS, FIXTURE_SKILL_AGGREGATE, fixtureBudgetStatus, fixtureClaudeQuota, fixtureStatus, fixtureThreads } from '../lib/fixtures';
 
 export function isElectron(): boolean {
   return typeof window !== 'undefined' && !!window.humanctl;
@@ -16,21 +16,32 @@ export interface FleetData {
   notes: NoteItem[];
   threads: InboxThread[];
   status: Status | null;
+  claudeQuota: ClaudeQuota | null;
   loading: boolean;
   demo: boolean;
   refresh: () => Promise<void>;
 }
 
+// Cheap identity for a quota reading. The reader-service serves the same cached
+// value for 5 minutes, but each poll structured-clones a fresh object across the
+// port, so a naive setState would rebuild the DOM every 20s for data that has
+// not changed (DESIGN.md perf SLO: "unchanged data must not rebuild").
+function quotaSig(q: ClaudeQuota | null): string {
+  if (!q) return '';
+  return q.windows.map((w) => `${w.label}:${w.used_percent}:${w.resets_at_text || ''}`).join('|');
+}
+
 /**
- * Polls three IPC calls (sessions.list, notes.list, inbox.threads via
- * getInboxThreads), or serves fixtures when there is no bridge. See the
- * declared 20s idle timer below (DESIGN.md: "declare every timer").
+ * Polls four IPC calls (app.status, sessions.list, notes.list, inbox.threads),
+ * or serves fixtures when there is no bridge. See the declared 20s idle timer
+ * below (DESIGN.md: "declare every timer").
  */
 export function useFleetData(): FleetData {
   const [rows, setRows] = useState<SessionRow[]>([]);
   const [notes, setNotes] = useState<NoteItem[]>([]);
   const [threads, setThreads] = useState<InboxThread[]>([]);
   const [status, setStatus] = useState<Status | null>(null);
+  const [claudeQuota, setClaudeQuota] = useState<ClaudeQuota | null>(null);
   const [loading, setLoading] = useState(true);
   const demo = !isElectron();
 
@@ -40,9 +51,25 @@ export function useFleetData(): FleetData {
       setNotes(FIXTURE_NOTES);
       setThreads(fixtureThreads());
       setStatus(fixtureStatus());
+      // Fixture mode NEVER shells out to the `claude` CLI (AGENTS.md).
+      setClaudeQuota(fixtureClaudeQuota());
       setLoading(false);
       return;
     }
+    // quota.claude rides THIS poll -- no new timer (AGENTS.md: "Declare every
+    // timer") -- but is deliberately NOT awaited alongside the four fleet reads
+    // below. It spawns the `claude` CLI in the reader-service on a cold or
+    // expired cache (5-minute TTL, so at most one spawn per 15 polls), and a
+    // cold quota read must never delay the fleet's first paint. It settles on
+    // its own a couple of seconds later; a failure leaves the last known value
+    // and the next poll retries.
+    window.humanctl.getClaudeQuota?.()
+      .then((q) => {
+        if (!q?.ok) return;
+        const next = q.quota ?? null;
+        setClaudeQuota((prev) => (quotaSig(prev) === quotaSig(next) ? prev : next));
+      })
+      .catch(() => { /* reader hiccup or port timeout: keep the last value, retry next poll */ });
     const [s, l, nt, it] = await Promise.all([
       window.humanctl.getStatus({ maxAgeH: 72, limit: 40 }),
       window.humanctl.listSessions({ maxAgeH: 72, limit: 40, withUsage: true }),
@@ -70,7 +97,7 @@ export function useFleetData(): FleetData {
     };
   }, [refresh]);
 
-  return { rows, notes, threads, status, loading, demo, refresh };
+  return { rows, notes, threads, status, claudeQuota, loading, demo, refresh };
 }
 
 const DEFAULT_STATE: AppState = {

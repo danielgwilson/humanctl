@@ -66,11 +66,37 @@ export interface InboxThread {
   lastTs: string;
 }
 
+// One quota window, for either harness. The two reset fields are mutually
+// exclusive on purpose and both optional:
+//
+//   Codex writes `rate_limits` into its own rollout JSONL, with a real
+//   `resets_at` epoch (seconds) and a `window_minutes` length. It keeps that
+//   path unchanged.
+//
+//   Claude reports windows as locale-formatted DISPLAY text ("Jul 13 at 2am
+//   (America/Los_Angeles)") carrying no year and no timestamp, so there is no
+//   honest epoch to put in `resets_at`. It gets `resets_at_text`, rendered
+//   verbatim, and a dynamic `label` -- upstream names its own windows
+//   ("Current session", "Current week (all models)", "Current week (<model>)",
+//   and others behind feature flags), so nothing here enumerates them.
 export interface QuotaWindow {
   used_percent: number;
-  window_minutes: number;
-  resets_at: number;
+  window_minutes?: number;
+  /** epoch seconds (Codex only) */
+  resets_at?: number;
+  /** verbatim display string (Claude only); never parsed into an epoch */
+  resets_at_text?: string;
+  /** the window's own name (Claude only); dynamic, never enumerated */
+  label?: string;
 }
+
+/** Mirrors lib/claude-quota.ts's ClaudeQuota (quota.claude -> readClaudeQuota). */
+export interface ClaudeQuota {
+  windows: QuotaWindow[];
+  /** epoch ms of the underlying read */
+  at: number;
+}
+
 export interface Status {
   per: Record<string, { sessions: number; generated: number; totalTokens: number; costUSD?: number; apiEquivUSD?: number }>;
   codexQuota?: { plan_type: string; primary?: QuotaWindow; secondary?: QuotaWindow };
@@ -167,6 +193,10 @@ export interface AppState {
 // the bridge already exposed these (electron/preload.ts lines 17-18, 52-56).
 export interface HumanctlBridge {
   getStatus: (opts?: unknown) => Promise<{ ok: boolean; status?: Status }>;
+  // quota.claude: real subscription quota, read from the Claude Code CLI in the
+  // reader-service (cached, >= 60s TTL). `quota: null` is the honest answer for
+  // a missing CLI, a signed-out user, or an API-key/Bedrock/Vertex account.
+  getClaudeQuota: () => Promise<{ ok: boolean; quota?: ClaudeQuota | null; error?: string }>;
   listSessions: (opts?: unknown) => Promise<{ ok: boolean; rows?: SessionRow[] }>;
   getNotes: (opts?: unknown) => Promise<{ ok: boolean; notes?: NoteItem[] }>;
   getInboxThreads: (opts?: unknown) => Promise<{ ok: boolean; threads?: InboxThread[] }>;

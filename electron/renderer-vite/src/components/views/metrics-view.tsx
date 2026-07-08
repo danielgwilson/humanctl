@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { Fragment, type ReactNode } from 'react';
 import { LayoutGrid } from 'lucide-react';
 import { Item, ItemGroup, ItemSeparator } from '@/components/ui/item';
 import { Progress } from '@/components/ui/progress';
@@ -6,11 +6,15 @@ import { ScrollArea } from '@/components/ui/scroll-area';
 import { ViewHeader } from '@/components/shell/view-header';
 import { useSkillAggregate } from '@/hooks/use-humanctl';
 import { fmtCadence, fmtResetClock, fmtTok, fmtUSD } from '@/lib/format';
-import type { SessionRow, Status } from '@/lib/types';
+import type { ClaudeQuota, SessionRow, Status } from '@/lib/types';
 
 // Metrics is the SOLE detailed home for spend/tokens/quota (DESIGN.md
-// one-owner table: "Spend, tokens, quota | Metrics view | bottom bar shows
-// Codex + Claude quota always [...]; Claude quota renders 'n/a' honestly").
+// one-owner table). It owns EVERY Claude quota window, with the window's own
+// dynamic label and its reset text verbatim; the context bar keeps only the
+// single-percent digest it has always had (one line, no reset text), which is
+// the quota exception DESIGN.md already grants it. Nothing new was added to the
+// bar, and no signal moved.
+//
 // The harness breakdown below is fused with dollars ($ + session count per
 // harness in one row) rather than a bare count -- a bare per-harness/per-state
 // session COUNT breakdown is Fleet's signal (Fleet owns "fleet shape"), so it
@@ -32,7 +36,7 @@ function StatRow({ label, value, hint }: { label: string; value: string; hint?: 
   );
 }
 
-export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Status | null }) {
+export function MetricsView({ rows, status, claudeQuota }: { rows: SessionRow[]; status: Status | null; claudeQuota: ClaudeQuota | null }) {
   const { agg } = useSkillAggregate(true);
 
   const claudeRows = rows.filter((r) => r.harness === 'claude-code');
@@ -47,6 +51,9 @@ export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Stat
 
   const qp = status?.codexQuota?.primary;
   const qs = status?.codexQuota?.secondary;
+  // Upstream names its own windows and gates some behind feature flags, so this
+  // iterates whatever came back rather than assuming a session + two weeklies.
+  const claudeWindows = claudeQuota?.windows ?? [];
 
   const topSkills = agg ? Object.entries(agg.skills).sort((a, b) => b[1] - a[1]).slice(0, 6) : [];
   const maxSkillCount = topSkills.length ? topSkills[0][1] : 1;
@@ -94,7 +101,22 @@ export function MetricsView({ rows, status }: { rows: SessionRow[]; status: Stat
               <ItemSeparator />
             </>
           ) : null}
-          <StatRow label="claude quota" value="n/a" hint="transcripts expose no rate-limit data" />
+          {claudeWindows.length > 0 ? (
+            claudeWindows.map((w, i) => (
+              <Fragment key={w.label ?? i}>
+                {i > 0 && <ItemSeparator />}
+                <StatRow
+                  label={`claude quota · ${String(w.label ?? 'window').toLowerCase()}`}
+                  value={`${Math.round(w.used_percent)}%`}
+                  // Verbatim. Claude's reset text has no year and no epoch in it,
+                  // so there is nothing to reformat and nothing to guess.
+                  hint={w.resets_at_text ? `resets ${w.resets_at_text}` : undefined}
+                />
+              </Fragment>
+            ))
+          ) : (
+            <StatRow label="claude quota" value="n/a" hint="requires a signed-in Claude subscription" />
+          )}
         </ItemGroup>
 
         <SectionLabel>Context</SectionLabel>
