@@ -32,8 +32,7 @@ import { PanelLeft } from "lucide-react"
 
 import { useIsMobile } from "@/hooks/use-mobile"
 import { cn } from "@/lib/utils"
-import { Button } from "@/components/ui/button"
-import { Icon } from "@/components/ui/icon"
+import { IconButton } from "@/components/ui/icon-button"
 import { Input } from "@/components/ui/input"
 import { Separator } from "@/components/ui/separator"
 import {
@@ -43,7 +42,6 @@ import {
   SheetHeader,
   SheetTitle,
 } from "@/components/ui/sheet"
-import { Skeleton } from "@/components/ui/skeleton"
 import {
   Tooltip,
   TooltipContent,
@@ -291,7 +289,7 @@ const Sidebar = React.forwardRef<
         >
           <div
             data-sidebar="sidebar"
-            className="flex h-full w-full flex-col bg-surface-1 group-data-[variant=floating]:rounded-lg group-data-[variant=floating]:raised"
+            className="flex h-full w-full flex-col bg-surface-1 group-data-[variant=floating]:rounded-4 group-data-[variant=floating]:raised"
           >
             {children}
           </div>
@@ -302,28 +300,30 @@ const Sidebar = React.forwardRef<
 )
 Sidebar.displayName = "Sidebar"
 
+// Stage 5 (#71) item 1: an icon-only toggle button is IconButton's whole job
+// now (dead code today -- grep confirms nothing imports SidebarTrigger, see
+// nav-sidebar.tsx/header.tsx, which drive the sidebar through their own
+// IconButton call sites instead -- but it still has to typecheck against
+// Button's new 5-variant/3-size API, which no longer has an icon-only size).
 const SidebarTrigger = React.forwardRef<
-  React.ElementRef<typeof Button>,
-  React.ComponentProps<typeof Button>
->(({ className, onClick, ...props }, ref) => {
+  HTMLButtonElement,
+  React.ComponentProps<typeof IconButton>
+>(({ className, onClick, icon = PanelLeft, ...props }, ref) => {
   const { toggleSidebar } = useSidebar()
 
   return (
-    <Button
+    <IconButton
       ref={ref}
       data-sidebar="trigger"
-      variant="ghost"
-      size="icon"
-      className={cn("h-7 w-7", className)}
+      icon={icon}
+      className={className}
+      aria-label="Toggle Sidebar"
       onClick={(event) => {
         onClick?.(event)
         toggleSidebar()
       }}
       {...props}
-    >
-      <Icon icon={PanelLeft} />
-      <span className="sr-only">Toggle Sidebar</span>
-    </Button>
+    />
   )
 })
 SidebarTrigger.displayName = "SidebarTrigger"
@@ -366,7 +366,7 @@ const SidebarInset = React.forwardRef<
       ref={ref}
       className={cn(
         "relative flex w-full flex-1 flex-col bg-surface-0",
-        "md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-xl md:peer-data-[variant=inset]:raised",
+        "md:peer-data-[variant=inset]:m-2 md:peer-data-[state=collapsed]:peer-data-[variant=inset]:ml-2 md:peer-data-[variant=inset]:ml-0 md:peer-data-[variant=inset]:rounded-4 md:peer-data-[variant=inset]:raised",
         className
       )}
       {...props}
@@ -482,7 +482,7 @@ const SidebarGroupLabel = React.forwardRef<
       ref={ref}
       data-sidebar="group-label"
       className={cn(
-        "flex h-8 shrink-0 items-center rounded-md px-2 font-mono text-label uppercase text-ink-3 transition-[margin,opacity] duration-200 ease-linear [&>svg]:shrink-0",
+        "flex h-8 shrink-0 items-center rounded-3 px-2 font-mono text-label uppercase text-ink-3 transition-[margin,opacity] duration-200 ease-linear [&>svg]:shrink-0",
         // eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 10: this `group-data-[collapsible=icon]:` selector is dead code today (AppSidebar uses collapsible="offcanvas", never "icon", see nav-sidebar.tsx), scheduled for deletion there, not modification here.
         "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className
@@ -504,7 +504,7 @@ const SidebarGroupAction = React.forwardRef<
       ref={ref}
       data-sidebar="group-action"
       className={cn(
-        "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-ink transition-transform hover:wash-hover [&>svg]:shrink-0",
+        "absolute right-3 top-3.5 flex aspect-square w-5 items-center justify-center rounded-1 p-0 text-ink transition-transform hover:wash-hover [&>svg]:shrink-0",
         // Increases the hit area of the button on mobile.
         "after:absolute after:-inset-2 after:md:hidden",
         "group-data-[collapsible=icon]:hidden",
@@ -556,8 +556,14 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = "SidebarMenuItem"
 
 const sidebarMenuButtonVariants = cva(
-  // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71): Sidebar primitive rewrite owns this menu-action reservation; no data-[sidebar=menu-action] call site exists in this app today (grep returns nothing), so it is also currently dead. Zero-visual-delta this stage either way.
-  "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left font-mono text-row transition-[width,height,padding] hover:wash-hover active:wash-press disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-selected data-[state=open]:hover:wash-hover group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:shrink-0",
+  // Stage 5 (#71): `pr-6` (24px) replaces the old `pr-8` (32px, not one of
+  // the eight permitted spacing steps) for the menu-action reservation --
+  // still dead code today (no `data-[sidebar=menu-action]` call site exists
+  // in this app, grep confirms), fixed anyway since it must typecheck/lint
+  // clean regardless of live usage. Radius moves into the size variants
+  // below (concentric with each size's own control-height tier) rather than
+  // one fixed `rounded-md` for all three heights.
+  "peer/menu-button flex w-full items-center gap-2 overflow-hidden p-2 text-left font-mono text-row transition-[width,height,padding] hover:wash-hover active:wash-press disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-6 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-selected data-[state=open]:hover:wash-hover group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -571,11 +577,11 @@ const sidebarMenuButtonVariants = cva(
           "bg-surface-0 shadow-[0_0_0_1px_var(--hairline)] hover:shadow-[0_0_0_1px_var(--hairline),inset_0_0_0_999px_var(--overlay-hover)]",
       },
       // Label is `row` regardless of size (section 6's Button pattern):
-      // only box height differentiates default/sm/lg now.
+      // only box height/radius differentiates default/sm/lg now.
       size: {
-        default: "h-8",
-        sm: "h-7",
-        lg: "h-12 group-data-[collapsible=icon]:!p-0",
+        default: "h-8 rounded-3",
+        sm: "h-7 rounded-2",
+        lg: "h-12 rounded-3 group-data-[collapsible=icon]:!p-0",
       },
     },
     defaultVariants: {
@@ -658,7 +664,7 @@ const SidebarMenuAction = React.forwardRef<
       ref={ref}
       data-sidebar="menu-action"
       className={cn(
-        "absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-md p-0 text-ink transition-transform hover:wash-hover [&>svg]:shrink-0",
+        "absolute right-1 top-1.5 flex aspect-square w-5 items-center justify-center rounded-1 p-0 text-ink transition-transform hover:wash-hover [&>svg]:shrink-0",
         // Increases the hit area of the button on mobile.
         "after:absolute after:-inset-2 after:md:hidden",
         "peer-data-[size=sm]/menu-button:top-1",
@@ -675,6 +681,13 @@ const SidebarMenuAction = React.forwardRef<
 })
 SidebarMenuAction.displayName = "SidebarMenuAction"
 
+// Stage 5 (#71) item 1: a bare positioning shell now -- docs/design-system.md
+// section 6's own words, "Only the sidebar unread badge is alert," name this
+// exact call site as CountToken's `tone="alert"`, so every visual/
+// typographic concern (height, radius, fill, ink) moves onto CountToken
+// itself (nav-sidebar.tsx renders it as this component's child); this
+// component keeps only what CountToken cannot know about itself: absolute
+// positioning against its sibling SidebarMenuButton's own size.
 const SidebarMenuBadge = React.forwardRef<
   HTMLDivElement,
   React.ComponentProps<"div">
@@ -682,13 +695,8 @@ const SidebarMenuBadge = React.forwardRef<
   <div
     ref={ref}
     data-sidebar="menu-badge"
-    data-numeric
     className={cn(
-      // docs/design-system.md section 6: CountToken is `row` under
-      // `[data-numeric]` -- this IS the sidebar unread badge that section
-      // names as the one `alert`-tone call site.
-      "pointer-events-none absolute right-1 flex h-5 min-w-5 select-none items-center justify-center rounded-md px-1 font-mono text-row tabular-nums text-ink",
-      "peer-hover/menu-button:text-ink peer-data-[active=true]/menu-button:text-ink",
+      "pointer-events-none absolute right-1 select-none",
       "peer-data-[size=sm]/menu-button:top-1",
       "peer-data-[size=default]/menu-button:top-1.5",
       "peer-data-[size=lg]/menu-button:top-2.5",
@@ -700,43 +708,10 @@ const SidebarMenuBadge = React.forwardRef<
 ))
 SidebarMenuBadge.displayName = "SidebarMenuBadge"
 
-const SidebarMenuSkeleton = React.forwardRef<
-  HTMLDivElement,
-  React.ComponentProps<"div"> & {
-    showIcon?: boolean
-  }
->(({ className, showIcon = false, ...props }, ref) => {
-  // Random width between 50 to 90%.
-  const width = React.useMemo(() => {
-    return `${Math.floor(Math.random() * 40) + 50}%`
-  }, [])
-
-  return (
-    <div
-      ref={ref}
-      data-sidebar="menu-skeleton"
-      className={cn("flex h-8 items-center gap-2 rounded-md px-2", className)}
-      {...props}
-    >
-      {showIcon && (
-        <Skeleton
-          className="size-4 rounded-md"
-          data-sidebar="menu-skeleton-icon"
-        />
-      )}
-      <Skeleton
-        className="h-4 max-w-[var(--skeleton-width)] flex-1"
-        data-sidebar="menu-skeleton-text"
-        style={
-          {
-            "--skeleton-width": width,
-          } as React.CSSProperties
-        }
-      />
-    </div>
-  )
-})
-SidebarMenuSkeleton.displayName = "SidebarMenuSkeleton"
+// SidebarMenuSkeleton is deleted (issue #71 item 9 deletes skeleton.tsx
+// outright and this was its only consumer -- no call site anywhere in this
+// app, grep confirms, and there is no loading state in the sidebar that
+// would ever need one).
 
 const SidebarMenuSub = React.forwardRef<
   HTMLUListElement,
@@ -746,8 +721,11 @@ const SidebarMenuSub = React.forwardRef<
     ref={ref}
     data-sidebar="menu-sub"
     className={cn(
-      // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71): Sidebar primitive rewrite owns this; SidebarMenuSub has no call site in this app today (grep returns nothing -- nav-sidebar.tsx's NAV_ITEMS is a flat list), so it is also currently dead. Zero-visual-delta this stage either way.
-      "mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-l-hairline px-2.5 py-0.5",
+      // Stage 5 (#71): mx-3 (12px) replaces the old mx-3.5 (14px, not one of
+      // the eight permitted spacing steps) -- still dead code today
+      // (SidebarMenuSub has no call site, nav-sidebar.tsx's NAV_ITEMS is a
+      // flat list), fixed anyway since it must lint clean regardless.
+      "mx-3 flex min-w-0 translate-x-px flex-col gap-1 border-l border-l-hairline px-2.5 py-0.5",
       "group-data-[collapsible=icon]:hidden",
       className
     )}
@@ -779,7 +757,7 @@ const SidebarMenuSubButton = React.forwardRef<
       data-size={size}
       data-active={isActive}
       className={cn(
-        "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-md px-2 text-ink hover:wash-hover active:wash-press disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:shrink-0 [&>svg]:text-ink-3",
+        "flex h-7 min-w-0 -translate-x-px items-center gap-2 overflow-hidden rounded-2 px-2 text-ink hover:wash-hover active:wash-press disabled:pointer-events-none disabled:opacity-50 aria-disabled:pointer-events-none aria-disabled:opacity-50 [&>span:last-child]:truncate [&>svg]:shrink-0 [&>svg]:text-ink-3",
         "data-[active=true]:bg-selected data-[active=true]:text-ink",
         // Nav sub-item labels are `row` regardless of size (same Button
         // pattern as SidebarMenuButton above).
@@ -809,7 +787,6 @@ export {
   SidebarMenuBadge,
   SidebarMenuButton,
   SidebarMenuItem,
-  SidebarMenuSkeleton,
   SidebarMenuSub,
   SidebarMenuSubButton,
   SidebarMenuSubItem,

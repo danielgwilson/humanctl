@@ -49,19 +49,20 @@ const Toaster = ({ className, ...props }: ToasterProps) => {
           // call sites verbatim ("toasts") -- the one transient-feedback
           // surface for a mutation, and the message inside it is language
           // addressed to the human, not a machine value.
+          // Stage 5 (#71) item 8: px-4 (16px) replaces the old px-3.5 (14px,
+          // not one of the eight permitted spacing steps).
           toast:
-            // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: Toast primitive rewrite owns this padding; zero-visual-delta this stage.
-            "flex w-full items-center gap-2.5 rounded-md hairline bg-surface-2 px-3.5 py-2.5 font-sans text-prose text-ink shadow-none data-[type=error]:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[type=error]:text-block-contrast",
+            "flex w-full items-center gap-2.5 rounded-2 hairline bg-surface-2 px-4 py-2.5 font-sans text-prose text-ink shadow-none data-[type=error]:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[type=error]:text-block-contrast",
           title: "font-medium",
           description: "text-ink-3",
           // Buttons keep `row`, the one label role every Button/IconButton
           // size resolves to (section 6) -- these sit inside sans-language
           // toast copy, so the family must be re-asserted explicitly.
+          // rounded-1 (r6, the 20px-control tier -- these buttons sit inside
+          // a compact toast row) replaces the old bracketed rounded-[5px].
           actionButton:
-            // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Toast primitive rewrite owns this radius.
-            "ml-auto rounded-[5px] shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] bg-transparent px-2 py-1 font-mono text-row text-iris-contrast hover:bg-iris-soft",
-          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Toast primitive rewrite owns this radius.
-          cancelButton: "rounded-[5px] px-2 py-1 font-mono text-row text-ink-3 hover:text-ink",
+            "ml-auto rounded-1 shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] bg-transparent px-2 py-1 font-mono text-row text-iris-contrast hover:bg-iris-soft",
+          cancelButton: "rounded-1 px-2 py-1 font-mono text-row text-ink-3 hover:text-ink",
         },
       }}
       {...props}

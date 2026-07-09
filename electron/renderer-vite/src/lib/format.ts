@@ -1,3 +1,5 @@
+import type { Hue } from '@/components/ui/dot';
+
 // Small formatting helpers for numbers/labels shown throughout the renderer.
 export function agoTxt(ts: number): string {
   const ms = Date.now() - ts;
@@ -87,14 +89,31 @@ export function cwdBase(p?: string): string {
   return parts[parts.length - 1] || p;
 }
 
-// `variant` names the Chip cva variant (components/ui/chip.tsx) that renders
-// this state's hue -- one strict map, DESIGN.md: "Colors are semantic and
-// fixed per axis".
-export type ChipVariant = 'work' | 'need' | 'block' | 'idle' | 'done' | 'fyi' | 'review' | 'label' | 'label-iris' | 'label-need' | 'label-block' | 'label-done';
-export const STATE_META: Record<string, { variant: ChipVariant; label: string }> = {
-  work: { variant: 'work', label: 'running' },
-  need: { variant: 'need', label: 'needs input' },
-  block: { variant: 'block', label: 'blocked' },
-  idle: { variant: 'idle', label: 'stalled' },
-  done: { variant: 'done', label: 'finished' },
+// `hue` names the Chip `hue` prop (components/ui/chip.tsx, `variant="state"`)
+// that renders this state -- one strict map, DESIGN.md: "Colors are semantic
+// and fixed per axis". Stage 5 (#71) item 3: Chip's API moved from a
+// twelve-value `variant` enum (one entry per state/level/hue-tinted-label
+// combination) to `variant: 'state' | 'meta'` plus a separate `hue` prop
+// drawn from docs/design-system.md section 1.6's eight named hues
+// (components/ui/dot.tsx's `Hue` type is the single source of truth).
+export const STATE_META: Record<string, { hue: Hue; label: string }> = {
+  work: { hue: 'work', label: 'running' },
+  need: { hue: 'need', label: 'needs input' },
+  block: { hue: 'block', label: 'blocked' },
+  idle: { hue: 'idle', label: 'stalled' },
+  done: { hue: 'done', label: 'finished' },
+};
+
+// The 12-row map's other four rows (section 1.6: "eight session states and
+// four note levels, every one owned"): a note's `level` (fyi/review/blocked/
+// done) is itself one of the state-hue words, so it renders through the same
+// `Chip variant="state"` treatment as a session state, never a plain
+// uncoloured "meta" tag. Fixes a real bug in session-detail.tsx's stream:
+// the note-level chip used to hardcode `variant="label-iris"` regardless of
+// the note's actual level.
+export const NOTE_LEVEL_HUE: Record<string, Hue> = {
+  fyi: 'idle',
+  review: 'need',
+  blocked: 'block',
+  done: 'done',
 };

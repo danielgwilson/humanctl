@@ -21,8 +21,8 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         className="min-w-[120px] flex-1 basis-[200px]"
       />
       <Select value={filter.state || 'all'} onValueChange={(v) => onChange({ ...filter, state: v === 'all' ? '' : v })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-micro">
+        {/* Stage 5 (#71) item 4: SelectTrigger is one height (28px/r8) now, no per-instance override needed. */}
+        <SelectTrigger aria-label="Filter by state" className="w-auto font-mono text-micro">
           <SelectValue placeholder="all states" />
         </SelectTrigger>
         <SelectContent>
@@ -35,8 +35,7 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         </SelectContent>
       </Select>
       <Select value={filter.harness || 'all'} onValueChange={(v) => onChange({ ...filter, harness: v === 'all' ? '' : v })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-micro">
+        <SelectTrigger aria-label="Filter by harness" className="w-auto font-mono text-micro">
           <SelectValue placeholder="all harnesses" />
         </SelectTrigger>
         <SelectContent>
@@ -46,8 +45,7 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         </SelectContent>
       </Select>
       <Select value={filter.sort} onValueChange={(v) => onChange({ ...filter, sort: v as InboxFilter['sort'] })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Sort inbox threads" className="h-[30px] w-auto font-mono text-micro">
+        <SelectTrigger aria-label="Sort inbox threads" className="w-auto font-mono text-micro">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

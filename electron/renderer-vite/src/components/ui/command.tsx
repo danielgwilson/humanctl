@@ -26,7 +26,7 @@ function Command({
     <CommandPrimitive
       data-slot="command"
       className={cn(
-        "flex h-full w-full flex-col overflow-hidden rounded-lg bg-surface-2 font-mono text-row text-ink",
+        "flex h-full w-full flex-col overflow-hidden rounded-4 bg-surface-2 font-mono text-row text-ink",
         className
       )}
       {...props}
@@ -60,7 +60,7 @@ function CommandDialog({
       </DialogHeader>
       <DialogContent
         className={cn(
-          "top-[16%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-lg overlay bg-surface-2 p-0",
+          "top-[16%] max-w-xl translate-y-0 gap-0 overflow-hidden rounded-4 overlay bg-surface-2 p-0",
           className
         )}
         showCloseButton={showCloseButton}
@@ -86,7 +86,7 @@ function CommandInput({
       <CommandPrimitive.Input
         data-slot="command-input"
         className={cn(
-          "flex h-full w-full rounded-md bg-transparent font-mono text-row text-ink outline-hidden placeholder:text-ink-4 disabled:cursor-not-allowed disabled:opacity-50",
+          "flex h-full w-full rounded-2 bg-transparent font-mono text-row text-ink outline-hidden placeholder:text-ink-4 disabled:cursor-not-allowed disabled:opacity-50",
           className
         )}
         {...props}
@@ -103,8 +103,10 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
-        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Command primitive rewrite owns this list max-height; zero-visual-delta this stage.
-        "max-h-[420px] scroll-py-1 overflow-x-hidden overflow-y-auto py-1.5",
+        // max-h-105 is Tailwind's generative spacing scale (105 * 0.25rem =
+        // 420px), replacing the old bracketed max-h-[420px] -- same 420px,
+        // no lint suppression needed.
+        "max-h-105 scroll-py-1 overflow-x-hidden overflow-y-auto py-1.5",
         className
       )}
       {...props}
@@ -119,8 +121,9 @@ function CommandEmpty({
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
-      // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: Command primitive rewrite owns this empty-state padding; zero-visual-delta this stage.
-      className={cn("py-10 text-center font-mono text-micro text-ink-3", className)}
+      // py-6 (24px) is the largest of the eight permitted spacing steps,
+      // replacing the old py-10 (40px, not on the list).
+      className={cn("py-6 text-center font-mono text-micro text-ink-3", className)}
       {...props}
     />
   )
@@ -166,7 +169,7 @@ function CommandItem({
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "relative flex cursor-pointer items-center gap-2.5 rounded-md px-2.5 py-2 font-mono text-row text-ink outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-selected data-[selected=true]:text-ink [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
+        "relative flex cursor-pointer items-center gap-2.5 rounded-2 px-2.5 py-2 font-mono text-row text-ink outline-hidden select-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-50 data-[selected=true]:bg-selected data-[selected=true]:text-ink [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
         className
       )}
       {...props}

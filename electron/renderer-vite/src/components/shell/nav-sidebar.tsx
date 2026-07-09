@@ -21,6 +21,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu';
 import { Icon } from '@/components/ui/icon';
+import { CountToken } from '@/components/ui/count-token';
 import { cn } from '@/lib/utils';
 import type { AppState } from '@/lib/types';
 
@@ -126,20 +127,13 @@ export function AppSidebar({
                   <span>{item.label}</span>
                 </SidebarMenuButton>
                 {unread && (
-                  <SidebarMenuBadge
-                    // Stage 2b forced this badge back on in collapsed/icon
-                    // mode (group-data-[collapsible=icon]:hidden override)
-                    // and shrank its geometry to fit the 32px collapsed
-                    // button. Offcanvas has no visible collapsed state (the
-                    // whole rail is off-window), so that override is dead
-                    // code now -- the badge only ever renders in the
-                    // expanded row, where the primitive's default geometry
-                    // already fits. `alert` per section 6's CountToken row:
-                    // "Attention is a fill; ... Only the sidebar unread
-                    // badge is alert."
-                    className="rounded-full bg-iris-solid text-on-solid"
-                  >
-                    {unreadCount}
+                  // Stage 5 (#71) item 1: SidebarMenuBadge is now a bare
+                  // positioning shell (sidebar.tsx); CountToken's own
+                  // `tone="alert"` supplies the fill/radius/ink section 6
+                  // names for this exact call site ("Only the sidebar
+                  // unread badge is alert").
+                  <SidebarMenuBadge>
+                    <CountToken tone="alert" count={unreadCount} />
                   </SidebarMenuBadge>
                 )}
               </SidebarMenuItem>

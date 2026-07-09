@@ -12,9 +12,7 @@ import { Separator } from "@/components/ui/separator"
 // surfaces, no cards, no shadows-as-hierarchy"): the `default` variant below
 // is intentionally border-less and shadow-less, a flat row separated from
 // its neighbors by `ItemSeparator` (a hairline `Separator`), never a
-// bordered box. `outline`/`muted` variants round out the shadcn Item
-// contract for future call-sites; session-detail's stream uses only
-// `default` + `ItemSeparator`.
+// bordered box.
 function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
@@ -26,6 +24,11 @@ function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// Stage 5 (#71) item 8: `inset` by default -- an ItemGroup is a bounded
+// container of related rows (section 3.6: "A rule inside a bounded container
+// is inset by that container's horizontal padding, so a divider always
+// terminates at the same x as the content it divides"), and Item's own
+// horizontal padding (item 6, `px-6`) IS that container padding.
 function ItemSeparator({
   className,
   ...props
@@ -34,30 +37,36 @@ function ItemSeparator({
     <Separator
       data-slot="item-separator"
       orientation="horizontal"
+      inset
       className={cn("my-0", className)}
       {...props}
     />
   )
 }
 
+// Stage 5 (#71) item 6: "Item gets its horizontal padding back; outline and
+// muted variants deleted." Flat: no border, no background -- the row
+// separator (a hairline ItemSeparator) carries hierarchy, never a box, so
+// the two boxed variants (a hairline ring, a filled surface) are dropped
+// outright; nothing in the app called either one. The old `px-0` shifted the
+// pane gutter onto each call site instead (settings-view.tsx and
+// metrics-view.tsx's StatRow both had to re-add `px-6` by hand every time);
+// `px-6` here is the same pane-gutter value ViewHeader/ContextBar/ThreadRow
+// already use for a top-level row, so those per-call-site overrides become
+// redundant (and are cleaned up in the same change). Call sites that nest an
+// Item inside an already-inset container (session-detail.tsx's stream, which
+// wraps its own `border-l-2 ... pl-3` note-style rows) override the
+// horizontal side that needs it, same as any other cva default.
 const itemVariants = cva(
-  "group/item flex flex-wrap items-center rounded-md border border-transparent font-mono text-row transition-colors",
+  "group/item flex flex-wrap items-center rounded-2 border border-transparent font-mono text-row transition-colors",
   {
     variants: {
-      variant: {
-        // Flat: no border, no background -- the row separator (a hairline
-        // ItemSeparator) carries hierarchy, never a box.
-        default: "bg-transparent",
-        outline: "hairline",
-        muted: "bg-surface-2",
-      },
       size: {
-        default: "gap-3 px-0 py-3",
-        sm: "gap-2.5 px-0 py-2",
+        default: "gap-3 px-6 py-3",
+        sm: "gap-2.5 px-6 py-2",
       },
     },
     defaultVariants: {
-      variant: "default",
       size: "default",
     },
   }
@@ -65,7 +74,6 @@ const itemVariants = cva(
 
 function Item({
   className,
-  variant = "default",
   size = "default",
   asChild = false,
   role = "listitem",
@@ -76,10 +84,9 @@ function Item({
   return (
     <Comp
       data-slot="item"
-      data-variant={variant}
       data-size={size}
       role={role}
-      className={cn(itemVariants({ variant, size }), className)}
+      className={cn(itemVariants({ size }), className)}
       {...props}
     />
   )
@@ -91,8 +98,8 @@ const itemMediaVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        icon: "size-8 rounded-md hairline bg-surface-2 [&_svg:not([class*='size-'])]:size-4",
-        image: "size-10 overflow-hidden rounded-md [&_img]:size-full [&_img]:object-cover",
+        icon: "size-8 rounded-3 hairline bg-surface-2 [&_svg:not([class*='size-'])]:size-4",
+        image: "size-10 overflow-hidden rounded-3 [&_img]:size-full [&_img]:object-cover",
       },
     },
     defaultVariants: {

@@ -65,7 +65,7 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg overlay bg-surface-2 p-6 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-4 overlay bg-surface-2 p-6 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
         {...props}
@@ -81,7 +81,7 @@ function DialogContent({
           // deleted rather than retargeted.
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-hover data-[state=open]:text-ink-3 [&_svg]:pointer-events-none [&_svg]:shrink-0"
+            className="absolute top-4 right-4 rounded-1 opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-hover data-[state=open]:text-ink-3 [&_svg]:pointer-events-none [&_svg]:shrink-0"
           >
             <Icon icon={XIcon} />
             <span className="sr-only">Close</span>
@@ -122,7 +122,7 @@ function DialogFooter({
       {children}
       {showCloseButton && (
         <DialogPrimitive.Close asChild>
-          <Button variant="outline">Close</Button>
+          <Button variant="default">Close</Button>
         </DialogPrimitive.Close>
       )}
     </div>

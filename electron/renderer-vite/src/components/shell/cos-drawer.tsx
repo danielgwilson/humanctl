@@ -70,7 +70,13 @@ export function CosDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
               disabled={loading}
               maxLength={500}
             />
-            <Button variant="accent-outline" onClick={send} disabled={loading} className="flex-none">
+            {/* Stage 5 (#71) item 2: this and session-detail.tsx's "Ask the
+                session" send button are the two Ask buttons the issue names
+                as the acceptance test -- both `variant="primary"` (no
+                `accent-outline`/`done` colour dialect left to pick between,
+                section 6's five-variant table has no room for one), so they
+                render identically: same fill, height, radius, and press. */}
+            <Button variant="primary" onClick={send} disabled={loading} className="flex-none">
               Ask
             </Button>
           </div>

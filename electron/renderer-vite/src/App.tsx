@@ -14,6 +14,7 @@ import { MetricsView } from '@/components/views/metrics-view';
 import { FleetView } from '@/components/views/fleet-view';
 import { SessionsView } from '@/components/views/sessions-view';
 import { SettingsView } from '@/components/views/settings-view';
+import { KitchenSink } from '@/components/kitchen-sink';
 import { useAppState, useFleetData, useSessionSummarize } from '@/hooks/use-humanctl';
 import type { AppState, InboxThread, SessionRow, ViewName } from '@/lib/types';
 
@@ -43,6 +44,13 @@ export default function App() {
   const { state, patch } = useAppState();
   const { summarize, loadingId: summaryLoadingId, errors: summaryErrors } = useSessionSummarize();
   const [paletteOpen, setPaletteOpen] = useState(false);
+  // /kitchen-sink (design-system stage 5, #71's own verification demand): a
+  // fixture-only route showing every primitive in every variant/state.
+  // Deliberately NOT part of AppState.view/ViewName (no registered command,
+  // no nav-rail entry, no keyboard shortcut) -- reachable only through the
+  // same renderer-only __humanctlPerf test hook capture-screenshots.js
+  // already uses for setView/setTheme/openDetail below.
+  const [kitchenSink, setKitchenSink] = useState(false);
 
   const byId = useMemo(() => {
     const m = new Map<string, SessionRow>();
@@ -94,7 +102,8 @@ export default function App() {
   // signal instead of the screenshot script poking document.documentElement
   // directly. openDetail opens session detail on a given fixture id, or the
   // first known session when no id is given, so the capture script never
-  // has to hardcode a fixture id.
+  // has to hardcode a fixture id. setKitchenSink is the same kind of hook,
+  // toggling the local-only `kitchenSink` state above.
   useEffect(() => {
     const w = window as unknown as Record<string, unknown>;
     w.__humanctlPerf = {
@@ -102,6 +111,7 @@ export default function App() {
       refresh,
       setTheme: (t: 'dark' | 'light') => patch({ theme: t }),
       openDetail: (id?: string) => patch({ selectedId: id || rows[0]?.id }),
+      setKitchenSink: (v: boolean) => setKitchenSink(v),
     };
     return () => { delete w.__humanctlPerf; };
   }, [patch, refresh, rows]);
@@ -254,7 +264,9 @@ export default function App() {
         <SidebarInset className="h-full overflow-hidden">
           <Header demo={demo} version={status?.version} rightRailOpen={state.rightRailOpen} onToggleRightRail={() => patch({ rightRailOpen: !state.rightRailOpen })} />
           <div className="relative min-h-0 flex-1 overflow-hidden">
-            {selectedThread ? (
+            {kitchenSink ? (
+              <KitchenSink />
+            ) : selectedThread ? (
               <SessionDetail
                 thread={selectedThread}
                 row={selectedRow}

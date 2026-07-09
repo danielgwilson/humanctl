@@ -6,6 +6,7 @@ import { SessionDetail } from '@/components/session/session-detail';
 import { Button } from '@/components/ui/button';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
+import { CountToken } from '@/components/ui/count-token';
 import type { InboxThread, SessionRow } from '@/lib/types';
 import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
 
@@ -91,19 +92,23 @@ export function InboxView({
               dropping the explicit font-semibold/tracking-widest now baked
               into the role token. */}
           <span className="font-mono text-label uppercase text-ink-2">Inbox</span>
-          <span className="font-mono text-micro text-ink-4">
-            <span data-numeric>{list.length}</span> {list.length === 1 ? 'thread' : 'threads'}
-          </span>
-          {/* Button label is `row` at every size (section 6); no per-instance
-              size override any more. */}
-          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 text-ink-3" onClick={onMarkAllRead}>
+          {/* Stage 5 (#71) item 1: CountToken's own "info" tone (this file's
+              header comment on the primitive names this exact call site) --
+              replaces the hand-rolled count+noun span pair. */}
+          <CountToken count={list.length} noun={list.length === 1 ? 'thread' : 'threads'} />
+          {/* Stage 5 (#71) item 2: `quiet` (already ink-3) replaces
+              `outline` + the old h-6/px-2 override -- size="sm" (20px) is
+              already close to the old h-6 (24px), and Button label is `row`
+              at every size (section 6), no per-instance override needed. */}
+          <Button variant="quiet" size="sm" className="ml-auto" onClick={onMarkAllRead}>
             mark all read
           </Button>
         </div>
         <InboxToolbar filter={filter} onChange={setFilter} />
         <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
           {list.length === 0 ? (
-            <Empty className="h-full">
+            // Stage 5 (#71) item 7: h-full is Empty's own base now.
+            <Empty>
               <EmptyDescription>
                 No agent updates match. Agents post here via <code>humanctl note</code>.
               </EmptyDescription>

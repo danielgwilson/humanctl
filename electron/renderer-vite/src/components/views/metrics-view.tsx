@@ -26,8 +26,10 @@ function SectionLabel({ children }: { children: ReactNode }) {
 }
 
 function StatRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  // Stage 5 (#71) item 6: px-6 is Item's own default now (the override this
+  // row used to carry by hand).
   return (
-    <Item size="sm" className="justify-between px-6">
+    <Item size="sm" className="justify-between">
       <span className="font-mono text-micro text-ink-3">{label}</span>
       <span className="flex items-baseline gap-1.5 font-mono text-stat text-ink" data-numeric>
         {value}

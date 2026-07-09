@@ -17,12 +17,14 @@
 // process-hygiene rationale this reuses verbatim).
 //
 // What it produces: the five views (inbox, metrics, fleet, sessions,
-// settings) x both themes, plus session detail x both themes, one PNG each,
-// via window.__humanctlPerf (electron/renderer-vite/src/App.tsx) -- the same
-// renderer-only test hook the perf gate uses, extended here with setTheme and
-// openDetail. 12 PNGs total, written to --out (default output/screenshots,
-// gitignored by the repo's top-level `output` entry). To produce the
-// COMMITTED gate set under screenshots/<stage>/, pass that path explicitly:
+// settings) x both themes, plus session detail x both themes, plus
+// /kitchen-sink (design-system stage 5, #71's own verification demand) x
+// both themes, one PNG each, via window.__humanctlPerf (electron/renderer-
+// vite/src/App.tsx) -- the same renderer-only test hook the perf gate uses,
+// extended here with setTheme, openDetail, and setKitchenSink. 14 PNGs
+// total, written to --out (default output/screenshots, gitignored by the
+// repo's top-level `output` entry). To produce the COMMITTED gate set under
+// screenshots/<stage>/, pass that path explicitly:
 // `npm run screenshots -- --out screenshots/<stage>`.
 //
 // Usage: node scripts/capture-screenshots.js [--out <dir>] [--port <n>]
@@ -267,6 +269,38 @@ async function capture(cdp, outDir, filename) {
   log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size} bytes)`);
 }
 
+// /kitchen-sink is one long page (every primitive in every variant, issue
+// #71's own verification demand) scrolled inside its own ScrollArea, which
+// is a real `overflow` clip, not a document-level scroll -- so
+// Page.captureScreenshot's captureBeyondViewport can't see past it the way
+// it can for ordinary page overflow (that flag extends the SHOT past the
+// window's viewport, it does not un-clip an element's own overflow:hidden/
+// scroll). Several of this route's sections also force a Radix Dialog/
+// DropdownMenu/Tooltip open simultaneously, each of which moves focus into
+// itself on mount and can auto-scroll the ScrollArea to bring itself into
+// view, which makes a plain fixed-viewport screenshot's scroll position
+// non-deterministic on top of that (observed: it landed mid-page, skipping
+// every primitive above Progress, on one run).
+//
+// Fixed by growing the BROWSER'S viewport to fit the content instead of
+// fighting the clip: every ancestor between the window and the kitchen-sink
+// ScrollArea sizes itself off the viewport (h-screen / h-full / flex-1), so
+// making the viewport tall enough that the ScrollArea's own "h-full" never
+// needs to scroll renders the whole page in one normal screenshot. Measures
+// the ScrollArea viewport's real scrollHeight, resizes to it (plus a little
+// headroom for the app's own header/context-bar chrome), settles once more,
+// captures, then restores the standard VIEWPORT for the next iteration.
+async function captureKitchenSink(cdp, outDir, filename) {
+  const contentHeight = await evalJS(cdp, `
+    document.querySelector('[data-radix-scroll-area-viewport]')?.scrollHeight || document.body.scrollHeight
+  `);
+  const tallViewport = { ...VIEWPORT, height: Math.ceil(contentHeight) + 120 };
+  await cdp.send('Emulation.setDeviceMetricsOverride', tallViewport);
+  await settle(cdp);
+  await capture(cdp, outDir, filename);
+  await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+}
+
 async function main() {
   const outArg = arg('out', DEFAULT_OUT);
   const outDir = path.isAbsolute(outArg) ? outArg : path.join(REPO_ROOT, outArg);
@@ -297,11 +331,11 @@ async function main() {
 
     let booted = false;
     for (let i = 0; i < BOOT_POLL_ATTEMPTS; i++) {
-      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail)`);
+      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail && window.__humanctlPerf.setKitchenSink)`);
       if (ready) { booted = true; break; }
       await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
     }
-    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail -- did the App.tsx perf hook change shape?');
+    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail/setKitchenSink -- did the App.tsx perf hook change shape?');
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
 
@@ -320,9 +354,20 @@ async function main() {
       await evalJS(cdp, `window.__humanctlPerf.openDetail(); true`);
       await settle(cdp);
       await capture(cdp, outDir, `session-detail-${theme}.png`);
+
+      // /kitchen-sink (design-system stage 5, #71): App.tsx's render order
+      // checks kitchenSink BEFORE selectedThread, so it overrides the open
+      // session detail from the capture just above with no separate
+      // "close" step needed. Toggle the fixture-only route on, capture, and
+      // toggle it back off before the next theme iteration's own view loop
+      // runs.
+      await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(true); true`);
+      await settle(cdp);
+      await captureKitchenSink(cdp, outDir, `kitchen-sink-${theme}.png`);
+      await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(false); true`);
     }
 
-    log(`done: 12 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: 14 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

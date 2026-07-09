@@ -1,8 +1,7 @@
 import { PanelLeft, PanelRight } from 'lucide-react';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { useSidebar } from '@/components/ui/sidebar';
-import { Icon } from '@/components/ui/icon';
 import { cn } from '@/lib/utils';
 
 // Compact header: wordmark + version + the left-sidebar toggle and the
@@ -57,30 +56,17 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            {/* IconButton contract (section 6): "No ring at rest. Ring
-                appears only when it holds a value or is toggled on." The
-                ring is a single box-shadow property, so the neutral
-                `hairline` ring and the toggled-on colored ring are written
-                as mutually exclusive branches (never both classes at once)
-                rather than layered -- two classes setting the same
-                box-shadow property would leave the winner to Tailwind's
-                generated rule order, exactly what P3's ring-swap technique
-                exists to avoid. */}
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
+            {/* Stage 5 (#71) item 1: the new IconButton primitive owns "no
+                ring at rest, ring appears only when toggled on" natively
+                (icon-button.tsx) -- this used to force a NEUTRAL hairline
+                ring even at rest ('hairline text-ink-3'), which contradicted
+                that contract; deleted rather than carried forward. */}
+            <IconButton
+              icon={PanelLeft}
+              active={sidebarOpen}
               onClick={toggleSidebar}
               aria-label={sidebarOpen ? 'collapse sidebar' : 'expand sidebar'}
-              className={cn(
-                'h-7 w-7 rounded-md hover:bg-transparent hover:text-ink',
-                sidebarOpen
-                  ? 'shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] text-iris-contrast'
-                  : 'hairline text-ink-3',
-              )}
-            >
-              <Icon icon={PanelLeft} aria-hidden="true" />
-            </Button>
+            />
           </TooltipTrigger>
           <TooltipContent>toggle sidebar (&#8984;\)</TooltipContent>
         </Tooltip>
@@ -95,7 +81,7 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
         </span>
         <span className="font-mono text-label uppercase text-ink-3">{version ? `v${version}` : 'demo'}</span>
         {demo && (
-          <span className="rounded shadow-[inset_0_0_0_var(--hairline-w)_var(--need-contrast)] px-1.5 py-px font-mono text-label uppercase text-need-contrast">
+          <span className="rounded-1 shadow-[inset_0_0_0_var(--hairline-w)_var(--need-contrast)] px-1.5 py-px font-mono text-label uppercase text-need-contrast">
             demo &middot; fixture
           </span>
         )}
@@ -104,21 +90,12 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
-            <Button
-              type="button"
-              variant="ghost"
-              size="icon"
+            <IconButton
+              icon={PanelRight}
+              active={rightRailOpen}
               onClick={onToggleRightRail}
               aria-label="toggle chief-of-staff chat"
-              className={cn(
-                'h-7 w-7 rounded-md hover:bg-transparent hover:text-ink',
-                rightRailOpen
-                  ? 'shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] text-iris-contrast'
-                  : 'hairline text-ink-3',
-              )}
-            >
-              <Icon icon={PanelRight} aria-hidden="true" />
-            </Button>
+            />
           </TooltipTrigger>
           <TooltipContent>chief-of-staff chat (a)</TooltipContent>
         </Tooltip>
