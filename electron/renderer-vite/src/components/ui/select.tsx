@@ -23,20 +23,25 @@ function SelectValue({
   return <SelectPrimitive.Value data-slot="select-value" {...props} />
 }
 
+// Stage 5 (#71) item 4: one height, matching Input/Textarea's own row
+// (docs/design-system.md section 3.2's control-height table names "select
+// trigger" directly against the 28px/r8 tier). The old `default`/`sm`
+// two-size split (36px/32px) is deleted outright -- no call site in this app
+// ever passed `size="sm"` -- and every toolbar's own `h-[30px]` override
+// (six sites: inbox-toolbar.tsx x3, sessions-view.tsx x3) is deleted in the
+// same change, since 28px is now the trigger's only, correct height. This is
+// the issue's own named "fix, not a regression": both toolbars shorten by
+// (in the old scaffold's terms) up to 8px, matching their adjacent Input.
 function SelectTrigger({
   className,
-  size = "default",
   children,
   ...props
-}: React.ComponentProps<typeof SelectPrimitive.Trigger> & {
-  size?: "sm" | "default"
-}) {
+}: React.ComponentProps<typeof SelectPrimitive.Trigger>) {
   return (
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
-      data-size={size}
       className={cn(
-        "flex w-fit items-center justify-between gap-2 rounded-md hairline bg-transparent px-3 py-2 font-mono text-row whitespace-nowrap transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[placeholder]:text-ink-3 data-[size=default]:h-9 data-[size=sm]:h-8 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
+        "flex h-7 w-fit items-center justify-between gap-2 rounded-2 hairline bg-transparent px-3 py-2 font-mono text-row whitespace-nowrap transition-[color,box-shadow] disabled:cursor-not-allowed disabled:opacity-50 aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[placeholder]:text-ink-3 *:data-[slot=select-value]:line-clamp-1 *:data-[slot=select-value]:flex *:data-[slot=select-value]:items-center *:data-[slot=select-value]:gap-2 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
         className
       )}
       {...props}
@@ -61,8 +66,11 @@ function SelectContent({
       <SelectPrimitive.Content
         data-slot="select-content"
         className={cn(
-          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: Select primitive rewrite owns this min-width; zero-visual-delta this stage.
-          "relative z-50 max-h-(--radix-select-content-available-height) min-w-[8rem] origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md overlay bg-surface-2 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
+          // Stage 5 (#71) item 4: floating surface -> panel radius (rounded-4,
+          // r12). min-w-32 (Tailwind's generative scale, 32 * 0.25rem = 8rem)
+          // replaces the old bracketed min-w-[8rem] arbitrary value -- same
+          // 128px, zero visual delta, no lint suppression needed.
+          "relative z-50 max-h-(--radix-select-content-available-height) min-w-32 origin-(--radix-select-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-4 overlay bg-surface-2 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           position === "popper" &&
             "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
           className
@@ -109,8 +117,12 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 4: Select primitive rewrite owns this item padding; zero-visual-delta this stage.
-        "relative flex w-full cursor-default items-center gap-2 rounded-sm py-1.5 pr-8 pl-2 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
+        // Stage 5 (#71) item 4: concentric with the panel above it (P6: 12px
+        // panel, 4px padding, holds 8px rows) -- rounded-2 (r8). `pr-6`
+        // replaces the old `pr-8` (32px is not one of the eight permitted
+        // spacing steps; 24px is, and still clears the right-2/size-3.5
+        // check-icon indicator).
+        "relative flex w-full cursor-default items-center gap-2 rounded-2 py-1.5 pr-6 pl-2 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3 *:[span]:last:flex *:[span]:last:items-center *:[span]:last:gap-2",
         className
       )}
       {...props}

@@ -82,7 +82,7 @@ function SheetContent({
         {showCloseButton && (
           // No per-primitive focus ring (section 8): the global
           // :focus-visible rule already renders this button's focus ring.
-          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-hover">
+          <SheetPrimitive.Close className="absolute top-4 right-4 rounded-1 opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-hover">
             <Icon icon={XIcon} />
             <span className="sr-only">Close</span>
           </SheetPrimitive.Close>

@@ -6,6 +6,7 @@ import {
   ContextMenuTrigger,
 } from '@/components/ui/context-menu';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
+import { Dot } from '@/components/ui/dot';
 import { cn } from '@/lib/utils';
 import { agoTxt } from '@/lib/format';
 import type { InboxThread, SessionRow } from '@/lib/types';
@@ -83,8 +84,13 @@ export function ThreadRow({
         selected && 'bg-selected',
       )}
     >
-      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc unread dot it replaces. */}
-      <span className={cn('mt-[5px] h-[7px] w-[7px] rounded-full', unread ? 'bg-iris-solid' : 'bg-transparent')} aria-hidden="true" />
+      {/* Stage 5 (#71) item 1: the Dot primitive replaces this ad hoc 7px
+          dot -- always renders (an unread-sized transparent placeholder when
+          read) so the row's grid column never reflows, and paints
+          --iris-contrast rather than the old --iris-solid: dots are always
+          the -contrast role (section 1.6), the same fix chip.tsx's own dot
+          and context-bar.tsx's quota dot get. */}
+      {unread ? <Dot hue="iris" className="mt-1" /> : <span className="mt-1 size-1.5 flex-none rounded-full bg-transparent" aria-hidden="true" />}
       {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 5: "One ListRow" unifies this row anatomy with sessions-view.tsx's own copy of the same pattern ("thread-row.tsx and sessions-view.tsx start their glyph 22px apart"). Zero-visual-delta this stage. */}
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">

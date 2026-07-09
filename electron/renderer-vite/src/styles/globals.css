@@ -8,9 +8,10 @@
    and the colour half of the Tailwind bridge (9). Stage 3 (#69,
    fixes #64) adds type: the four self-hosted @font-face blocks, the
    --font-*-stack rename, and the six text roles (section 2, section
-   9). The radius scale is stage 5 (#71) -- untouched here, so every
-   existing rounded-* class keeps working exactly as before this
-   change.
+   9). Stage 5 (#71, the primitive vocabulary) adds the radius scale:
+   Tailwind's default rounded-xs/sm/md/lg/xl/2xl/3xl are removed and
+   replaced by the four-step control-height table in section 3.2
+   (rounded-1..4), consumed by every primitive in this same PR.
 
    MAGENTA CANARY: every retired token/@theme key name below is
    aliased to #ff00ff for the duration of the migration (see the
@@ -170,9 +171,16 @@
   --font-sans-stack: 'Space Grotesk', -apple-system, system-ui, sans-serif;
   --font-mono-stack: 'JetBrains Mono', ui-monospace, Menlo, monospace;
 
-  --radius: 9px; /* --r2 in the old kit */
-  --radius-sm: 6px; /* --r1 */
-  --radius-lg: 13px; /* --r3 */
+  /* -- radius (stage 5, #71, docs/design-system.md section 3.2): a monotone,
+     sublinear function of control height, not a ratio -- P6. The old
+     --radius/--radius-sm/--radius-lg scaffold (9/6/13px) is retired along
+     with every Tailwind default rounded-sm/md/lg it fed (section 9's bridge
+     below); every call site is migrated onto rounded-1..4 in this same PR
+     (section 10.3's grep gate now enforces rounded-(sm|md|lg) as dead). -- */
+  --radius-1: 6px;  /* 20px controls: chip, kbd, count badge, inline micro-button */
+  --radius-2: 8px;  /* 28px controls: default button, icon button, toolbar control, select trigger, nav row, composer submit */
+  --radius-3: 10px; /* 32px controls: large button, input, textarea single-line */
+  --radius-4: 12px; /* panel: bounded list container, floating surface, composer */
 
   /* -- geometry (stage 4, #70; docs/design-system.md section 3.3): shell
      constants that used to be re-encoded per call site as arbitrary
@@ -357,14 +365,26 @@
   --color-series-1-soft: var(--series-1-soft);
   --color-series-2-soft: var(--series-2-soft);
 
-  /* -- radius: UNCHANGED this stage (stage 5/#71 owns the control-height
-     radius table in section 3.2). Kept verbatim from the pre-stage-2
-     scaffold so no existing rounded-* class shifts size. -- */
-  --radius-xs: calc(var(--radius) * 0.6);
-  --radius-sm: var(--radius-sm);
-  --radius-md: calc(var(--radius) * 0.9);
-  --radius-lg: var(--radius-lg);
-  --radius-xl: var(--radius-lg);
+  /* -- radius (stage 5, #71; docs/design-system.md section 3.2 + section 9):
+     every Tailwind default radius key (xs/sm/md/lg/xl/2xl/3xl) is removed
+     first, exactly like --text-* above, so rounded-sm/md/lg silently stop
+     generating a class instead of quietly keeping the old 6/9/13px scaffold
+     alive under a new name -- the whole point of doing this in the SAME PR
+     as the primitives that consume them (issue #71 item 10). `rounded-full`
+     and `rounded-none` are Tailwind static utilities, not sourced from this
+     scale, so they are unaffected. -- */
+  --radius-*: initial;
+  /* The bare `--radius` key (no suffix) is a SEPARATE Tailwind core default
+     (0.25rem, generates the bare `rounded` utility) that the `--radius-*`
+     wildcard reset above does not reach -- killed explicitly so `rounded`
+     with no suffix stops silently resolving to an un-audited 4px instead of
+     one of the four named steps below. */
+  --radius: initial;
+
+  --radius-1: var(--radius-1);
+  --radius-2: var(--radius-2);
+  --radius-3: var(--radius-3);
+  --radius-4: var(--radius-4);
 
   --ease-enter: var(--motion-ease-enter);
   --ease-morph: var(--motion-ease-morph);
@@ -553,16 +573,40 @@
   }
 }
 
-/* The .hc-chip dialect is retired: components/ui/chip.tsx (built on
-   shadcn Badge) is now the one shared small-labeled-pill component
-   everywhere, painting `--<hue>-soft`/`--<hue>-contrast` directly
-   (section 1.5's contrast/soft pair) instead of a runtime `color-mix`
-   recipe -- section 10 pins the compositing model precisely so the
-   checker and the renderer cannot disagree, which a per-component
-   color-mix escape hatch would defeat. */
+/* The .hc-chip dialect is retired: components/ui/chip.tsx is the one shared
+   small-labeled-pill component everywhere, painting `--<hue>-soft`/
+   `--<hue>-contrast` directly (section 1.5's contrast/soft pair) via static
+   Tailwind classes -- section 10 pins the compositing model precisely so the
+   checker and the renderer cannot disagree, which a per-component inline
+   style escape hatch would defeat. (Stage 5, #71: Chip no longer builds on
+   shadcn Badge -- badge.tsx is deleted this stage -- so this is now a plain
+   self-contained span; see chip.tsx's own header comment.) */
 
 /* No ::-webkit-scrollbar rule here: ScrollArea (components/ui/scroll-area.tsx)
    is the ONE owner of scrollbar styling (section 8's "one owner per
    token", extended from DESIGN.md's "ScrollArea always, no native
    scrollbars"). Two homes for the scrollbar -- this rule plus the
    ScrollArea primitive -- was the same defect as two homes for a count. */
+
+/* Stage 5 (#71) item 7: Radix's ScrollAreaViewport wraps its children in one
+   anonymous, unstyled `display: table` div (its own source: `minWidth:
+   '100%', display: 'table'`, no height) so that a percentage-height child --
+   `Empty`'s own `h-full` -- has no definite containing-block height to
+   resolve against (CSS 10.5: a percentage height on a child whose
+   containing block's own height is `auto` computes to `auto`). This was
+   fleet-view.tsx's exact, previously-worked-around bug ("Empty collapsed
+   from the full pane to a single line of text jammed under the tiles:
+   measured 218px -> 66.5px"). Stretching that one anonymous wrapper to the
+   Viewport's own full height fixes it at the source for every `Empty`-in-
+   `ScrollArea` call site at once, not just Fleet's: the wrapper still has
+   `overflow: visible` (unset), so taller real content (a long session list)
+   still grows past this nominal height and the OUTER Viewport -- which
+   carries the actual `overflow: scroll` -- still measures and scrolls the
+   true content extent correctly; this rule only gives short/empty content a
+   stable box to fill. Scoped to the exact DOM shape Radix renders (a bare
+   div with no class of its own, the immediate child of
+   `[data-radix-scroll-area-viewport]`) so it cannot accidentally match
+   anything else. */
+[data-radix-scroll-area-viewport] > div {
+  height: 100%;
+}

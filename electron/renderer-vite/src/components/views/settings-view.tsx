@@ -63,7 +63,11 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
       <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         <SectionLabel>Appearance</SectionLabel>
         <ItemGroup>
-          <Item size="sm" className="justify-between px-6">
+          {/* Stage 5 (#71) item 6: "Item gets its horizontal padding back" --
+              the px-6 override every Item in this view used to re-add by
+              hand is now Item's own default, so it is dropped here and at
+              every other Item in this file. */}
+          <Item size="sm" className="justify-between">
             <span className="font-mono text-micro text-ink-3">Theme</span>
             <ToggleGroup
               type="single"
@@ -86,7 +90,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <SectionLabel>AI summary engine</SectionLabel>
         <SectionNote>Which local CLI generates the on-demand summary. It runs on your machine, through your own CLI auth.</SectionNote>
         <ItemGroup>
-          <Item size="sm" className="justify-between px-6">
+          <Item size="sm" className="justify-between">
             <span className="font-mono text-micro text-ink-3">Engine</span>
             <ToggleGroup
               type="single"
@@ -117,7 +121,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
           is ever silently over-spent.
         </SectionNote>
         <ItemGroup>
-          <Item size="sm" className="justify-between px-6">
+          <Item size="sm" className="justify-between">
             <span className="font-mono text-micro text-ink-3">Daily budget (est USD)</span>
             <Input
               type="number"
@@ -128,7 +132,11 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
               onBlur={commitBudget}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitBudget(); } }}
               aria-label="Always-on summary daily budget in US dollars"
-              className="h-8 w-28 font-mono text-row"
+              // Stage 5 (#71) item 4: "the one h-8" -- Input's own `lg` size
+              // (32px/r10) IS the old h-8 override exactly, reached honestly
+              // through the primitive's own API instead of a className hack.
+              size="lg"
+              className="w-28 font-mono text-row"
               data-numeric
             />
           </Item>

@@ -3,6 +3,9 @@ import { fmtResetClock, quotaCls } from '@/lib/format';
 import { cn } from '@/lib/utils';
 import { Separator } from '@/components/ui/separator';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
+import { Dot, type Hue } from '@/components/ui/dot';
+
+const QUOTA_HUE: Record<string, Hue> = { 'q-amber': 'need', 'q-red': 'block', 'q-na': 'idle' };
 
 // The SOLE home for the fleet digest, Codex quota, Claude quota (a real
 // percentage now, and still "n/a" rather than a fabricated number whenever the
@@ -33,14 +36,7 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
         cls === 'q-na' && 'text-ink-4',
       )}
     >
-      <span
-        className={cn(
-          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc dot it replaces.
-          'h-[5px] w-[5px] rounded-full bg-idle-contrast',
-          cls === 'q-amber' && 'bg-need-contrast',
-          cls === 'q-red' && 'bg-block-contrast',
-        )}
-      />
+      <Dot hue={QUOTA_HUE[cls] ?? 'idle'} />
       {pct == null ? `${label} n/a` : `${label} ${pct}%${resetsAt ? `, resets ${fmtResetClock(resetsAt)}` : ''}`}
     </span>
   );

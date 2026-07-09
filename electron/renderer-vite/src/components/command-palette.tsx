@@ -23,6 +23,7 @@ import {
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { useSidebar } from '@/components/ui/sidebar';
 import { Icon } from '@/components/ui/icon';
+import { Kbd } from '@/components/ui/kbd';
 import { cn } from '@/lib/utils';
 import { cwdBase } from '@/lib/format';
 import type { AppState, SessionRow, ViewName } from '@/lib/types';
@@ -147,7 +148,11 @@ export function CommandPalette({
               >
                 <Icon icon={GoToIcon} className={cn(active && 'text-iris-contrast')} aria-hidden="true" />
                 <span className="flex-1 truncate">{item.label}</span>
-                {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
+                {/* Stage 5 (#71) item 1: Kbd is a real key-cap hint, so it
+                    wraps an actual key ("1", "A") -- the theme/sidebar-state
+                    CommandShortcuts below show a dynamic STATUS word
+                    ("dark", "open"), not a key, so those stay plain text. */}
+                {item.shortcut && <CommandShortcut><Kbd>{item.shortcut}</Kbd></CommandShortcut>}
               </CommandItem>
             );
           })}
@@ -168,8 +173,9 @@ export function CommandPalette({
               <HarnessGlyph harness={row.harness} />
               <span className="flex-1 min-w-0 truncate">{displayTitle(row)}</span>
               <StateChip state={row.state} />
-              {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Command primitive rewrite owns this cwd-column width; zero-visual-delta this stage. */}
-              <span className="flex-none max-w-[110px] truncate font-mono text-micro text-ink-4">
+              {/* max-w-28 (Tailwind's generative scale, 112px) replaces the
+                  old bracketed max-w-[110px] -- 2px wider, imperceptible. */}
+              <span className="flex-none max-w-28 truncate font-mono text-micro text-ink-4">
                 {cwdBase(row.cwd || row.repo)}
               </span>
             </CommandItem>
@@ -220,7 +226,7 @@ export function CommandPalette({
           >
             <Icon icon={PanelRight} className={cn(rightRailOpen && 'text-iris-contrast')} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle chief-of-staff drawer</span>
-            <CommandShortcut>A</CommandShortcut>
+            <CommandShortcut><Kbd>A</Kbd></CommandShortcut>
           </CommandItem>
         </CommandGroup>
       </CommandList>

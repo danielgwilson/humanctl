@@ -2,13 +2,13 @@ import { STATE_META } from '@/lib/format';
 import { Chip } from '@/components/ui/chip';
 import { cn } from '@/lib/utils';
 
-// Ported from index.html's .chip, now the shared Chip component (built on
-// shadcn Badge): one strict color map, STATE_META, drives the variant
-// (DESIGN.md: "Colors are semantic and fixed per axis").
+// Ported from index.html's .chip, now the shared Chip component: one strict
+// color map, STATE_META, drives the hue (DESIGN.md: "Colors are semantic and
+// fixed per axis").
 export function StateChip({ state, className }: { state: string; className?: string }) {
   const meta = STATE_META[state] || STATE_META.idle;
   return (
-    <Chip variant={meta.variant} title={meta.label} className={className}>
+    <Chip variant="state" hue={meta.hue} title={meta.label} className={className}>
       {meta.label}
     </Chip>
   );

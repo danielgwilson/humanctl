@@ -109,25 +109,24 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
     </div>
   );
 
-  // An empty fleet has nothing to scroll, so it deliberately does NOT go inside
-  // a ScrollArea. Radix wraps its viewport children in a `display: table` box,
-  // and a percentage/flex height does not resolve against that, so `Empty`
-  // (which centers itself with `flex-1`) collapsed from the full pane to a
-  // single line of text jammed under the tiles: measured 218px -> 66.5px. A
-  // plain flex column gives `Empty` the definite height it needs. Do not
-  // "fix" this by moving the height onto viewportClassName; the table box
-  // still intervenes.
+  // Stage 5 (#71) item 7: Empty now sizes itself with `h-full` (percentage
+  // height) instead of `flex-1` (flex-grow), which resolves correctly inside
+  // ScrollArea's Radix Viewport (a `display: table` box that flex-grow math
+  // never worked against -- this used to collapse Empty from the full pane
+  // to a single line, measured 218px -> 66.5px, which is why this view had
+  // its own parallel non-ScrollArea render path for total===0). One render
+  // path now, matching every other view's empty state.
   if (total === 0) {
     return (
       <div className="flex h-full flex-col overflow-hidden">
         <ViewHeader icon={Command} title="Fleet" subtitle={`${total} sessions · the fleet's shape`} />
-        <div className="flex min-h-0 flex-1 flex-col">
+        <ScrollArea className="min-h-0 flex-1">
           {tiles}
           <Empty>
             <EmptyDescription>no sessions in the last 72h.</EmptyDescription>
           </Empty>
           {nextNote}
-        </div>
+        </ScrollArea>
       </div>
     );
   }

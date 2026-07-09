@@ -2,12 +2,12 @@ import { useMemo, useRef, useState } from 'react';
 import { useVirtualizer } from '@tanstack/react-virtual';
 import { List, Bookmark } from 'lucide-react';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
-import { Button } from '@/components/ui/button';
+import { IconButton } from '@/components/ui/icon-button';
 import { Input } from '@/components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Empty, EmptyDescription } from '@/components/ui/empty';
-import { Icon } from '@/components/ui/icon';
+import { Dot } from '@/components/ui/dot';
 import { ViewHeader } from '@/components/shell/view-header';
 import { cn } from '@/lib/utils';
 import { cwdBase, firstSentence, fmtUSD } from '@/lib/format';
@@ -125,20 +125,23 @@ function SessionRowItem({
           {cost && <span className="flex-none" data-numeric>&middot; {cost}</span>}
         </span>
       </span>
-      <Button
-        type="button"
-        variant="ghost"
-        size="icon-xs"
+      {/* Stage 5 (#71) item 1: IconButton replaces the old
+          `Button variant="ghost" size="icon-xs"` (that icon-only size is
+          deleted from Button outright, IconButton's own job now) --
+          `size="sm"` (20px) is the same geometry `icon-xs` rendered.
+          `active={pinned}` gives the pin its own ring when toggled on,
+          matching IconButton's contract exactly (a deliberate, minor visual
+          addition: the old pin never grew a ring at any state). */}
+      <IconButton
+        icon={Bookmark}
+        size="sm"
+        active={pinned}
         onClick={(e) => { e.stopPropagation(); onTogglePin(row.id); }}
         aria-label={pinned ? `unpin ${title}` : `pin ${title}`}
         title={pinned ? 'unpin' : 'pin'}
-        className={cn(
-          'mt-0.5 flex-none rounded text-ink-4 hover:bg-transparent hover:text-ink',
-          pinned && 'text-iris-contrast hover:text-iris-contrast',
-        )}
-      >
-        <Icon icon={Bookmark} size="sm" fill={pinned ? 'currentColor' : 'none'} aria-hidden="true" />
-      </Button>
+        className="mt-0.5"
+        iconProps={{ fill: pinned ? 'currentColor' : 'none' }}
+      />
     </div>
   );
 }
@@ -155,8 +158,8 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         className="min-w-[120px] flex-1 basis-[200px]"
       />
       <Select value={filter.state || 'all'} onValueChange={(v) => onChange({ ...filter, state: v === 'all' ? '' : v })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-micro">
+        {/* Stage 5 (#71) item 4: SelectTrigger is one height (28px/r8) now, no per-instance override needed. */}
+        <SelectTrigger aria-label="Filter by state" className="w-auto font-mono text-micro">
           <SelectValue placeholder="all states" />
         </SelectTrigger>
         <SelectContent>
@@ -169,8 +172,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.harness || 'all'} onValueChange={(v) => onChange({ ...filter, harness: v === 'all' ? '' : v })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-micro">
+        <SelectTrigger aria-label="Filter by harness" className="w-auto font-mono text-micro">
           <SelectValue placeholder="all harnesses" />
         </SelectTrigger>
         <SelectContent>
@@ -180,8 +182,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.sort} onValueChange={(v) => onChange({ ...filter, sort: v as SessionsFilter['sort'] })}>
-        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
-        <SelectTrigger aria-label="Sort sessions" className="h-[30px] w-auto font-mono text-micro">
+        <SelectTrigger aria-label="Sort sessions" className="w-auto font-mono text-micro">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -257,11 +258,12 @@ export function SessionsView({
       <SessionsToolbar filter={filter} onChange={setFilter} />
       <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
         {total === 0 ? (
-          <Empty className="h-full">
+          // Stage 5 (#71) item 7: h-full is Empty's own base now.
+          <Empty>
             <EmptyDescription>no sessions in the last 72h.</EmptyDescription>
           </Empty>
         ) : filtered.length === 0 ? (
-          <Empty className="h-full">
+          <Empty>
             <EmptyDescription>no sessions match.</EmptyDescription>
           </Empty>
         ) : (
@@ -277,8 +279,7 @@ export function SessionsView({
                 >
                   {item.kind === 'pinned-header' ? (
                     <div className="flex items-center gap-2 border-b border-b-hairline bg-surface-0 px-6 py-1.5 font-mono text-label uppercase text-ink-3">
-                      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc dot it replaces. */}
-                      <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris-contrast" aria-hidden="true" />
+                      <Dot hue="iris" />
                       Pinned
                       <span className="text-ink-4" data-numeric>{item.count}</span>
                     </div>

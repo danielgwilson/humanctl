@@ -19,10 +19,16 @@ const ToggleGroupContext = React.createContext<
 // a real Radix ToggleGroup underneath (keyboard arrow-key navigation between
 // options and `aria-pressed`/`data-state` semantics come from Radix for
 // free).
+//
+// Stage 5 (#71) item 5: the group's own radius is concentric with its
+// options' radius (P6: "an 8px toggle group with 2px padding holds 6px
+// options... r10 group over 28px/r8 options" -- toggle.tsx's two sizes),
+// so it reads `size` the same way `ToggleGroupItem` below does rather than
+// carrying one fixed `rounded-md`.
 function ToggleGroup({
   className,
   variant,
-  size,
+  size = "default",
   children,
   ...props
 }: React.ComponentProps<typeof ToggleGroupPrimitive.Root> &
@@ -33,7 +39,8 @@ function ToggleGroup({
       data-variant={variant}
       data-size={size}
       className={cn(
-        "group/toggle-group inline-flex w-fit items-center gap-0.5 rounded-md hairline bg-surface-2 p-0.5",
+        "group/toggle-group inline-flex w-fit items-center gap-0.5 hairline bg-surface-2 p-0.5",
+        size === "sm" ? "rounded-2" : "rounded-3",
         className
       )}
       {...props}

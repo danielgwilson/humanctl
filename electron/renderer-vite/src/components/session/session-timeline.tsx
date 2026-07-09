@@ -18,10 +18,14 @@ const NEAR_BOTTOM_PX = 48;
 // interrupt/tools are compact single-line rows, matching the brief.
 function TimelineRow({ event }: { event: TimelineEvent }) {
   const ts = event.ts != null ? agoTxt(event.ts) : '';
+  // `px-0` on every Item below: these rows nest inside the "Conversation"
+  // Item's own ItemContent (this file's own return, further down), which
+  // already carries Item's default px-6 pane-gutter padding (item 6) -- a
+  // second px-6 here would double the inset to 48px instead of 24px.
   if (event.k === 'tools') {
     return (
-      <Item size="sm" className="gap-2">
-        <Chip variant="label" size="label" dot={false}>tools</Chip>
+      <Item size="sm" className="gap-2 px-0">
+        <Chip variant="meta">tools</Chip>
         <span className="min-w-0 flex-1 truncate font-mono text-micro text-ink-4" data-numeric>
           {event.n} tool call{event.n === 1 ? '' : 's'}
         </span>
@@ -35,8 +39,8 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
     // message to the human, a note body, chat, the composer, empty-state
     // copy, toast copy"; this is none of those).
     return (
-      <Item size="sm" className="gap-2">
-        <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
+      <Item size="sm" className="gap-2 px-0">
+        <Chip variant="meta">interrupted</Chip>
         <span className="min-w-0 flex-1 truncate font-mono text-micro text-ink-3">
           {event.t || 'the session was interrupted'}
         </span>
@@ -46,9 +50,9 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
   }
   const isUser = event.k === 'user';
   return (
-    <Item size="sm" className={cn('flex-col items-stretch border-l-2 pl-3', isUser ? 'border-l-iris-contrast' : 'border-l-done-contrast')}>
+    <Item size="sm" className={cn('flex-col items-stretch border-l-2 px-0 pl-3', isUser ? 'border-l-iris-contrast' : 'border-l-done-contrast')}>
       <ItemHeader>
-        <Chip variant={isUser ? 'label-iris' : 'label-done'} size="label" dot={false}>
+        <Chip variant="meta">
           {isUser ? 'you' : 'agent'}
         </Chip>
         {ts && <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>}
@@ -168,8 +172,8 @@ export function SessionTimeline({
   return (
     <Item size="sm" role="group" className="flex-col items-stretch">
       <ItemHeader>
-        <Chip variant="label" size="label" dot={false}>Conversation</Chip>
-        {tl.live && <Chip variant="label-done" size="label" dot={false} className="ml-auto">live</Chip>}
+        <Chip variant="meta">Conversation</Chip>
+        {tl.live && <Chip variant="meta" className="ml-auto">live</Chip>}
       </ItemHeader>
       <ItemContent>
         {/* This whole cluster (unavailable / loading / error / empty) is one
@@ -194,14 +198,18 @@ export function SessionTimeline({
             ) : (
               <div className="flex justify-center py-1.5">
                 {/* Button label is `row` at every size (section 6); no
-                    per-instance size/tracking override any more. */}
+                    per-instance size/tracking override any more. `quiet`
+                    (already ink-3) replaces `ghost`; `h-auto w-auto px-0
+                    py-0` stays as a deliberate deviation, same as session-
+                    detail.tsx's back-breadcrumb link -- an inline text
+                    affordance, not a boxed control. */}
                 <Button
                   type="button"
-                  variant="ghost"
+                  variant="quiet"
                   size="sm"
                   onClick={handleLoadOlder}
                   disabled={tl.loadingOlder}
-                  className="h-auto w-auto px-0 py-0 text-ink-3 hover:bg-transparent hover:text-ink disabled:cursor-default disabled:opacity-60"
+                  className="h-auto w-auto px-0 py-0 hover:bg-transparent hover:text-ink disabled:cursor-default disabled:opacity-60"
                 >
                   {olderLabel}
                 </Button>

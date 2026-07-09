@@ -19,20 +19,15 @@
 // Wired into `npm run lint:classnames`, run in CI right next to
 // `npm run tokens:check` (design-system stage 4, #70).
 //
-// DEVIATION FROM THE DOC'S LITERAL LIST (stated here and in the PR body):
-// `rounded-(sm|md|lg)` is NOT enforced yet. Those three token names are
-// still live, correctly-mapped @theme bridge keys today (globals.css's
-// `--radius-sm`/`--radius-md`/`--radius-lg` are NOT part of the MAGENTA
-// CANARY retired-alias block -- only the colour tokens are, see globals.css)
-// and dozens of current call sites correctly use them (chip.tsx, command.tsx,
-// tooltip.tsx, header.tsx, sonner.tsx, ...). Stage 5 (#71) item 10 is
-// explicit that removing Tailwind's default radii from the theme happens
-// "in the same PR as the primitives consuming rounded-md" -- enforcing the
-// ban here, ahead of that removal, would fail on correct, unchanged code and
-// force exactly the premature radius-scale rewrite issue #70 rules out
-// ("This stage is NOT a rebase"). The other five patterns ARE already fully
-// retired today (aliased to #ff00ff in globals.css's MAGENTA CANARY block,
-// stage 2/#68) with zero live call sites, so they are enforced now.
+// Stage 5 (#71) item 10 removes Tailwind's default radius scale from the
+// theme (globals.css's `--radius-*: initial`, replaced by the four-step
+// rounded-1..4 control-height table) in this same PR, so `rounded-sm`,
+// `rounded-md`, and `rounded-lg` are now exactly like the other five
+// patterns below: dead text that Tailwind silently drops rather than
+// erroring. Every call site that used to read `--radius-sm`/`-md`/`-lg`
+// (chip.tsx, command.tsx, tooltip.tsx, header.tsx, sonner.tsx, sidebar.tsx,
+// ...) is migrated onto rounded-1..4 in this same PR, so the denylist is
+// enforced starting now rather than deferred again.
 
 const fs = require('fs');
 const path = require('path');
@@ -48,6 +43,7 @@ const DENYLIST = [
   ['border-border', /\bborder-border\b/],
   ['bg-sidebar-*', /\bbg-sidebar(-[a-z]+)*\b/],
   ['shadow-(xs|md|lg|2xl)', /\bshadow-(xs|md|lg|2xl)\b/],
+  ['rounded-(sm|md|lg)', /\brounded-(sm|md|lg)\b/],
 ];
 
 /**
@@ -157,7 +153,7 @@ function main() {
     process.exit(1);
   }
 
-  console.log(`[lint:classnames] PASS -- ${checked} files checked, zero retired class names (docs/design-system.md 10.3; rounded-(sm|md|lg) deliberately deferred to stage 5, #71 -- see this script's header).`);
+  console.log(`[lint:classnames] PASS -- ${checked} files checked, zero retired class names (docs/design-system.md 10.3).`);
 }
 
 main();

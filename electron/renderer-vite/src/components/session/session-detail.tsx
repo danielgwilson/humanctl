@@ -18,8 +18,7 @@ import {
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { SessionTimeline } from '@/components/session/session-timeline';
 import { useAnswerAsk } from '@/hooks/use-humanctl';
-import { agoTxt } from '@/lib/format';
-import { cn } from '@/lib/utils';
+import { agoTxt, NOTE_LEVEL_HUE } from '@/lib/format';
 import type { AnswerAskResult, InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 
 // The ONE session-detail component family, matching renderer.js's
@@ -137,14 +136,16 @@ function AskReplyComposer({
       <div className="flex items-center justify-between gap-2">
         <span className="font-mono text-micro text-ink-4">cmd+enter to send &middot; esc to leave the reply box</span>
         {/* Button label is `row` at every size (section 6): no per-instance
-            size override here any more. */}
+            size override here any more. Stage 5 (#71) item 2: `iris` merges
+            into `primary` (the collapsed five-variant set); the old inline
+            px-3.5/py-1.5 override is deleted along with it -- size="md"'s
+            own padding is correct now. */}
         <Button
           type="button"
-          variant="iris"
+          variant="primary"
           onClick={send}
           disabled={submitting || !text.trim()}
-          // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 2: one of the eight inline Button height/padding overrides the Button rewrite explicitly deletes; zero-visual-delta this stage.
-          className="flex-none px-3.5 py-1.5"
+          className="flex-none"
         >
           {submitting ? 'sending...' : 'Reply'}
         </Button>
@@ -188,7 +189,12 @@ function StreamRow({
     return (
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
         <ItemHeader>
-          <Chip variant="label-iris" size="label" dot={false}>{item.level}</Chip>
+          {/* Stage 5 (#71) item 3: a note's level (fyi/review/blocked/done)
+              is one of section 1.6's 12-row map, so it renders `state`
+              through NOTE_LEVEL_HUE -- a real fix, not a rename: this used
+              to hardcode `variant="label-iris"` regardless of the note's
+              actual level. */}
+          <Chip variant="state" hue={NOTE_LEVEL_HUE[item.level] ?? 'idle'}>{item.level}</Chip>
           <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
@@ -201,7 +207,9 @@ function StreamRow({
     return (
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-need-contrast pl-3">
         <ItemHeader>
-          <Chip variant="label-need" size="label" dot={false}>asks you</Chip>
+          {/* Stage 5 (#71) item 3: not one of the 12-row state/level map
+              (section 1.6) -- a plain stream-kind label, `meta`, uncoloured. */}
+          <Chip variant="meta">asks you</Chip>
           <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
@@ -218,7 +226,7 @@ function StreamRow({
     return (
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
         <ItemHeader>
-          <Chip variant="label-iris" size="label" dot={false}>your answer</Chip>
+          <Chip variant="meta">your answer</Chip>
           <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
@@ -234,7 +242,7 @@ function StreamRow({
     return (
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-block-contrast pl-3">
         <ItemHeader>
-          <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
+          <Chip variant="meta">interrupted</Chip>
           <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
@@ -248,7 +256,7 @@ function StreamRow({
   return (
     <Item size="sm" className="flex-col items-stretch border-l-2 border-l-done-contrast pl-3">
       <ItemHeader>
-        <Chip variant="label-done" size="label" dot={false}>{item.engine || 'answer'}</Chip>
+        <Chip variant="meta">{item.engine || 'answer'}</Chip>
         <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
       </ItemHeader>
       <ItemContent>
@@ -277,9 +285,9 @@ function SummarySection({
     <Item size="sm" role="group" className="flex-col items-stretch">
       <ItemHeader>
         {error ? (
-          <Chip variant="label-block" size="label" dot={false}>AI summary failed</Chip>
+          <Chip variant="meta">AI summary failed</Chip>
         ) : (
-          <Chip variant="label" size="label" dot={false}>AI summary</Chip>
+          <Chip variant="meta">AI summary</Chip>
         )}
         {!error && (
           <span className="font-mono text-micro text-ink-4" data-numeric>
@@ -305,7 +313,10 @@ function SummarySection({
       </ItemContent>
       {!loading && (
         <ItemFooter className="justify-start">
-          <Button variant="outline" size="sm" className="h-6 text-ink-3" onClick={onGenerate}>
+          {/* Stage 5 (#71) item 2: `quiet` (no ring, ink-3) replaces
+              `outline` + the old h-6 height override -- `quiet` is already
+              ink-3, so the colour override is redundant too. */}
+          <Button variant="quiet" size="sm" onClick={onGenerate}>
             {label}
           </Button>
         </ItemFooter>
@@ -357,7 +368,9 @@ export function SessionDetail({
 
   if (!thread) {
     return (
-      <Empty className="h-full">
+      // Stage 5 (#71) item 7: h-full is Empty's own base now (its className
+      // override here is redundant, cleaned up in the same change).
+      <Empty>
         <EmptyDescription>Select a thread to open it.</EmptyDescription>
       </Empty>
     );
@@ -415,12 +428,18 @@ export function SessionDetail({
           scrolls, always visible, the fix for the scroll-trap symptom. */}
       <div className="flex-none px-6 pb-3 pt-3">
         {onBack && (
+          // Stage 5 (#71) item 2: `quiet` replaces `ghost` (already ink-3,
+          // so the colour override is redundant). `h-auto w-fit px-0 py-0`
+          // is a deliberate, documented deviation from the fixed 20/28/32
+          // control-height ladder: this is an inline text breadcrumb link,
+          // not a boxed control, the same category as session-timeline.tsx's
+          // "load older" affordance below.
           <Button
             type="button"
-            variant="ghost"
+            variant="quiet"
             size="sm"
             onClick={onBack}
-            className="mb-2 h-auto w-fit justify-start px-0 py-0 text-ink-3 hover:bg-transparent hover:text-ink"
+            className="mb-2 h-auto w-fit justify-start px-0 py-0 hover:bg-transparent hover:text-ink"
           >
             &#8592; {backLabel || 'back'}
           </Button>
@@ -450,7 +469,7 @@ export function SessionDetail({
             </div>
           </div>
           <Button
-            variant="iris"
+            variant="primary"
             className="flex-none"
             disabled={!row}
             onClick={() => row && onResume?.(row)}
@@ -465,7 +484,12 @@ export function SessionDetail({
           conversation timeline, all flowing inline. `bodyViewportRef` is the
           element SessionTimeline reads/writes for its scroll behaviors. */}
       <ScrollArea className="min-h-0 flex-1" viewportRef={bodyViewportRef}>
-      <div className="px-6 pb-4">
+      {/* Stage 5 (#71) item 6: no more px-6 here -- Item's own base now
+          carries the pane gutter directly (every row inside, including
+          SummarySection's and SessionTimeline's own Item, supplies its own
+          px-6), so this wrapper doubling it would have inset every row by
+          48px on each side instead of 24px. */}
+      <div className="pb-4">
         <ItemGroup>
           {stream.length ? (
             stream.map((it, i) => (
@@ -507,7 +531,7 @@ export function SessionDetail({
       <div className="mx-6 flex max-h-[45vh] flex-none flex-col gap-2 pb-3">
         <Separator />
         <div className="flex items-center gap-3">
-          <Chip variant="label-done" size="label" dot={false}>Ask the session</Chip>
+          <Chip variant="meta">Ask the session</Chip>
         </div>
         {answer && (
           <ScrollArea className="min-h-0 flex-1">
@@ -525,15 +549,21 @@ export function SessionDetail({
             placeholder="Ask the session a question..."
             aria-label="Ask the session a question"
             disabled={asking || !row}
-            className={cn('flex-1 focus-visible:shadow-[inset_0_0_0_var(--hairline-w)_var(--done-contrast)]')}
+            className="flex-1"
           />
+          {/* Stage 5 (#71) item 2: this is the OTHER acceptance-test button
+              -- `done` merges into `primary`, same as cos-drawer.tsx's Ask
+              button, so the two render identically (same fill, height,
+              radius, press). The custom done-contrast focus ring on the
+              Input above is deleted too: it existed to tie the field to its
+              (now retired) done-hue button, and the global focus ring is
+              already iris-contrast, which now matches `primary` directly. */}
           <Button
             type="button"
-            variant="done"
+            variant="primary"
             onClick={send}
             disabled={asking || !row || !q.trim()}
-            // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 2: one of the eight inline Button height/padding overrides the Button rewrite explicitly deletes ("the two Ask buttons ... must render identically after this stage"); zero-visual-delta this stage.
-            className="flex-none px-3.5 py-1.5"
+            className="flex-none"
           >
             {asking ? 'asking...' : 'Ask'}
           </Button>
