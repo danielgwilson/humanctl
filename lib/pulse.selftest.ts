@@ -22,7 +22,7 @@ import {
   type CollectedData,
   type PulseConfig,
 } from './pulse';
-import { extractIssueKeys, readWorkRefs, readNeedSignals, deriveNeedState, BTW_SENTINEL } from './sessions';
+import { extractIssueKeys, readWorkRefs, readNeedSignals, deriveNeedState, BTW_SENTINEL, REPLY_SENTINEL } from './sessions';
 
 let passed = 0;
 function check(name: string, fn: () => void): void {
@@ -430,6 +430,7 @@ const claudeEv = (ts: string, role: string, content: unknown) => JSON.stringify(
 const T_USER = '2026-01-15T09:00:00.000Z';
 const T_ASK = '2026-01-15T09:05:00.000Z';
 const T_PROBE = '2026-01-15T17:50:00.000Z';
+const T_REPLY = '2026-01-15T17:55:00.000Z';
 
 check('codex btw probe never flips state, resets the idle clock, or masks the ask', () => {
   const genuine = [
@@ -500,6 +501,52 @@ check('a genuine user turn after a probe closes the skip window', () => {
   assert.strictEqual(sig.lastUserText, 'go with 5s', 'real turn after a probe was dropped');
   assert.strictEqual(need.state, 'done');
   assert.strictEqual(sig.lastActiveMs, Date.parse('2026-01-15T17:56:00.000Z'));
+});
+
+// ---- the reply sentinel fork: [humanctl reply] is a REAL user turn, unlike
+// [humanctl btw] (docs/ask-session.md's "the sentinel fork" section). Both
+// checks below share the same pending-ask setup so the contrast is direct:
+// a reply must clear it, a btw probe must never touch it.
+
+check('a [humanctl reply] user turn counts as a real user turn, clears needs-input, and never opens a probe-skip window', () => {
+  const genuine = [
+    codexEv(T_USER, { type: 'user_message', message: 'wire the adapter please' }),
+    codexEv(T_ASK, { type: 'agent_message', message: 'Adapter is wired. Should the debounce be 2s or 5s?' }),
+  ];
+  const reply = [
+    codexEv(T_REPLY, { type: 'user_message', message: `${REPLY_SENTINEL} go with 5s` }),
+    codexEv('2026-01-15T17:56:00.000Z', { type: 'agent_message', message: 'Done: debounce set to 5s, merged and shipped.' }),
+  ];
+  const before = signalsAndState(tmpTranscript('reply-synthetic-a.jsonl', genuine), 'codex');
+  const after = signalsAndState(tmpTranscript('reply-synthetic-b.jsonl', genuine.concat(reply)), 'codex');
+  assert.strictEqual(before.need.state, 'need', 'setup: the assistant left a real ask pending');
+  // "counts as a user turn"
+  assert.strictEqual(after.sig.userCount, before.sig.userCount + 1, 'a reply must be counted, unlike a btw probe');
+  assert.strictEqual(after.sig.lastUserText, 'go with 5s', 'a reply is stored as genuine user text with the wire sentinel stripped, never dropped');
+  // "does NOT open the pair-drop skip window": the assistant turn that follows
+  // the reply must still be visible, not silently skipped like a probe's answer.
+  assert.strictEqual(after.sig.lastKind, 'assistant', 'the follow-up assistant turn after a reply must not be skip-dropped');
+  assert.strictEqual(after.sig.lastAssistantText, 'Done: debounce set to 5s, merged and shipped.', 'the assistant turn after a reply must be visible');
+  // "CLEARS a needs-input state"
+  assert.strictEqual(after.need.state, 'done', 'a reply followed by a completing assistant turn must clear the earlier needs-input state');
+  assert.notStrictEqual(after.need.state, before.need.state);
+});
+
+check('a [humanctl btw] turn still pair-drops: it never counts as a user turn and never clears needs-input', () => {
+  const genuine = [
+    codexEv(T_USER, { type: 'user_message', message: 'wire the adapter please' }),
+    codexEv(T_ASK, { type: 'agent_message', message: 'Adapter is wired. Should the debounce be 2s or 5s?' }),
+  ];
+  const probe = [
+    codexEv(T_PROBE, { type: 'user_message', message: `${BTW_SENTINEL} status?` }),
+    codexEv(T_PROBE, { type: 'agent_message', message: 'Still waiting on the debounce call.' }),
+  ];
+  const before = signalsAndState(tmpTranscript('btw-contrast-a.jsonl', genuine), 'codex');
+  const after = signalsAndState(tmpTranscript('btw-contrast-b.jsonl', genuine.concat(probe)), 'codex');
+  assert.strictEqual(after.sig.userCount, before.sig.userCount, 'a btw probe must never be counted as a user turn');
+  assert.strictEqual(after.sig.lastKind, 'assistant', 'the pending ask must remain the last conversational turn, unlike a reply');
+  assert.strictEqual(after.need.state, 'need', 'a btw probe must never clear a pending needs-input state');
+  assert.strictEqual(after.need.state, before.need.state);
 });
 
 // ---- session joining: parent-cwd launches and transcript evidence ----

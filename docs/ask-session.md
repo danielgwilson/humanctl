@@ -102,6 +102,104 @@ a retry button; retrying re-runs the same question through the normal ask
 path (a fresh probe, not a resume of the dropped one, since a headless CLI
 call has no resumable handle once its process is gone).
 
+## Replying to an ask (`ask.answer`, the reply sentinel)
+
+`ask.answer` (`lib/commands.ts`'s `answerAsk`) is the reply half of the flow
+the rest of this doc documents: once a session shows a needs-you ask, a
+human can reply to it without leaving humanctl. It is a separate command
+from `session.ask` above -- that command injects a QUESTION from the human
+INTO the session; this one delivers the human's ANSWER back. Params: `id*`
+(session id), `harness`, `path`, `cwd`, `text*` (the reply), `askId`
+(optional, binds the reply to a specific ask item in the thread when a
+session has more than one open ask).
+
+### The reply sentinel: `[humanctl reply]`, distinct from `[humanctl btw]`
+
+Every delivered reply is prefixed with `[humanctl reply]`, a SEPARATE
+sentinel from `[humanctl btw]` above, because the reader (`lib/sessions.ts`)
+must treat the two oppositely:
+
+- `[humanctl btw]` marks a throwaway status probe: `readNeedSignals`
+  pair-drops the whole exchange (question and answer), so it never counts as
+  a user turn, never flips `lastKind`, and never clears a pending
+  needs-input state. See "Reader protection" above.
+- `[humanctl reply]` marks the human's real answer to a pending ask: it
+  counts as a REAL user turn -- it increments `userCount`, becomes
+  `lastKind: 'user'`, refreshes `lastActiveMs`, and clears whatever
+  needs-input state was pending, the same way a genuinely typed reply would.
+  It never opens a probe-skip window, so anything the harness says after the
+  reply (its next turn) stays visible instead of being dropped. The sentinel
+  itself is stripped from the stored text (`readNeedSignals`'s
+  `lastUserText` carries the human's own words, not the wire marker), and it
+  is deliberately absent from `isBoilerplate`'s regex -- do not add it
+  there; it is not the same class of thing as a btw probe.
+
+Covered by fixtures in `npm run pulse:selftest`: one check proves a reply
+counts as a user turn, clears needs-input, and never pair-drops; the check
+next to it proves a btw probe, on the same setup, still does none of those
+things.
+
+### Delivery, per harness
+
+Every call, regardless of harness, first appends a durable record to
+`~/.humanctl/asks/<sessionId>.jsonl`: `{at, kind: 'answer', text, askId?,
+actor: 'human', delivery}` (`at` is an epoch-ms number, unlike the ISO `ts`
+the probe Q&A records above use; `inbox.threads` normalizes it back to `ts`
+for its own sort). This record is the one guarantee every successful call
+makes: a human's typed reply is not lost to a failed spawn, regardless of
+delivery channel.
+
+- **Codex**: additionally live-injects the reply into the real rollout via
+
+      codex exec resume <thread-uuid> --skip-git-repo-check \
+        -c sandbox_mode="read-only" \
+        -o <tmpfile> "[humanctl reply] <text>"
+
+  Gated exactly like `session.ask`'s Codex path above: the same disclosure
+  ack (`state.json`'s `askCodexAck`) and the same refusal while the
+  session's state is `work` (appending into a live turn is unsupported
+  territory; the refusal says so instead of failing silently). Unlike the
+  probe above, this never pins `model_reasoning_effort=low` -- that pin is
+  `session.ask`'s probe-specific choice for a cheap status check; a reply
+  runs on the session's own default model and reasoning effort, since it is
+  real input the agent has to act on.
+
+  **Security posture, stated plainly**: `sandbox_mode=read-only` is pinned
+  DELIBERATELY, for the same reason as the probe above, restated for a
+  reply specifically: a reply delivers INFORMATION into the session's
+  context, and it must not grant execution authority the original session
+  did not already have. A reply typed through humanctl must not grant
+  `danger-full-access` merely because it arrived through `codex exec resume`
+  instead of the session's own terminal.
+
+  Delivery success or failure is reported separately from the durable
+  record: a spawn failure (missing CLI, timeout, etc.) still leaves the
+  reply recorded (`delivered: false, deliverError`) instead of discarding a
+  human's typed answer over a failed CLI call.
+
+- **Claude Code**: no live-injection channel exists for Claude (see "Claude
+  Code: zero footprint" above -- the same `--no-session-persistence`
+  isolation that makes the probe safe also means there is no way to append a
+  turn into a live Claude session from outside it). v1 is a staged handoff,
+  stated as such: the reply text is copied to the clipboard (async
+  `pbcopy`, never synchronous on Electron's main process), then the
+  existing Terminal-resume flow (`session.resume`) reopens the session in a
+  Terminal window in its own cwd, so the human pastes the reply in
+  themselves. The response reports `delivery: 'staged'`, never anything
+  implying the reply was actually delivered into the session.
+
+- **Any other/unrecognized harness**: the durable record only
+  (`delivery: 'file'`). No delivery channel is invented for a harness this
+  module cannot identify.
+
+### Thread shape
+
+`inbox.threads` surfaces a recorded reply as a `kind: 'answer'` item
+(`{kind: 'answer', text, askId, delivery, actor, ts}`), next to the existing
+`qa` (probe Q&A) and `ask-interrupted` item kinds a thread can already
+carry. This PR is backend-only: rendering a reply affordance in the UI is a
+separate, later change.
+
 ## Cost honesty
 
 - Claude asks are metered API spend on your account: about $0.006 per warm

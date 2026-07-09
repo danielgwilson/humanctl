@@ -235,6 +235,18 @@ export const COMMANDS: CommandDecl[] = [
     params: { id: { type: 'string' }, path: { type: 'string' }, harness: { type: 'string' }, cwd: { type: 'string' }, question: { type: 'string', required: true, max: 2000 } },
   },
   {
+    name: 'ask.answer', kind: 'action',
+    desc: 'reply to a session\'s ask/needs-input thread: always records the reply durably in asks/<sessionId>.jsonl, and additionally delivers it live into a Codex session (sandboxed read-only, gated on the same disclosure ack and not-currently-working check as session.ask) or stages it for a Claude Code session (clipboard copy + Terminal resume, since Claude has no live-injection channel; see docs/ask-session.md)',
+    params: {
+      id: { type: 'string', required: true },
+      harness: { type: 'string' },
+      path: { type: 'string' },
+      cwd: { type: 'string' },
+      text: { type: 'string', required: true, max: 2000 },
+      askId: { type: 'string' },
+    },
+  },
+  {
     name: 'atlas.ask', kind: 'action',
     desc: 'ask Atlas (a headless probe grounded in pulse, notes, and session states) a question about the fleet; advisory only, never executes actions',
     params: { question: { type: 'string', required: true, max: 2000 }, engine: { type: 'string', enum: ['claude', 'codex'] } },
@@ -549,6 +561,108 @@ export function readAskLog(sessionId: string | undefined, limit = 200): Record<s
   return out.slice(-limit);
 }
 
+// ---- ask.answer: reply to a session's ask/needs-input thread ----
+// The durable record below (asks/<sessionId>.jsonl, kind:'answer') is the one
+// guarantee every successful call makes: a human's typed reply must never be
+// lost to a flaky spawn. Delivery beyond the record is harness-specific and
+// gated exactly like session.ask's codex path where the two overlap:
+//   codex        live-injects into the real rollout via `codex exec resume`,
+//                gated on the same disclosure ack (state.json askCodexAck)
+//                and the same refusal while the session is actively working.
+//                SECURITY: pinned sandbox_mode=read-only DELIBERATELY -- a
+//                reply delivers INFORMATION into the session's context, it
+//                must not grant execution authority the original session did
+//                not already have. Runs on the session's own default
+//                model/reasoning: unlike session.ask's probe, this never pins
+//                model_reasoning_effort=low (that pin is probe-specific).
+//                Prefixed with REPLY_SENTINEL, never BTW_SENTINEL: unlike a
+//                probe, a reply must read as a REAL user turn (lib/sessions.ts).
+//   claude-code  no live-injection channel exists (docs/ask-session.md): v1
+//                is an honest staged handoff -- clipboard copy plus the
+//                existing Terminal-resume flow, wired by electron/main.ts's
+//                askAnswer wrapper (not this function) -- never pretended as
+//                delivered.
+//   other        an unrecognized/absent harness gets the durable record only;
+//                no channel is invented for a harness this module cannot
+//                identify.
+// A refusal (missing ack, or the session is 'work') rejects the whole call
+// honestly, exactly like session.ask's own refusals: nothing is recorded,
+// matching sessionAskPersisted's own "only log on success" precedent.
+const CODEX_UUID_RE = /([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})/i;
+
+export interface AskAnswerDeliverArgs { uuid: string; cwd: string; prompt: string }
+export interface AskAnswerDeliverResult { ok: boolean; error?: string }
+
+export interface AskAnswerDeps {
+  // () => boolean, not a Promise: readState() in electron/main.ts is a plain
+  // sync fs read, same as sessionAsk's own askCodexAck check.
+  askCodexAck: () => boolean;
+  needState: (p: { path?: string; harness?: string }) => Promise<{ ok: boolean; state?: string; error?: string }>;
+  deliverCodexReply: (args: AskAnswerDeliverArgs) => Promise<AskAnswerDeliverResult>;
+  deliverClipboard: (text: string) => Promise<AskAnswerDeliverResult>;
+  now?: () => number;
+}
+
+export interface AskAnswerParams {
+  id?: string;
+  harness?: string;
+  path?: string;
+  cwd?: string;
+  text?: string;
+  askId?: string;
+}
+
+// Pure argv builder: the smallest seam a selftest can assert against (the
+// REPLY_SENTINEL prefix, the sandbox_mode=read-only pin, and the deliberate
+// ABSENCE of session.ask's model_reasoning_effort=low pin) without spawning
+// anything or even touching the injected deliverCodexReply dep.
+export function codexReplyArgv(uuid: string, prompt: string, outFile: string): string[] {
+  return ['exec', 'resume', uuid, '--skip-git-repo-check', '-c', 'sandbox_mode=read-only', '-o', outFile, prompt];
+}
+
+export async function answerAsk(p: AskAnswerParams, deps: AskAnswerDeps): Promise<Record<string, unknown>> {
+  const sessionId = String(p.id || '').trim();
+  const text = String(p.text || '').trim();
+  if (!sessionId) return { ok: false, error: 'ask.answer requires a session id' };
+  if (!text) return { ok: false, error: 'ask.answer requires text' };
+  const askId = p.askId ? String(p.askId) : undefined;
+  const now = deps.now ? deps.now() : Date.now();
+  const { REPLY_SENTINEL } = require('./sessions') as typeof import('./sessions');
+  const prompt = `${REPLY_SENTINEL} ${text}`;
+  const codex = p.harness === 'codex';
+  const claude = p.harness === 'claude-code';
+
+  if (codex) {
+    if (!deps.askCodexAck()) {
+      return { ok: false, needsAck: true, engine: 'codex', error: 'Codex replies are written into the thread itself; confirm the disclosure first.' };
+    }
+    const need = await deps.needState({ path: p.path, harness: p.harness });
+    if (!need.ok) return { ok: false, engine: 'codex', error: `could not check whether this session is active: ${need.error}` };
+    if (need.state === 'work') {
+      return { ok: false, engine: 'codex', error: 'this session is working right now; a reply would append into the live thread. Try again once it settles.' };
+    }
+    const m = sessionId.match(CODEX_UUID_RE);
+    if (!m) return { ok: false, engine: 'codex', error: 'no thread uuid in this session id' };
+    const cwd = p.cwd && fs.existsSync(p.cwd) ? p.cwd : os.homedir();
+    appendAskLog(sessionId, { at: now, kind: 'answer', text, askId, actor: 'human', delivery: 'codex-rollout' });
+    const delivered = await deps.deliverCodexReply({ uuid: m[1], cwd, prompt });
+    return delivered.ok
+      ? { ok: true, delivery: 'codex-rollout', delivered: true, sessionId, at: now }
+      : { ok: true, delivery: 'codex-rollout', delivered: false, deliverError: delivered.error, sessionId, at: now };
+  }
+
+  if (claude) {
+    appendAskLog(sessionId, { at: now, kind: 'answer', text, askId, actor: 'human', delivery: 'staged' });
+    const copied = await deps.deliverClipboard(text);
+    return copied.ok
+      ? { ok: true, delivery: 'staged', clipped: true, sessionId, at: now }
+      : { ok: true, delivery: 'staged', clipped: false, clipboardError: copied.error, sessionId, at: now };
+  }
+
+  appendAskLog(sessionId, { at: now, kind: 'answer', text, askId, actor: 'human', delivery: 'file' });
+  return { ok: true, delivery: 'file', sessionId, at: now };
+}
+
 // ---- inbox watch scope: what inside ~/.humanctl actually feeds the Inbox ----
 // electron/main.ts watches ~/.humanctl recursively so a posted note or a
 // persisted ask answer refreshes the Inbox fast. But ~/.humanctl is also
@@ -637,6 +751,12 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
     for (const e of log) {
       if (e.status === 'interrupted') t.items.push({ kind: 'ask-interrupted', question: e.q || '', ts: e.ts });
       else if (e.q && e.a) t.items.push({ kind: 'qa', question: e.q, answer: e.a, engine: e.engine, ts: e.ts });
+      // ask.answer records (lib/commands.ts's answerAsk) use `at` (epoch ms),
+      // unlike the ISO `ts` every other item shape here carries; normalize to
+      // `ts` so the sort below keeps working unchanged for this item kind too.
+      else if (e.kind === 'answer' && typeof e.text === 'string') {
+        t.items.push({ kind: 'answer', text: e.text, askId: e.askId, delivery: e.delivery, actor: e.actor || 'human', ts: new Date(Number(e.at) || 0).toISOString() });
+      }
     }
   }
   const out = [...threads.values()].map((t) => {
