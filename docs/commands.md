@@ -53,6 +53,7 @@ writing:
 | `session.reveal` | action | no | `id, path` |
 | `session.summarize` | action | no | `id, path, harness, engine, auto` (`auto: true` marks a call from the always-on background engine, budget-gated, silent 401-skip) |
 | `session.ask` | action | no | `id, path, harness, cwd, question*` |
+| `ask.answer` | action | no | `id*, harness, path, cwd, text*, askId` |
 | `atlas.ask` | action | no | `question*, engine` |
 | `app.open-external` | action | no | `url*` |
 | `app.open-path` | action | no | `path*` |

@@ -37,7 +37,7 @@ import { execFile } from 'child_process';
 import { BTW_SENTINEL, type SessionRow } from '../lib/sessions';
 import {
   createRegistry, createEventLog, createControlServer,
-  appendAskLog, attachmentsDir, type RegistryInvokeCtx,
+  appendAskLog, attachmentsDir, answerAsk, codexReplyArgv, type RegistryInvokeCtx, type AskAnswerDeps,
 } from '../lib/commands';
 import { resolveHarnessIconPath, cachedIconPath } from '../lib/harness-icons';
 
@@ -887,6 +887,70 @@ function flushInFlightAsksAsInterrupted(): void {
   inFlightAsks.clear();
 }
 
+// ask.answer: reply to a session's ask/needs-input thread. lib/commands.ts's
+// answerAsk owns validation, the durable asks/<sessionId>.jsonl record, and
+// the codex/claude delivery routing; this wraps it with the same target
+// resolution sessionAsk uses and supplies the real Electron-side deps (state.json
+// for the disclosure ack, the reader-service for the work-state check, and the
+// actual spawns), so the two ask commands share one verified invocation shape.
+// See docs/ask-session.md and lib/commands.ts's answerAsk header comment for
+// the full per-channel contract (including the deliberate sandbox_mode=read-only
+// pin and the absence of session.ask's model_reasoning_effort=low pin).
+async function askAnswer(p: TargetParams & { text?: string; askId?: string }): Promise<Record<string, unknown>> {
+  const t = await resolveTarget(p, ['id', 'path']);
+  if (!t.ok) return t as unknown as Record<string, unknown>;
+  const arg = t.target;
+  const deps: AskAnswerDeps = {
+    askCodexAck: () => readState().askCodexAck === true,
+    // Normalize the reader-service's {ok, need: {state, ...}} reply into the
+    // flat {ok, state, error} shape AskAnswerDeps declares, so lib/commands.ts
+    // (and its selftest) never needs to know reader-service's wire shape.
+    needState: async (np) => {
+      const r = await callReader('need-state', np);
+      if (!r.ok) return { ok: false, error: r.error as string | undefined };
+      const need = r.need as { state: string } | undefined;
+      return { ok: true, state: need?.state };
+    },
+    deliverCodexReply: async ({ uuid, cwd, prompt }) => {
+      const bin = await resolveCli('codex');
+      if (!bin) return { ok: false, error: 'could not find the codex CLI on your PATH' };
+      const env = Object.assign({}, process.env, { PATH: [path.dirname(bin), process.env.PATH, '/opt/homebrew/bin', '/usr/local/bin', `${os.homedir()}/.local/bin`].filter(Boolean).join(':') });
+      delete (env as Record<string, string | undefined>).CLAUDE_CODE_ENTRYPOINT;
+      delete (env as Record<string, string | undefined>).CLAUDECODE;
+      const outFile = path.join(os.tmpdir(), `humanctl-reply-${Date.now()}-${process.pid}.txt`);
+      const argv = codexReplyArgv(uuid, prompt, outFile);
+      return new Promise<{ ok: boolean; error?: string }>((res) => {
+        const cp = execFile(bin, argv, { timeout: ASK_TIMEOUT_MS, maxBuffer: 4 << 20, env, cwd },
+          (err, _stdout, stderr) => {
+            try { fs.unlinkSync(outFile); } catch { /* best effort */ }
+            if (err) { res({ ok: false, error: String(stderr || err.message || 'reply delivery failed').slice(0, 300) }); return; }
+            res({ ok: true });
+          });
+        try { cp.stdin!.end(); } catch { /* prompt is argv, not stdin */ }
+      });
+    },
+    // Staged handoff for Claude Code (no live-injection channel exists):
+    // copy the reply text to the clipboard, async, never on main synchronously.
+    deliverClipboard: (text) => new Promise<{ ok: boolean; error?: string }>((res) => {
+      const cp = execFile('pbcopy', [], { timeout: 5000 }, (err) => {
+        res(err ? { ok: false, error: String(err.message || 'pbcopy failed') } : { ok: true });
+      });
+      try { cp.stdin!.end(text); } catch (e) { res({ ok: false, error: String((e as Error)?.message || e) }); }
+    }),
+  };
+  const res = await answerAsk(arg, deps);
+  // Staged delivery is two steps: the clipboard copy above, then reusing the
+  // existing sessionResume flow (Terminal resume in the session cwd) so the
+  // human can paste the reply in. A resume failure does not undo the
+  // already-recorded/copied reply, so it is reported alongside ok:true rather
+  // than turned into a whole-command failure.
+  if (res.ok && res.delivery === 'staged') {
+    const resumed = await sessionResume(arg);
+    return Object.assign({}, res, { resumed: !!resumed.ok, resumeError: resumed.ok ? undefined : resumed.error });
+  }
+  return res;
+}
+
 // Open/resume the actual session in a Terminal window (hands it back to the human).
 async function sessionResume(p: TargetParams): Promise<Record<string, unknown>> {
   const t = await resolveTarget(p, ['id', 'harness', 'cwd']);
@@ -1002,6 +1066,7 @@ const registry = createRegistry({
     'inbox.mark-read': (p, ctx) => markThreadRead(p.threadId, p.at, ctx),
     'inbox.mark-all-read': (_p, ctx) => markAllThreadsRead(ctx),
     'session.ask': (p) => sessionAskPersisted(p),
+    'ask.answer': (p) => askAnswer(p),
     'atlas.ask': (p) => atlasAsk(p),
   },
 });

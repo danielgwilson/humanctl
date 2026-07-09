@@ -24,8 +24,12 @@ import {
   storeNoteImages,
   attachmentsDir,
   prChip,
+  answerAsk,
+  codexReplyArgv,
   type CommandDecl,
+  type AskAnswerDeps,
 } from './commands';
+import { REPLY_SENTINEL } from './sessions';
 
 let passed = 0;
 function check(name: string, fn: () => void): void {
@@ -615,6 +619,216 @@ async function run(): Promise<void> {
       const budget = result.budget as { spentUSD: number; dailyBudgetUSD: number };
       assert.ok(budget.spentUSD > 0, 'expected the recorded spend to show up through the registered command');
       assert.strictEqual(budget.dailyBudgetUSD, 1.0);
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  // ---- ask.answer (dispatch v1 backend, issue #74 items 1+3): registration,
+  // the pure argv-builder seam, and the full codex/claude/unknown delivery
+  // routing against FAKE deps -- never a real codex/claude/pbcopy spawn from a
+  // selftest. See lib/commands.ts's answerAsk header comment for the full
+  // per-channel contract this exercises. ----
+
+  check('ask.answer is registered as an action, not direct (like session.ask, it needs Electron-resolved state), requiring id and text', () => {
+    const decl = COMMANDS.find((c) => c.name === 'ask.answer') as CommandDecl;
+    assert.ok(decl, 'ask.answer must be registered');
+    assert.strictEqual(decl.kind, 'action');
+    assert.strictEqual(decl.direct, undefined, 'ask.answer needs userData (the ack) and the reader-service (the work-state check), same as session.ask');
+    assert.strictEqual(decl.params.id.required, true);
+    assert.strictEqual(decl.params.text.required, true);
+    assert.strictEqual(decl.params.text.max, 2000);
+    assert.strictEqual(validateParams(decl, {}).ok, false);
+    assert.strictEqual(validateParams(decl, { id: 'sess1' }).ok, false, 'text is required too');
+    assert.deepStrictEqual(
+      validateParams(decl, { id: 'sess1', text: 'go with 5s' }),
+      { ok: true, params: { id: 'sess1', text: 'go with 5s' } },
+    );
+  });
+
+  await checkAsync('ask.answer has no direct handler: an honest "not running" error, like session.ask/atlas.ask/app.harness-icons', async () => {
+    const dir = tempDir('ask-answer-nohandler');
+    const log = createEventLog({ dir });
+    const registry = createRegistry({ log, handlers: {} });
+    const result = await registry.invoke('ask.answer', { id: 'sess1', text: 'go with 5s' }, { source: 'test' });
+    assert.strictEqual(result.ok, false);
+    assert.match(String(result.error), /only available through the running desktop app/);
+  });
+
+  check('codexReplyArgv: sentinel-prefixed prompt, the read-only sandbox pin, and NO reasoning-effort pin (unlike session.ask\'s probe)', () => {
+    const argv = codexReplyArgv('11111111-2222-3333-4444-555555555555', '[humanctl reply] go with 5s', '/tmp/humanctl-reply-out.txt');
+    assert.deepStrictEqual(argv, [
+      'exec', 'resume', '11111111-2222-3333-4444-555555555555', '--skip-git-repo-check',
+      '-c', 'sandbox_mode=read-only', '-o', '/tmp/humanctl-reply-out.txt', '[humanctl reply] go with 5s',
+    ]);
+    assert.ok(argv[argv.length - 1].startsWith(REPLY_SENTINEL), 'the prompt must carry the reply sentinel, not the btw sentinel');
+    assert.ok(!argv.some((a) => /model_reasoning_effort/.test(a)), 'a reply must run on the session\'s own default reasoning; the low-effort pin is session.ask\'s probe-specific choice');
+  });
+
+  function fakeAskAnswerDeps(overrides: Partial<AskAnswerDeps> = {}): { deps: AskAnswerDeps; calls: { codex: unknown[]; clipboard: unknown[] } } {
+    const calls: { codex: unknown[]; clipboard: unknown[] } = { codex: [], clipboard: [] };
+    const deps: AskAnswerDeps = {
+      askCodexAck: () => true,
+      needState: async () => ({ ok: true, state: 'idle' }),
+      deliverCodexReply: async (args) => { calls.codex.push(args); return { ok: true }; },
+      deliverClipboard: async (text) => { calls.clipboard.push(text); return { ok: true }; },
+      now: () => Date.parse('2026-01-15T18:00:00.000Z'),
+      ...overrides,
+    };
+    return { deps, calls };
+  }
+
+  await checkAsync('answerAsk: rejects a missing id or missing text before touching any injected dep', async () => {
+    const { deps, calls } = fakeAskAnswerDeps();
+    assert.strictEqual((await answerAsk({ text: 'x' }, deps)).ok, false);
+    assert.strictEqual((await answerAsk({ id: 'sess1' }, deps)).ok, false);
+    assert.strictEqual(calls.codex.length, 0);
+    assert.strictEqual(calls.clipboard.length, 0);
+  });
+
+  await checkAsync('ask.answer: codex delivery appends the durable record, logs one event, is picked up by inbox.threads, and the spawn seam sees the sentinel-prefixed prompt', async () => {
+    const home = tempDir('ask-answer-codex-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const { deps, calls } = fakeAskAnswerDeps();
+      const log = createEventLog({ dir: path.join(home, '.humanctl') });
+      const registry = createRegistry({ log, handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const sid = randomUUID(); // codex session ids carry the thread uuid directly
+      const result = await registry.invoke('ask.answer', { id: sid, harness: 'codex', text: 'go with 5s', askId: 'ask_1' }, { source: 'test' });
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.delivery, 'codex-rollout');
+      assert.strictEqual(result.delivered, true);
+
+      // the durable record
+      const entries = readAskLog(sid);
+      assert.strictEqual(entries.length, 1);
+      assert.strictEqual(entries[0].kind, 'answer');
+      assert.strictEqual(entries[0].text, 'go with 5s');
+      assert.strictEqual(entries[0].askId, 'ask_1');
+      assert.strictEqual(entries[0].actor, 'human');
+      assert.strictEqual(entries[0].delivery, 'codex-rollout');
+
+      // the injected spawn seam: real argv/prompt shape without a real spawn
+      assert.strictEqual(calls.codex.length, 1);
+      const call = calls.codex[0] as { uuid: string; cwd: string; prompt: string };
+      assert.strictEqual(call.uuid, sid);
+      assert.strictEqual(call.prompt, '[humanctl reply] go with 5s');
+      assert.ok(!call.prompt.startsWith('[humanctl btw]'));
+
+      // one event line
+      const eventLines = fs.readFileSync(log.file, 'utf8').trim().split('\n');
+      const entry = JSON.parse(eventLines[eventLines.length - 1]);
+      assert.strictEqual(entry.name, 'ask.answer');
+      assert.strictEqual(entry.kind, 'action');
+      assert.strictEqual(entry.ok, true);
+
+      // inbox.threads surfaces it
+      const threadsResult = await registry.invoke('inbox.threads', {}, { source: 'test' });
+      const threads = threadsResult.threads as { sessionId: string; items: Record<string, unknown>[] }[];
+      const t = threads.find((x) => x.sessionId === sid);
+      assert.ok(t, 'expected a thread from the persisted answer alone (no note, no live session row)');
+      const item = t!.items.find((i) => i.kind === 'answer');
+      assert.ok(item, 'expected a kind:"answer" item in the thread');
+      assert.strictEqual(item!.text, 'go with 5s');
+      assert.strictEqual(item!.delivery, 'codex-rollout');
+      assert.strictEqual(item!.askId, 'ask_1');
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: the codex path REFUSES while the session state is "work", and appends nothing', async () => {
+    const home = tempDir('ask-answer-work-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = randomUUID();
+      const { deps, calls } = fakeAskAnswerDeps({ needState: async () => ({ ok: true, state: 'work' }) });
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: sid, harness: 'codex', text: 'go with 5s' }, { source: 'test' });
+      assert.strictEqual(result.ok, false);
+      assert.match(String(result.error), /working right now/);
+      assert.strictEqual(calls.codex.length, 0, 'a refused reply must never spawn');
+      assert.strictEqual(readAskLog(sid).length, 0, 'a refused reply must never be recorded');
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: the ack gate refuses without askCodexAck, and appends nothing', async () => {
+    const home = tempDir('ask-answer-ack-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = randomUUID();
+      const { deps, calls } = fakeAskAnswerDeps({ askCodexAck: () => false });
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: sid, harness: 'codex', text: 'go with 5s' }, { source: 'test' });
+      assert.strictEqual(result.ok, false);
+      assert.strictEqual(result.needsAck, true);
+      assert.strictEqual(calls.codex.length, 0);
+      assert.strictEqual(readAskLog(sid).length, 0);
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: codex with no thread uuid in the session id is refused honestly (never a fabricated delivery)', async () => {
+    const home = tempDir('ask-answer-nouuid-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const { deps, calls } = fakeAskAnswerDeps();
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: 'not-a-uuid', harness: 'codex', text: 'go with 5s' }, { source: 'test' });
+      assert.strictEqual(result.ok, false);
+      assert.match(String(result.error), /no thread uuid/);
+      assert.strictEqual(calls.codex.length, 0);
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: a codex delivery failure still keeps the durable record (soft-fail; a flaky spawn must never lose the reply)', async () => {
+    const home = tempDir('ask-answer-deliverfail-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = randomUUID();
+      const { deps } = fakeAskAnswerDeps({ deliverCodexReply: async () => ({ ok: false, error: 'codex CLI not found' }) });
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: sid, harness: 'codex', text: 'go with 5s' }, { source: 'test' });
+      assert.strictEqual(result.ok, true, 'the durable record must land even when live delivery fails');
+      assert.strictEqual(result.delivered, false);
+      assert.strictEqual(result.deliverError, 'codex CLI not found');
+      assert.strictEqual(readAskLog(sid).length, 1);
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: claude-code delivery stages a clipboard copy only, never the codex channel, and records delivery:"staged"', async () => {
+    const home = tempDir('ask-answer-claude-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = `sess_${randomUUID().slice(0, 8)}`;
+      const { deps, calls } = fakeAskAnswerDeps();
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: sid, harness: 'claude-code', text: 'ship it' }, { source: 'test' });
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.delivery, 'staged');
+      assert.strictEqual(result.clipped, true);
+      assert.deepStrictEqual(calls.clipboard, ['ship it']);
+      assert.strictEqual(calls.codex.length, 0, 'a claude reply must never touch the codex delivery channel');
+      const entries = readAskLog(sid);
+      assert.strictEqual(entries[0].delivery, 'staged');
+    } finally { process.env.HOME = prevHome; }
+  });
+
+  await checkAsync('ask.answer: an unrecognized/absent harness records delivery:"file" only, no channel invented', async () => {
+    const home = tempDir('ask-answer-file-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = `sess_${randomUUID().slice(0, 8)}`;
+      const { deps, calls } = fakeAskAnswerDeps();
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }), handlers: { 'ask.answer': (p) => answerAsk(p, deps) } });
+      const result = await registry.invoke('ask.answer', { id: sid, text: 'noted' }, { source: 'test' }); // no harness at all
+      assert.strictEqual(result.ok, true);
+      assert.strictEqual(result.delivery, 'file');
+      assert.strictEqual(calls.codex.length, 0);
+      assert.strictEqual(calls.clipboard.length, 0);
+      assert.strictEqual(readAskLog(sid)[0].delivery, 'file');
     } finally { process.env.HOME = prevHome; }
   });
 

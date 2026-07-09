@@ -72,6 +72,15 @@ const parse = (line: string): Record<string, any> | null => { try { return JSON.
 export const BTW_SENTINEL = '[humanctl btw]';
 const BTW_RE = /^\[humanctl btw\]/;
 
+// "ask.answer" replies (lib/commands.ts's answerAsk) prefix their injected
+// turn with this DIFFERENT sentinel, deliberately: unlike a btw probe, a
+// reply is not a throwaway status check to hide, it is the human's real
+// answer to a pending ask, so it must read as a REAL user turn everywhere a
+// probe must NOT (see readNeedSignals below and docs/ask-session.md). It is
+// intentionally absent from isBoilerplate's regex -- do not add it there.
+export const REPLY_SENTINEL = '[humanctl reply]';
+const REPLY_SENTINEL_RE = /^\[humanctl reply\]\s*/;
+
 function isBoilerplate(t: string | null | undefined): boolean {
   if (!t) return true;
   return /^# AGENTS\.md|^<INSTRUCTIONS|^<skill|^<environment_context|^<subagent|^<turn_aborted|^<channel|^<local-command|^<task-notification|^<command-message|^<command-name|^<system-reminder|^This session is being continued|^Caveat: The messages below|^\[Request interrupted|^\[Request\]|^\[humanctl btw\]/.test(t);
@@ -339,6 +348,13 @@ export function readNeedSignals(file: string, harness: Harness | string, st?: fs
         if (!t) continue;
         if (INTERRUPT_RE.test(t)) { probeSkip = false; events.push({ kind: 'interrupt', ts: tsv }); continue; }
         if (BTW_RE.test(t)) { probeSkip = true; continue; } // probe question: drop it and its answer
+        // A human reply (ask.answer): a REAL user turn, not a probe. Closes any
+        // open probe-skip window and counts normally, so it clears a pending
+        // needs-input state exactly like any other genuine user message. The
+        // wire sentinel is stripped from the stored text: it is a delivery
+        // marker, not part of the human's actual answer (lastUserText must
+        // read as the reply itself, same as it would for typed text).
+        if (REPLY_SENTINEL_RE.test(t)) { probeSkip = false; events.push({ kind: 'user', text: t.replace(REPLY_SENTINEL_RE, ''), ts: tsv }); continue; }
         if (isBoilerplate(t)) continue; // local commands, wrappers, harness meta
         probeSkip = false;
         events.push({ kind: 'user', text: t, ts: tsv });
@@ -356,6 +372,9 @@ export function readNeedSignals(file: string, harness: Harness | string, st?: fs
         if (/<turn_aborted/.test(t)) { probeSkip = false; events.push({ kind: 'interrupt', ts: tsv }); continue; }
         if (!t) continue;
         if (BTW_RE.test(t)) { probeSkip = true; continue; } // probe question: drop it and its answer
+        // See the claude branch above: a reply is a real user turn, never a
+        // probe, stored with the wire sentinel stripped.
+        if (REPLY_SENTINEL_RE.test(t)) { probeSkip = false; events.push({ kind: 'user', text: t.replace(REPLY_SENTINEL_RE, ''), ts: tsv }); continue; }
         if (isBoilerplate(t)) continue; // wrapper boilerplate never closes a probe window
         probeSkip = false;
         events.push({ kind: 'user', text: t, ts: tsv });
@@ -374,6 +393,8 @@ export function readNeedSignals(file: string, harness: Harness | string, st?: fs
         const t = arrText(p.content).trim();
         if (!t) continue;
         if (BTW_RE.test(t)) { probeSkip = true; continue; } // the user_message twin of the probe
+        // The user_message twin of the reply handling above.
+        if (REPLY_SENTINEL_RE.test(t)) { probeSkip = false; events.push({ kind: 'user', text: t.replace(REPLY_SENTINEL_RE, ''), ts: tsv }); continue; }
         if (isBoilerplate(t)) continue;
         if (/<turn_aborted/.test(t)) { probeSkip = false; events.push({ kind: 'interrupt', ts: tsv }); continue; }
         probeSkip = false;
