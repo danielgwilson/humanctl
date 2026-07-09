@@ -65,6 +65,7 @@ function ContextMenuSubTrigger({
       data-slot="context-menu-sub-trigger"
       data-inset={inset}
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this inset indent; zero-visual-delta this stage.
         "flex cursor-default items-center rounded-sm px-2 py-1.5 font-mono text-row outline-hidden select-none focus:wash-hover data-[inset]:pl-8 data-[state=open]:bg-hover [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
         className
       )}
@@ -84,6 +85,7 @@ function ContextMenuSubContent({
     <ContextMenuPrimitive.SubContent
       data-slot="context-menu-sub-content"
       className={cn(
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this min-width; zero-visual-delta this stage.
         "z-50 min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-hidden rounded-md overlay bg-surface-2 p-1 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         className
       )}
@@ -101,6 +103,7 @@ function ContextMenuContent({
       <ContextMenuPrimitive.Content
         data-slot="context-menu-content"
         className={cn(
+          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this min-width; zero-visual-delta this stage.
           "z-50 max-h-(--radix-context-menu-content-available-height) min-w-[8rem] origin-(--radix-context-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md overlay bg-surface-2 p-1 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           className
         )}
@@ -125,6 +128,7 @@ function ContextMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this inset indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 data-[variant=destructive]:text-block-contrast data-[variant=destructive]:focus:bg-block-soft data-[variant=destructive]:focus:text-block-contrast [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-ink-3 data-[variant=destructive]:*:[svg]:text-block-contrast!",
         className
       )}
@@ -143,6 +147,7 @@ function ContextMenuCheckboxItem({
     <ContextMenuPrimitive.CheckboxItem
       data-slot="context-menu-checkbox-item"
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this checkbox-item indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className
       )}
@@ -168,6 +173,7 @@ function ContextMenuRadioItem({
     <ContextMenuPrimitive.RadioItem
       data-slot="context-menu-radio-item"
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this radio-item indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
@@ -175,6 +181,7 @@ function ContextMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <ContextMenuPrimitive.ItemIndicator>
+          {/* eslint-disable-next-line design-system/no-bare-lucide-render -- stage 5 (#71) item 1: this is the RadioItem's 8px filled dot, not a chrome icon -- Icon's fixed 14px/12px stroke sizing doesn't fit it. The new "Dot" primitive (item 1) is the right home. */}
           <CircleIcon className="size-2 fill-current" />
         </ContextMenuPrimitive.ItemIndicator>
       </span>
@@ -195,6 +202,7 @@ function ContextMenuLabel({
       data-slot="context-menu-label"
       data-inset={inset}
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: ContextMenu primitive rewrite owns this label inset indent; zero-visual-delta this stage.
         "px-2 py-1.5 font-mono text-label uppercase text-ink data-[inset]:pl-8",
         className
       )}

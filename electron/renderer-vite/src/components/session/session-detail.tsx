@@ -143,6 +143,7 @@ function AskReplyComposer({
           variant="iris"
           onClick={send}
           disabled={submitting || !text.trim()}
+          // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 2: one of the eight inline Button height/padding overrides the Button rewrite explicitly deletes; zero-visual-delta this stage.
           className="flex-none px-3.5 py-1.5"
         >
           {submitting ? 'sending...' : 'Reply'}
@@ -407,6 +408,7 @@ export function SessionDetail({
   }
 
   return (
+    // eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 7: this centred 840px column is the exact defect item 7 fixes ("the same session's left edge moves depending on how you opened it"). That is a structural left-anchor rewrite, not a token swap -- --measure-prose (560px) caps prose blocks only, not this whole column -- so it stays exactly as-is, zero-visual-delta, until that stage.
     <div className="mx-auto flex h-full w-full max-w-[840px] flex-col overflow-hidden">
       {/* Pinned header: back breadcrumb + glyph/title/state/resume + meta
           line. Structurally outside the scroll region below -- never
@@ -530,6 +532,7 @@ export function SessionDetail({
             variant="done"
             onClick={send}
             disabled={asking || !row || !q.trim()}
+            // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 2: one of the eight inline Button height/padding overrides the Button rewrite explicitly deletes ("the two Ask buttons ... must render identically after this stage"); zero-visual-delta this stage.
             className="flex-none px-3.5 py-1.5"
           >
             {asking ? 'asking...' : 'Ask'}

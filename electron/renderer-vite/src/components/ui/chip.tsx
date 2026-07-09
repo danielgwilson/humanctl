@@ -43,6 +43,7 @@ const HUE_CONTRAST: Record<string, string> = {
 };
 
 const chipVariants = cva(
+  // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71): Chip primitive rewrite ("twelve variants to two") owns this radius; not on the current radius scale (--radius-xs/sm/md/lg), so no token exists to swap to without inventing one outside this stage's 12.
   "font-mono uppercase tracking-wider whitespace-nowrap rounded-[5px]",
   {
     variants: {
@@ -77,6 +78,7 @@ const chipVariants = cva(
         // calls for sentence case here, but issue #69's own Changes list
         // does not enumerate a chip-case pass, so it stays deferred rather
         // than bundled into a type-role PR uninvited.
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71): Chip primitive rewrite owns this geometry; a zero-visual-delta stage can't invent replacement values without changing the chip's rendered size.
         chip: "gap-[5px] px-[7px] py-[2px] font-mono text-micro",
         label: "gap-1 font-mono text-micro",
       },
@@ -115,6 +117,7 @@ export function Chip({
       style={hueStyle ? { ...hueStyle, ...style } : style}
       {...props}
     >
+      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc dot it replaces. */}
       {showDot && <span className="h-[5px] w-[5px] flex-none rounded-full bg-current" aria-hidden="true" />}
       {children}
     </Badge>

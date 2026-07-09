@@ -3,6 +3,7 @@ import globals from 'globals';
 import reactHooks from 'eslint-plugin-react-hooks';
 import reactRefresh from 'eslint-plugin-react-refresh';
 import tseslint from 'typescript-eslint';
+import designSystem from './eslint-rules/design-system.mjs';
 
 // The renderer is a separate runtime from the Next app at the repo root, and
 // the root eslint config deliberately ignores `electron/**` (see
@@ -39,6 +40,29 @@ export default tseslint.config(
     languageOptions: {
       ecmaVersion: 2022,
       globals: globals.browser,
+    },
+  },
+
+  // Stage 4 (#70), docs/design-system.md section 10.2: the mechanical half
+  // of the design system, over exactly the scope the doc names
+  // ("electron/renderer-vite/src/components and src/views" -- this repo
+  // nests views under components/views, so one glob covers both; App.tsx
+  // and main.tsx at src/ top level carry no Tailwind classNames of their
+  // own and are deliberately left out). The grep gate over retired class
+  // names (section 10.3) is a separate script, scripts/design-lint-classnames.js,
+  // run by `npm run lint:classnames` -- Tailwind v4 silently drops unknown
+  // classes rather than erroring, so eslint (which only sees syntax) cannot
+  // catch a class name that used to exist and no longer does.
+  {
+    files: ['src/components/**/*.{ts,tsx}'],
+    plugins: { 'design-system': designSystem },
+    rules: {
+      'design-system/no-arbitrary-length': 'error',
+      'design-system/spacing-steps': 'error',
+      'design-system/no-dark-variant': 'error',
+      'design-system/no-heavy-weight': 'error',
+      'design-system/no-outline-none': 'error',
+      'design-system/no-bare-lucide-render': 'error',
     },
   },
 

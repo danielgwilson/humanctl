@@ -43,6 +43,7 @@ function DropdownMenuContent({
         data-slot="dropdown-menu-content"
         sideOffset={sideOffset}
         className={cn(
+          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this min-width; zero-visual-delta this stage.
           "z-50 max-h-(--radix-dropdown-menu-content-available-height) min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-x-hidden overflow-y-auto rounded-md overlay bg-surface-2 p-1 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
           className
         )}
@@ -75,6 +76,7 @@ function DropdownMenuItem({
       data-inset={inset}
       data-variant={variant}
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this inset indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 data-[inset]:pl-8 data-[variant=destructive]:text-block-contrast data-[variant=destructive]:focus:bg-block-soft data-[variant=destructive]:focus:text-block-contrast [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4 [&_svg:not([class*='text-'])]:text-ink-3 data-[variant=destructive]:*:[svg]:text-block-contrast!",
         className
       )}
@@ -93,6 +95,7 @@ function DropdownMenuCheckboxItem({
     <DropdownMenuPrimitive.CheckboxItem
       data-slot="dropdown-menu-checkbox-item"
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this checkbox-item indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0",
         className
       )}
@@ -129,6 +132,7 @@ function DropdownMenuRadioItem({
     <DropdownMenuPrimitive.RadioItem
       data-slot="dropdown-menu-radio-item"
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this radio-item indent; zero-visual-delta this stage.
         "relative flex cursor-default items-center gap-2 rounded-sm py-1.5 pr-2 pl-8 font-mono text-row outline-hidden select-none focus:wash-hover data-[disabled]:pointer-events-none data-[disabled]:opacity-50 [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
         className
       )}
@@ -136,6 +140,7 @@ function DropdownMenuRadioItem({
     >
       <span className="pointer-events-none absolute left-2 flex size-3.5 items-center justify-center">
         <DropdownMenuPrimitive.ItemIndicator>
+          {/* eslint-disable-next-line design-system/no-bare-lucide-render -- stage 5 (#71) item 1: this is the RadioItem's 8px filled dot, not a chrome icon -- Icon's fixed 14px/12px stroke sizing doesn't fit it. The new "Dot" primitive (item 1) is the right home. */}
           <CircleIcon className="size-2 fill-current" />
         </DropdownMenuPrimitive.ItemIndicator>
       </span>
@@ -159,6 +164,7 @@ function DropdownMenuLabel({
         // Genuinely "section labels" within a menu (nav-sidebar.tsx's Theme
         // group is the live call site, already uppercase at its own
         // className override) -- label role is the documented fit.
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this label inset indent; zero-visual-delta this stage.
         "px-2 py-1.5 font-mono text-label uppercase text-ink data-[inset]:pl-8",
         className
       )}
@@ -215,6 +221,7 @@ function DropdownMenuSubTrigger({
       data-slot="dropdown-menu-sub-trigger"
       data-inset={inset}
       className={cn(
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this sub-trigger inset indent; zero-visual-delta this stage.
         "flex cursor-default items-center gap-2 rounded-sm px-2 py-1.5 font-mono text-row outline-hidden select-none focus:wash-hover data-[inset]:pl-8 data-[state=open]:bg-hover [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='text-'])]:text-ink-3",
         className
       )}
@@ -234,6 +241,7 @@ function DropdownMenuSubContent({
     <DropdownMenuPrimitive.SubContent
       data-slot="dropdown-menu-sub-content"
       className={cn(
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: DropdownMenu primitive rewrite owns this min-width; zero-visual-delta this stage.
         "z-50 min-w-[8rem] origin-(--radix-dropdown-menu-content-transform-origin) overflow-hidden rounded-md overlay bg-surface-2 p-1 text-ink data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95",
         className
       )}

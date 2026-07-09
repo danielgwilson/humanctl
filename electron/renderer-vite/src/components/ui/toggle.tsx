@@ -22,6 +22,7 @@ import { cn } from "@/lib/utils"
 // segmented control's active option is a selection, not a second "primary
 // button" fill.
 const toggleVariants = cva(
+  // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71): Toggle/ToggleGroup rewrite owns this radius; zero-visual-delta this stage.
   "inline-flex items-center justify-center whitespace-nowrap rounded-[5px] font-mono font-medium text-ink-3 transition-colors hover:wash-hover hover:text-ink disabled:pointer-events-none disabled:opacity-50 aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[state=on]:bg-selected data-[state=on]:text-ink [&_svg]:pointer-events-none [&_svg]:shrink-0 [&_svg:not([class*='size-'])]:size-4",
   {
     variants: {
@@ -36,6 +37,7 @@ const toggleVariants = cva(
       size: {
         default: "h-7 px-3 font-mono text-row",
         sm: "h-6 px-2 font-mono text-row",
+        // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71): Toggle size ladder rewrite owns this; zero-visual-delta this stage.
         lg: "h-8 px-3.5 font-mono text-row",
       },
     },

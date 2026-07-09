@@ -23,6 +23,7 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
     <textarea
       data-slot="textarea"
       className={cn(
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: Textarea primitive rewrite owns this height ladder; the 200px cap is already deliberate (see this file's own header comment), zero-visual-delta this stage.
         "h-16 max-h-[200px] w-full min-w-0 resize-none overflow-y-auto rounded-lg hairline bg-surface-sunken px-3 py-2 font-sans text-prose text-ink transition-[color,box-shadow] placeholder:text-ink-3 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
         "aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)]",
         className

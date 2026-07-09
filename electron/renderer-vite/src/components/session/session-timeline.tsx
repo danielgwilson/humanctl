@@ -185,6 +185,7 @@ export function SessionTimeline({
         ) : tl.error ? (
           <div className="py-2 font-mono text-micro text-ink-4">{tl.error}</div>
         ) : (
+          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72): session-detail/timeline layout pass; a scroll-headroom reservation for the "load more" control, not yet named by a specific item. Zero-visual-delta this stage.
           <div className="min-h-[120px]">
             {tl.atStart ? (
               <div className="py-2 text-center font-mono text-label uppercase text-ink-4">

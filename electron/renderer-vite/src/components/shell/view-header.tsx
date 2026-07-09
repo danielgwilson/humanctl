@@ -9,6 +9,7 @@ import { Icon } from '@/components/ui/icon';
 // language.
 export function ViewHeader({ icon: HeaderIcon, title, subtitle }: { icon: LucideIcon; title: string; subtitle: string }) {
   return (
+    // eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 1: "Band height is one number... every other view is ~46px" -- ViewHeader (Sessions/Metrics/Fleet/Settings) is that ~46px band. Zero-visual-delta this stage.
     <div className="flex flex-none items-center gap-2.5 border-b border-b-hairline px-6 py-3.5">
       <Icon icon={HeaderIcon} className="flex-none text-ink-3" aria-hidden="true" />
       {/* This IS "the view name. Once per screen" (docs/design-system.md
