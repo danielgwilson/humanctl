@@ -82,8 +82,9 @@ export function InboxView({
   }
 
   return (
-    <div className="grid h-full grid-cols-[340px_1fr]">
+    <div className="grid h-full grid-cols-[var(--rail-list)_1fr]">
       <aside className="flex min-h-0 flex-col border-r border-r-hairline bg-surface-0">
+        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 1: "Band height is one number... Today Inbox's list band is 38px" names this exact site. Zero-visual-delta this stage. */}
         <div className="flex h-[38px] flex-none items-center gap-2 border-b border-b-hairline px-6">
           <span aria-hidden="true">&#9993;</span>
           {/* Pane header, a section label -- `label` role (section 2.3),

@@ -70,6 +70,7 @@ function HeadlineTile({ value, label }: { value: number; label: string }) {
 }
 
 function SectionLabel({ children }: { children: string }) {
+  // eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 4: "One SectionLabel. Delete the three copies in metrics-view.tsx, fleet-view.tsx, settings-view.tsx." Zero-visual-delta this stage.
   return <div className="px-6 pb-1 pt-5 font-mono text-label uppercase text-ink-4">{children}</div>;
 }
 
@@ -134,6 +135,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={Command} title="Fleet" subtitle={`${total} ${total === 1 ? 'session' : 'sessions'} · the fleet's shape`} />
+      {/* eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 4: same views-consolidation pass as SectionLabel; identical viewportClassName duplicated in metrics-view.tsx and settings-view.tsx. Zero-visual-delta this stage. */}
       <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         {tiles}
 

@@ -2,9 +2,10 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
 // electron/, lib/, bin/, scripts/perf-selftest/, scripts/bundle-size-check.js,
-// and scripts/capture-screenshots.js are separate runtimes (the Electron
-// renderer + main + preload, the TS backend/CLI shared by the desktop app and
-// the CLI, and the plain-Node perf, bundle-budget, and screenshot-capture
+// scripts/capture-screenshots.js, and scripts/design-lint-classnames.js are
+// separate runtimes (the Electron renderer + main + preload, the TS
+// backend/CLI shared by the desktop app and the CLI, and the plain-Node
+// perf, bundle-budget, screenshot-capture, and retired-classname-grep
 // harnesses), not part of the Next app, so they are not linted by the Next
 // config. They are gated by `tsc --noEmit` (npm run typecheck), the
 // pulse/commands/reader/perf selftests, the boot smoke, and
@@ -30,6 +31,7 @@ const eslintConfig = [
       "scripts/perf-selftest/**",
       "scripts/bundle-size-check.js",
       "scripts/capture-screenshots.js",
+      "scripts/design-lint-classnames.js",
       "dist/**",
     ],
   },

@@ -29,6 +29,7 @@
     "lint:renderer": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run lint",
     "bundle:check": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build:browser && node ../../scripts/bundle-size-check.js",
     "tokens:check": "tsx scripts/tokens-check.ts",
+    "lint:classnames": "node scripts/design-lint-classnames.js",
     "cli:init": "node ./dist/bin/humanctl.js init .",
     "cli:status": "node ./dist/bin/humanctl.js status .",
     "pulse:selftest": "tsx lib/pulse.selftest.ts",

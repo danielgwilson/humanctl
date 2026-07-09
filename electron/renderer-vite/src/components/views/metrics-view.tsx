@@ -21,6 +21,7 @@ import type { ClaudeQuota, SessionRow, Status } from '@/lib/types';
 // is intentionally not duplicated here.
 
 function SectionLabel({ children }: { children: ReactNode }) {
+  // eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 4: "One SectionLabel. Delete the three copies in metrics-view.tsx, fleet-view.tsx, settings-view.tsx." Zero-visual-delta this stage.
   return <div className="px-6 pb-1 pt-5 font-mono text-label uppercase text-ink-4">{children}</div>;
 }
 
@@ -61,6 +62,7 @@ export function MetricsView({ rows, status, claudeQuota }: { rows: SessionRow[];
   return (
     <div className="flex h-full flex-col overflow-hidden">
       <ViewHeader icon={LayoutGrid} title="Metrics" subtitle="spend, tokens, and quota" />
+      {/* eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 4: same views-consolidation pass as SectionLabel; identical viewportClassName duplicated in fleet-view.tsx and settings-view.tsx. Zero-visual-delta this stage. */}
       <ScrollArea className="min-h-0 flex-1" viewportClassName="pb-8">
         <SectionLabel>Spend</SectionLabel>
         <ItemGroup>

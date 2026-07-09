@@ -48,6 +48,7 @@ function TooltipContent({
         {...props}
       >
         {children}
+        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Tooltip primitive rewrite owns this arrow radius; zero-visual-delta this stage. */}
         <TooltipPrimitive.Arrow className="z-50 size-2.5 translate-y-[calc(-50%_-_2px)] rotate-45 rounded-[2px] bg-surface-inverted fill-surface-inverted" />
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>

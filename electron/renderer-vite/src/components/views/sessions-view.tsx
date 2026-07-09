@@ -106,6 +106,7 @@ function SessionRowItem({
         selected && 'bg-selected',
       )}
     >
+      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 5: "One ListRow" unifies this row anatomy with thread-row.tsx's own copy of the same pattern ("thread-row.tsx and sessions-view.tsx start their glyph 22px apart"). Zero-visual-delta this stage. */}
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={row.harness} />
@@ -150,9 +151,11 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         onChange={(e) => onChange({ ...filter, q: e.target.value })}
         placeholder="Search sessions..."
         aria-label="Search sessions"
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 2: "One Toolbar" extracts this exact search-input width, duplicated verbatim in inbox-toolbar.tsx. Zero-visual-delta this stage.
         className="min-w-[120px] flex-1 basis-[200px]"
       />
       <Select value={filter.state || 'all'} onValueChange={(v) => onChange({ ...filter, state: v === 'all' ? '' : v })}>
+        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
         <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all states" />
         </SelectTrigger>
@@ -166,6 +169,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.harness || 'all'} onValueChange={(v) => onChange({ ...filter, harness: v === 'all' ? '' : v })}>
+        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
         <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all harnesses" />
         </SelectTrigger>
@@ -176,6 +180,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.sort} onValueChange={(v) => onChange({ ...filter, sort: v as SessionsFilter['sort'] })}>
+        {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 4: "Delete the six h-[30px] overrides" names this Select trigger height exactly. Zero-visual-delta this stage. */}
         <SelectTrigger aria-label="Sort sessions" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue />
         </SelectTrigger>
@@ -272,6 +277,7 @@ export function SessionsView({
                 >
                   {item.kind === 'pinned-header' ? (
                     <div className="flex items-center gap-2 border-b border-b-hairline bg-surface-0 px-6 py-1.5 font-mono text-label uppercase text-ink-3">
+                      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc dot it replaces. */}
                       <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris-contrast" aria-hidden="true" />
                       Pinned
                       <span className="text-ink-4" data-numeric>{item.count}</span>

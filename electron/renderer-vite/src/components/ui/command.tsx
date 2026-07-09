@@ -103,6 +103,7 @@ function CommandList({
     <CommandPrimitive.List
       data-slot="command-list"
       className={cn(
+        // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 8: Command primitive rewrite owns this list max-height; zero-visual-delta this stage.
         "max-h-[420px] scroll-py-1 overflow-x-hidden overflow-y-auto py-1.5",
         className
       )}
@@ -118,6 +119,7 @@ function CommandEmpty({
   return (
     <CommandPrimitive.Empty
       data-slot="command-empty"
+      // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71) item 8: Command primitive rewrite owns this empty-state padding; zero-visual-delta this stage.
       className={cn("py-10 text-center font-mono text-micro text-ink-3", className)}
       {...props}
     />

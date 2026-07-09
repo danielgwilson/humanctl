@@ -87,7 +87,7 @@ export function AppSidebar({
           crossing the lights. Height matches Header's own compact height so
           the two panes still read as one level row. */}
       <SidebarHeader
-        className="h-[44px] shrink-0 justify-center p-0"
+        className="h-[var(--band-top)] shrink-0 justify-center p-0"
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         aria-hidden="true"
       />
@@ -189,7 +189,7 @@ export function AppSidebar({
 // directly and renders its own always-viewport-anchored `fixed` strip.
 //
 // It is a thin (6px) hit zone pinned to the true left edge of the window,
-// starting BELOW the 44px traffic-light band (top-[44px]) so it never
+// starting BELOW the 44px traffic-light band (top-[var(--band-top)]) so it never
 // fights window-drag or the macOS lights themselves, and only rendered at
 // all while the sidebar is collapsed (nothing to peek open otherwise).
 // Hovering it for HOVER_OPEN_DELAY_MS opens the sidebar via `setOpen(true)`
@@ -219,7 +219,7 @@ export function SidebarEdgePeek() {
   return (
     <div
       aria-hidden="true"
-      className="fixed left-0 top-[44px] bottom-0 z-20 w-1.5"
+      className="fixed left-0 top-[var(--band-top)] bottom-0 z-20 w-1.5"
       onMouseEnter={() => {
         timerRef.current = window.setTimeout(() => {
           setOpen(true);

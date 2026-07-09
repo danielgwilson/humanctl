@@ -83,7 +83,9 @@ export function ThreadRow({
         selected && 'bg-selected',
       )}
     >
+      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc unread dot it replaces. */}
       <span className={cn('mt-[5px] h-[7px] w-[7px] rounded-full', unread ? 'bg-iris-solid' : 'bg-transparent')} aria-hidden="true" />
+      {/* eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 5: "One ListRow" unifies this row anatomy with sessions-view.tsx's own copy of the same pattern ("thread-row.tsx and sessions-view.tsx start their glyph 22px apart"). Zero-visual-delta this stage. */}
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={harnessOf(thread, byId)} />

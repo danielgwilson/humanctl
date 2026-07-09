@@ -73,4 +73,12 @@ jobs:
       # hairline, the focus ring, and the selected-beats-hover orderings).
       # Pure Node + tsx, no browser, no display server.
       - run: npm run tokens:check
+      # docs/design-system.md section 10, gate 3: a plain-text grep over a
+      # denylist of retired class names (bg-accent, text-muted-foreground,
+      # border-border, bg-sidebar-*, shadow-(xs|md|lg|2xl)). Tailwind drops
+      # an unknown class silently rather than erroring, so this is the only
+      # thing that would catch a magenta-canary-retired class name (#68)
+      # sneaking back into a diff as a no-op. See scripts/design-lint-classnames.js's
+      # header for why rounded-(sm|md|lg) is deliberately not in this pass yet.
+      - run: npm run lint:classnames
       - run: npm run build

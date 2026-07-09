@@ -49,8 +49,8 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
   return (
     <header
       className={cn(
-        'flex h-[44px] shrink-0 items-center gap-3 bg-surface-0 pr-6',
-        sidebarOpen ? 'border-b border-b-hairline pl-6' : 'pl-[76px]',
+        'flex h-[var(--band-top)] shrink-0 items-center gap-3 bg-surface-0 pr-6',
+        sidebarOpen ? 'border-b border-b-hairline pl-6' : 'pl-[var(--traffic-light-inset)]',
       )}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >

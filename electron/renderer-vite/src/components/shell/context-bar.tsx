@@ -35,6 +35,7 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
     >
       <span
         className={cn(
+          // eslint-disable-next-line design-system/no-arbitrary-length -- stage 5 (#71) item 1 names a new "Dot" primitive with no call sites yet; this is exactly the ad-hoc dot it replaces.
           'h-[5px] w-[5px] rounded-full bg-idle-contrast',
           cls === 'q-amber' && 'bg-need-contrast',
           cls === 'q-red' && 'bg-block-contrast',
@@ -83,6 +84,7 @@ export function ContextBar({ status, claudeQuota, ctxPct }: { status: Status | n
     : 'requires a signed-in Claude subscription; read from the Claude Code CLI, never from transcripts';
   return (
     <footer
+      // eslint-disable-next-line design-system/no-arbitrary-length -- stage 6 (#72) item 1: "Band height is one number" -- this footer band's 30px is one more value that item unifies against --band-top/--band-toolbar. Zero-visual-delta this stage.
       className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-t-hairline bg-surface-0 px-4 font-mono text-micro text-ink-3"
     >
       {/* The fleet digest sentence reads as language addressed to the human

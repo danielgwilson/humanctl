@@ -28,7 +28,7 @@ export function CosDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
           base already supplies `overlay` elevation (a full ring on every
           edge) and `bg-surface-2` (stage 2, #68); a literal left border on
           top of that ring would double the left edge's weight for nothing. */}
-      <SheetContent side="right" className="flex w-[340px] max-w-[90vw] flex-col gap-0 p-0 sm:max-w-[90vw]">
+      <SheetContent side="right" className="flex w-[var(--rail-list)] max-w-[90vw] flex-col gap-0 p-0 sm:max-w-[90vw]">
         <SheetHeader className="h-11 flex-none flex-row items-center gap-2 border-b border-b-hairline px-4 py-0 space-y-0">
           <span className="text-row" aria-hidden="true">🤝</span>
           <SheetTitle className="font-mono text-label uppercase text-iris-contrast">Chief of staff</SheetTitle>

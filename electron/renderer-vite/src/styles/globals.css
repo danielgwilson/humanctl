@@ -173,6 +173,48 @@
   --radius: 9px; /* --r2 in the old kit */
   --radius-sm: 6px; /* --r1 */
   --radius-lg: 13px; /* --r3 */
+
+  /* -- geometry (stage 4, #70; docs/design-system.md section 3.3): shell
+     constants that used to be re-encoded per call site as arbitrary
+     Tailwind values (h-[44px], w-[340px], ...). Consumed via the
+     [var(--token)] arbitrary-value escape the eslint rule in section 10.2
+     explicitly allows, never through a generated utility class -- none of
+     these match a Tailwind-recognized @theme namespace, so they live in
+     plain :root next to the other raw tokens above, not inside @theme
+     inline.
+
+     --row-list, --rail-nav, and --rail-list are the CURRENT REAL measured
+     values, not the issue's original targets: stage 3 (#69) measured the
+     list row at 85px post type-role migration (was 76px pre-stage-3, see
+     ROW_ESTIMATE_PX in inbox-view.tsx/sessions-view.tsx), the nav rail is
+     genuinely 256px (16rem, sidebar.tsx's SIDEBAR_WIDTH), and the
+     inbox-list/cos-drawer rail is genuinely 340px -- not 76/240/336. This
+     stage tokenizes what the app actually renders (a zero-visual-delta
+     refactor cannot also silently correct three unrelated dimensions);
+     reconciling the numbers themselves, if that is ever wanted, is a
+     deliberate follow-up, not a side effect of a token-extraction PR. See
+     the PR body for the full discrepancy table.
+
+     --band-toolbar, --band-columns, --row-nav, --row-item, --w-palette,
+     --band-palette-top, and --measure-prose have NO current call site:
+     nothing in the app renders a toolbar band, a column-header band, a
+     bare nav/item row height, or the palette/prose geometry as a raw
+     arbitrary pixel value today (the command palette uses `max-w-xl` +
+     `top-[16%]`; there is no prose-width cap yet). They are declared here
+     per the issue anyway, so stage 5/6's primitive and layout work reads
+     them off the shelf instead of re-deriving the numbers. -- */
+  --band-top: 44px;
+  --band-toolbar: 40px;
+  --band-columns: 32px;
+  --row-nav: 28px;
+  --row-item: 32px;
+  --row-list: 85px;
+  --rail-nav: 256px;
+  --rail-list: 340px;
+  --w-palette: 672px;
+  --band-palette-top: 96px;
+  --measure-prose: 560px;
+  --traffic-light-inset: 76px;
 }
 
 @media (min-resolution: 2dppx) {

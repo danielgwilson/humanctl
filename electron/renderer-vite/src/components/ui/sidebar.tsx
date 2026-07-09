@@ -51,7 +51,11 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip"
 
-const SIDEBAR_WIDTH = "16rem"
+// Stage 4 (#70): was the literal "16rem" (256px), re-encoded here
+// independently of the rest of the shell's geometry. Now reads the shared
+// --rail-nav token (docs/design-system.md section 3.3) -- same 256px,
+// zero visual delta, one fewer place the nav-rail width can drift from.
+const SIDEBAR_WIDTH = "var(--rail-nav)"
 const SIDEBAR_WIDTH_MOBILE = "18rem"
 const SIDEBAR_WIDTH_ICON = "3rem"
 const SIDEBAR_KEYBOARD_SHORTCUT = "\\"
@@ -339,7 +343,7 @@ const SidebarRail = React.forwardRef<
       onClick={toggleSidebar}
       title="Toggle Sidebar"
       className={cn(
-        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-[2px] hover:after:bg-hairline group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
+        "absolute inset-y-0 z-20 hidden w-4 -translate-x-1/2 transition-all ease-linear after:absolute after:inset-y-0 after:left-1/2 after:w-0.5 hover:after:bg-hairline group-data-[side=left]:-right-4 group-data-[side=right]:left-0 sm:flex",
         "[[data-side=left]_&]:cursor-w-resize [[data-side=right]_&]:cursor-e-resize",
         "[[data-side=left][data-state=collapsed]_&]:cursor-e-resize [[data-side=right][data-state=collapsed]_&]:cursor-w-resize",
         "group-data-[collapsible=offcanvas]:translate-x-0 group-data-[collapsible=offcanvas]:after:left-full group-data-[collapsible=offcanvas]:hover:bg-surface-1",
@@ -479,6 +483,7 @@ const SidebarGroupLabel = React.forwardRef<
       data-sidebar="group-label"
       className={cn(
         "flex h-8 shrink-0 items-center rounded-md px-2 font-mono text-label uppercase text-ink-3 transition-[margin,opacity] duration-200 ease-linear [&>svg]:shrink-0",
+        // eslint-disable-next-line design-system/spacing-steps -- stage 6 (#72) item 10: this `group-data-[collapsible=icon]:` selector is dead code today (AppSidebar uses collapsible="offcanvas", never "icon", see nav-sidebar.tsx), scheduled for deletion there, not modification here.
         "group-data-[collapsible=icon]:-mt-8 group-data-[collapsible=icon]:opacity-0",
         className
       )}
@@ -551,6 +556,7 @@ const SidebarMenuItem = React.forwardRef<
 SidebarMenuItem.displayName = "SidebarMenuItem"
 
 const sidebarMenuButtonVariants = cva(
+  // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71): Sidebar primitive rewrite owns this menu-action reservation; no data-[sidebar=menu-action] call site exists in this app today (grep returns nothing), so it is also currently dead. Zero-visual-delta this stage either way.
   "peer/menu-button flex w-full items-center gap-2 overflow-hidden rounded-md p-2 text-left font-mono text-row transition-[width,height,padding] hover:wash-hover active:wash-press disabled:pointer-events-none disabled:opacity-50 group-has-[[data-sidebar=menu-action]]/menu-item:pr-8 aria-disabled:pointer-events-none aria-disabled:opacity-50 data-[active=true]:bg-selected data-[state=open]:hover:wash-hover group-data-[collapsible=icon]:!size-8 group-data-[collapsible=icon]:!p-2 [&>span:last-child]:truncate [&>svg]:shrink-0",
   {
     variants: {
@@ -740,6 +746,7 @@ const SidebarMenuSub = React.forwardRef<
     ref={ref}
     data-sidebar="menu-sub"
     className={cn(
+      // eslint-disable-next-line design-system/spacing-steps -- stage 5 (#71): Sidebar primitive rewrite owns this; SidebarMenuSub has no call site in this app today (grep returns nothing -- nav-sidebar.tsx's NAV_ITEMS is a flat list), so it is also currently dead. Zero-visual-delta this stage either way.
       "mx-3.5 flex min-w-0 translate-x-px flex-col gap-1 border-l border-l-hairline px-2.5 py-0.5",
       "group-data-[collapsible=icon]:hidden",
       className
