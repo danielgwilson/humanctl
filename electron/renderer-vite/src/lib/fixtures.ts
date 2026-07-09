@@ -40,8 +40,17 @@ export function fixtureThreads(): InboxThread[] {
       items: [{ kind: 'ask', level: 'review', reason: 'Both paths verified; say the word and I take path B.', ts: new Date(now - 6 * 6e4).toISOString() }], lastTs: new Date(now - 6 * 6e4).toISOString() },
     { sessionId: 'rollout-fixture-d4d4', repo: '~/demo/tokens', harness: 'codex', cwd: '~/demo/tokens', path: '', title: 'Rotate the activity token',
       items: [{ kind: 'note', level: 'blocked', message: 'Blocked: the activity token is missing from the environment.', ts: new Date(now - 7 * 6e4).toISOString(), id: 'fn2' }], lastTs: new Date(now - 7 * 6e4).toISOString() },
+    // Also carries a live 'ask' item (not just the 'qa' probe below) so the
+    // reply-composer affordance (docs/ask-session.md's "Replying to an ask")
+    // has a claude-code fixture to render against, alongside
+    // rollout-fixture-b2b2's codex one -- the two harnesses take different
+    // delivery paths (staged vs. delivered), and both need to be
+    // screenshotable on fixtures.
     { sessionId: 'fixture-a1a1a1a1', repo: '~/demo/renderer', harness: 'claude-code', cwd: '~/demo/renderer', path: '', title: 'Multi-source spine, renderer wiring pass',
-      items: [{ kind: 'qa', question: 'status?', answer: 'Spine is wired end to end; the last open question is the watcher debounce window.', engine: 'claude', ts: new Date(now - 15 * 6e4).toISOString() }], lastTs: new Date(now - 15 * 6e4).toISOString() },
+      items: [
+        { kind: 'qa', question: 'status?', answer: 'Spine is wired end to end; the last open question is the watcher debounce window.', engine: 'claude', ts: new Date(now - 15 * 6e4).toISOString() },
+        { kind: 'ask', level: 'review', reason: 'Spine is wired. Should the watcher debounce at 2s or 5s?', ts: new Date(now - 2 * 6e4).toISOString() },
+      ], lastTs: new Date(now - 2 * 6e4).toISOString() },
     { sessionId: 'fixture-h8h8h8h8', repo: '~/demo/exports', harness: 'claude-code', cwd: '~/demo/exports', path: '', title: 'Backfill the export manifest',
       items: [{ kind: 'ask-interrupted', question: 'what does the manifest schema look like now?', ts: new Date(now - 20 * 6e4).toISOString() }], lastTs: new Date(now - 20 * 6e4).toISOString() },
   ];

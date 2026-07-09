@@ -1088,6 +1088,9 @@ const IPC_ROUTES: IpcRoute[] = [
   ['sessions:timeline', 'session.timeline'],
   ['session:summarize', 'session.summarize'],
   ['session:ask', 'session.ask'],
+  // ask.answer -> ask:answer, the same "dot becomes colon, same words"
+  // channel-naming rule session:ask already follows for session.ask.
+  ['ask:answer', 'ask.answer'],
   ['inbox:mark-read', 'inbox.mark-read'],
   ['inbox:mark-all-read', 'inbox.mark-all-read', () => ({})],
   ['atlas:ask', 'atlas.ask'],
