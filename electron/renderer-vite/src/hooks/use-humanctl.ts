@@ -4,7 +4,7 @@
 // lib/fixtures.ts -- the whole UI renders and is fully driveable without
 // launching Electron.
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { AppState, BudgetStatus, ClaudeQuota, InboxThread, NoteItem, SessionRow, SkillAggregate, Status } from '../lib/types';
+import type { AnswerAskResult, AppState, BudgetStatus, ClaudeQuota, InboxThread, NoteItem, SessionRow, SkillAggregate, Status } from '../lib/types';
 import { FIXTURE_NOTES, FIXTURE_ROWS, FIXTURE_SKILL_AGGREGATE, fixtureBudgetStatus, fixtureClaudeQuota, fixtureStatus, fixtureThreads } from '../lib/fixtures';
 
 export function isElectron(): boolean {
@@ -237,4 +237,38 @@ export function useSessionSummarize() {
   }, []);
 
   return { summarize, loadingId, errors };
+}
+
+/**
+ * Reply to a pending ask (ask.answer -> lib/commands.ts's answerAsk), the
+ * reply half of docs/ask-session.md's flow: `useAtlasAsk`'s askSession
+ * injects a QUESTION from the human INTO a session; this delivers the
+ * human's ANSWER back. `pendingId` tracks the ONE session id currently
+ * in flight (mirrors useSessionSummarize's loadingId) so a call site can
+ * gate its own composer's disabled/"sending" state without a second local
+ * flag. Fixture path mirrors useSessionSummarize's demo-summary fallback:
+ * a canned, HARNESS-HONEST result (codex reads as delivered, claude-code
+ * reads as staged, matching the real per-channel contract in
+ * docs/ask-session.md) so the reply affordance is fully driveable and
+ * screenshotable without Electron.
+ */
+export function useAnswerAsk() {
+  const [pendingId, setPendingId] = useState<string | null>(null);
+
+  const answer = useCallback(async (arg: { id: string; harness?: string; path?: string; cwd?: string; text: string; askId?: string }): Promise<AnswerAskResult> => {
+    setPendingId(arg.id);
+    if (!window.humanctl) {
+      await new Promise((r) => setTimeout(r, 500));
+      setPendingId(null);
+      if (arg.harness === 'claude-code') {
+        return { ok: true, delivery: 'staged', clipped: true, resumed: true, sessionId: arg.id, at: Date.now() };
+      }
+      return { ok: true, delivery: 'codex-rollout', delivered: true, sessionId: arg.id, at: Date.now() };
+    }
+    const r = await window.humanctl.answerAsk(arg);
+    setPendingId(null);
+    return r || { ok: false, error: 'reply failed' };
+  }, []);
+
+  return { answer, pendingId };
 }

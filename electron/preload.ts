@@ -140,6 +140,12 @@ contextBridge.exposeInMainWorld('humanctl', {
   aggregateSkills: (opts: unknown) => ipcRenderer.invoke('skills:aggregate', opts),
   summarize: (arg: unknown) => ipcRenderer.invoke('session:summarize', arg),
   askSession: (arg: unknown) => ipcRenderer.invoke('session:ask', arg),
+  // ask.answer (docs/ask-session.md's "Replying to an ask" section): the
+  // reply half of the flow, distinct from askSession above (which injects a
+  // QUESTION from the human INTO the session). Same plain ipcRenderer.invoke
+  // idiom as askSession -- not a reader-service port call -- because a reply
+  // is a one-shot action (durable record + a spawn), not a hot-polled read.
+  answerAsk: (arg: unknown) => ipcRenderer.invoke('ask:answer', arg),
   getNotes: (opts: unknown) => callReaderPort('notes.list', opts),
   getInboxThreads: (opts: unknown) => callReaderPort('inbox.threads', opts),
   markThreadRead: (arg: unknown) => ipcRenderer.invoke('inbox:mark-read', arg),

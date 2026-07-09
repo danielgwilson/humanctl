@@ -1,6 +1,8 @@
 import { Fragment, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Separator } from '@/components/ui/separator';
 import { Chip } from '@/components/ui/chip';
@@ -15,9 +17,10 @@ import {
 } from '@/components/ui/item';
 import { HarnessGlyph, StateChip } from '@/components/state-chip';
 import { SessionTimeline } from '@/components/session/session-timeline';
+import { useAnswerAsk } from '@/hooks/use-humanctl';
 import { agoTxt } from '@/lib/format';
 import { cn } from '@/lib/utils';
-import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
+import type { AnswerAskResult, InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 
 // The ONE session-detail component family, matching renderer.js's
 // renderDetail()/streamItemHtml comment ("the SAME detail component
@@ -52,13 +55,124 @@ import type { InboxThread, SessionRow, ThreadItem } from '@/lib/types';
 // used to sit here, and it owns its own state end to end (see that file's
 // header comment for the perf rationale).
 //
+// Honest per-channel delivery description for a PERSISTED 'answer' thread
+// item (docs/ask-session.md's "Delivery, per harness" table). The durable
+// asks/<sessionId>.jsonl record (inboxThreads' own source, lib/commands.ts)
+// only ever carries the delivery CHANNEL, never the live call's
+// delivered/clipped/resumed outcome booleans -- those exist only on the
+// immediate AnswerAskResult a submit resolves with (see
+// answerToastMessage below) and are never persisted. A reload/poll can
+// therefore only describe what the channel MEANS, never whether that one
+// call succeeded -- which is still the honest thing to say, never a
+// fabricated "delivered".
+function describeDelivery(delivery?: string): string | null {
+  if (delivery === 'codex-rollout') return 'delivered to session';
+  if (delivery === 'staged') return 'copied to clipboard, session resumed in Terminal';
+  if (delivery === 'file') return 'recorded only (no live delivery channel)';
+  return null;
+}
+
+// Honest per-channel toast text for the LIVE submit result, including its
+// delivered/clipped/resumed/error fields: a spawn failure still leaves the
+// reply durably recorded (AskAnswerParams' own contract), and the toast says
+// so instead of a bare "sent" that would misrepresent a failed delivery.
+function answerToastMessage(r: AnswerAskResult): string {
+  if (!r.ok) return r.error || 'reply failed.';
+  if (r.delivery === 'codex-rollout') {
+    return r.delivered ? 'delivered to session' : `recorded; delivery failed (${r.deliverError || 'unknown error'})`;
+  }
+  if (r.delivery === 'staged') {
+    if (!r.clipped) return `recorded; clipboard copy failed (${r.clipboardError || 'unknown error'})`;
+    return r.resumed ? 'copied to clipboard, session resumed in Terminal' : 'copied to clipboard (resume failed; paste it in manually)';
+  }
+  return 'reply recorded';
+}
+
+// The reply composer bound to a pending ask (docs/ask-session.md's
+// "Replying to an ask" section, ask.answer). Renders INSIDE the 'ask' stream
+// item it answers -- never as a second, floating composer elsewhere on the
+// screen. One owner per signal (DESIGN.md): this owns ANSWERING the pending
+// ask; the foot "Ask the session" composer further down owns PROBING the
+// session with a throwaway question. They are not duplicates of the same
+// signal -- see the PR body's one-owner audit.
+function AskReplyComposer({
+  row,
+  sessionId,
+  askId,
+  onAnswered,
+}: {
+  row: SessionRow | null;
+  sessionId: string;
+  askId?: string;
+  onAnswered: (item: ThreadItem) => void;
+}) {
+  const { answer, pendingId } = useAnswerAsk();
+  const [text, setText] = useState('');
+  const submitting = pendingId === sessionId;
+
+  async function send() {
+    const trimmed = text.trim();
+    if (!trimmed || submitting) return;
+    const r = await answer({ id: sessionId, path: row?.path, harness: row?.harness, cwd: row?.cwd, text: trimmed, askId });
+    toast(answerToastMessage(r));
+    if (r.ok) {
+      onAnswered({ kind: 'answer', text: trimmed, askId, delivery: r.delivery, actor: 'human', ts: new Date(r.at || Date.now()).toISOString() });
+      setText('');
+    }
+  }
+
+  return (
+    <div className="mt-2 flex flex-col gap-1.5">
+      <Textarea
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+        onKeyDown={(e) => {
+          if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') { e.preventDefault(); send(); }
+          else if (e.key === 'Escape') { e.preventDefault(); e.currentTarget.blur(); }
+        }}
+        placeholder="Reply to this ask..."
+        aria-label="Reply to this ask"
+        disabled={submitting}
+      />
+      <div className="flex items-center justify-between gap-2">
+        <span className="font-mono text-[9.5px] text-ink-4">cmd+enter to send &middot; esc to leave the reply box</span>
+        <Button
+          type="button"
+          variant="iris"
+          onClick={send}
+          disabled={submitting || !text.trim()}
+          className="flex-none px-3.5 py-1.5 font-mono text-[10.5px]"
+        >
+          {submitting ? 'sending...' : 'Reply'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
 // De-carded (audit punch #1, DESIGN.md "Flat surfaces, no cards, no
 // shadows-as-hierarchy"): every `rounded-md border ... bg-panel p-3` box
 // below is now a flat `Item` row inside an `ItemGroup`, separated by a
 // hairline `ItemSeparator` instead of a bordered box. The per-kind hue still
 // reads via the existing `Chip` and, for the stream rows only, a single thin
 // left rule -- never a rounded card, background panel, or shadow.
-function StreamRow({ item }: { item: ThreadItem }) {
+//
+// `canReply`/`row`/`sessionId`/`onAnswered` are only consumed by the 'ask'
+// branch below (AskReplyComposer): SessionDetail passes them for every row,
+// but they are no-ops for every other item kind.
+function StreamRow({
+  item,
+  canReply,
+  row,
+  sessionId,
+  onAnswered,
+}: {
+  item: ThreadItem;
+  canReply?: boolean;
+  row?: SessionRow | null;
+  sessionId?: string;
+  onAnswered?: (item: ThreadItem) => void;
+}) {
   const ts = agoTxt(Date.parse(item.ts));
 
   if (item.kind === 'note') {
@@ -83,6 +197,24 @@ function StreamRow({ item }: { item: ThreadItem }) {
         </ItemHeader>
         <ItemContent>
           <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.reason}</div>
+          {canReply && sessionId && onAnswered && (
+            <AskReplyComposer row={row ?? null} sessionId={sessionId} onAnswered={onAnswered} />
+          )}
+        </ItemContent>
+      </Item>
+    );
+  }
+  if (item.kind === 'answer') {
+    const line = describeDelivery(item.delivery);
+    return (
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
+        <ItemHeader>
+          <Chip variant="label-iris" size="label" dot={false}>your answer</Chip>
+          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+        </ItemHeader>
+        <ItemContent>
+          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.text}</div>
+          {line && <div className="font-mono text-[9.5px] text-ink-4">{line}</div>}
         </ItemContent>
       </Item>
     );
@@ -190,6 +322,18 @@ export function SessionDetail({
   const [q, setQ] = useState('');
   const [asking, setAsking] = useState(false);
   const [answer, setAnswer] = useState<string | null>(null);
+  // Optimistic reply echo (AskReplyComposer's onAnswered below): the real
+  // persisted 'answer' item only reaches `thread.items` on the NEXT
+  // inbox.threads poll (electron/main.ts's asks/ watcher; sub-second in the
+  // real app). Fixture mode never polls at all, so this local echo is the
+  // only way the reply affordance is screenshotable there (docs/ask-session
+  // .md's "Thread shape" section: rendering a reply is UI-only, the record
+  // itself is backend). `localAnswersFor` scopes/resets the echo per thread
+  // (see the render-time reset just below the early return); deduped against
+  // `thread.items` by exact text match once the real record lands, so the
+  // echo never doubles up with the poll-delivered one.
+  const [localAnswers, setLocalAnswers] = useState<ThreadItem[]>([]);
+  const [localAnswersFor, setLocalAnswersFor] = useState<string | null>(null);
   // The single shared body scroller (see the STAGE-2E header comment):
   // SessionTimeline reads/writes this element directly for sticky-bottom and
   // scroll-restore, rather than owning a second nested scroll region.
@@ -202,6 +346,18 @@ export function SessionDetail({
       </Empty>
     );
   }
+
+  // Reset the echo when the OPEN thread changes: React's documented "adjust
+  // state during render" pattern (an effect calling setState synchronously
+  // trips this renderer's own react-hooks/set-state-in-effect gate; see
+  // eslint.config.mjs's header comment on that rule for the file list this
+  // repo already scopes it off for -- this avoids joining that list). A
+  // no-op render once `localAnswersFor` already matches the open thread.
+  if (thread.sessionId !== localAnswersFor) {
+    setLocalAnswersFor(thread.sessionId);
+    setLocalAnswers([]);
+  }
+
   const title = row?.customTitle || row?.title || thread.title || thread.sessionId.slice(0, 10);
   const state = row?.state || 'idle';
   const repoBase = (() => {
@@ -209,7 +365,21 @@ export function SessionDetail({
     const parts = String(raw).replace(/\/+$/, '').split('/');
     return parts[parts.length - 1] || raw;
   })();
-  const stream = thread.items.slice().reverse();
+  const knownAnswerTexts = new Set(
+    thread.items.filter((it): it is Extract<ThreadItem, { kind: 'answer' }> => it.kind === 'answer').map((it) => it.text)
+  );
+  const mergedItems = [
+    ...thread.items,
+    ...localAnswers.filter((it) => it.kind === 'answer' && !knownAnswerTexts.has(it.text)),
+  ];
+  const stream = mergedItems.slice().reverse();
+  // Session states: `needs input`/`needs approval`/`blocked` -> internal
+  // codes 'need'/'block' (lib/types.ts's SessionState). The 'ask' stream
+  // item itself is already gated on this same condition on the backend
+  // (lib/commands.ts's inboxThreads only ever adds a kind:'ask' item while
+  // the row is 'need'/'block'), so this is belt-and-suspenders, not the
+  // only gate -- stated explicitly per the task's own wording.
+  const canReplyToAsk = state === 'need' || state === 'block';
 
   async function send() {
     if (!q.trim() || asking) return;
@@ -270,7 +440,13 @@ export function SessionDetail({
           {stream.length ? (
             stream.map((it, i) => (
               <Fragment key={i}>
-                <StreamRow item={it} />
+                <StreamRow
+                  item={it}
+                  canReply={canReplyToAsk}
+                  row={row}
+                  sessionId={thread.sessionId}
+                  onAnswered={(a) => setLocalAnswers((prev) => [...prev, a])}
+                />
                 {i < stream.length - 1 && <ItemSeparator />}
               </Fragment>
             ))

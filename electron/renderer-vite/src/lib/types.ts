@@ -49,11 +49,20 @@ export interface NoteItem {
   session?: string;
 }
 
+// 'answer' (docs/ask-session.md's "Replying to an ask" section, ask.answer ->
+// lib/commands.ts's answerAsk): the human's own reply to a pending ask,
+// distinct from 'qa' (a throwaway [humanctl btw] probe question+answer).
+// `delivery` mirrors the durable asks/<sessionId>.jsonl record's own field
+// exactly ('codex-rollout' | 'staged' | 'file'; see answerAsk's header
+// comment) -- never the live call's delivered/clipped/resumed booleans,
+// which are not persisted and only exist on the immediate AnswerAskResult
+// below.
 export type ThreadItem =
   | { kind: 'note'; level: NoteItem['level']; message: string; ts: string; id: string }
   | { kind: 'ask'; level?: string; reason: string; ts: string }
   | { kind: 'ask-interrupted'; question?: string; ts: string }
-  | { kind: 'qa'; question: string; answer: string; engine?: string; ts: string };
+  | { kind: 'qa'; question: string; answer: string; engine?: string; ts: string }
+  | { kind: 'answer'; text: string; askId?: string; delivery?: string; actor?: string; ts: string };
 
 export interface InboxThread {
   sessionId: string;
@@ -173,6 +182,27 @@ export interface BudgetStatus {
   remainingUSD: number;
 }
 
+// Mirrors lib/commands.ts's answerAsk return shape exactly (ask.answer ->
+// electron/main.ts's askAnswer wrapper, which additionally merges in
+// `resumed`/`resumeError` for the Claude staged-handoff's Terminal-resume
+// step). Every field beyond `ok`/`error` is channel-specific and optional,
+// per docs/ask-session.md's "Delivery, per harness" table: never assume more
+// than `ok`, `delivery`, and `error` are present.
+export interface AnswerAskResult {
+  ok: boolean;
+  delivery?: 'codex-rollout' | 'staged' | 'file';
+  delivered?: boolean;
+  deliverError?: string;
+  clipped?: boolean;
+  clipboardError?: string;
+  resumed?: boolean;
+  resumeError?: string;
+  needsAck?: boolean;
+  error?: string;
+  sessionId?: string;
+  at?: number;
+}
+
 export type ViewName = 'inbox' | 'metrics' | 'fleet' | 'sessions' | 'settings';
 
 export interface AppState {
@@ -207,6 +237,12 @@ export interface HumanctlBridge {
   markAllThreadsRead: () => Promise<{ ok: boolean }>;
   askAtlas: (arg: { question: string; engine?: string }) => Promise<{ ok: boolean; answer?: string; engine?: string; at?: number; error?: string }>;
   askSession: (arg: unknown) => Promise<{ ok: boolean; answer?: string; engine?: string; error?: string }>;
+  // ask.answer (docs/ask-session.md's "Replying to an ask" section): the
+  // reply half of the flow, a separate command from askSession above (that
+  // one injects a QUESTION from the human INTO the session; this one
+  // delivers the human's ANSWER back). See AnswerAskResult's own header
+  // comment for the full per-channel return shape.
+  answerAsk: (arg: { id: string; harness?: string; path?: string; cwd?: string; text: string; askId?: string }) => Promise<AnswerAskResult>;
   summarize: (arg: unknown) => Promise<{ ok: boolean; summary?: string; engine?: string; error?: string }>;
   // Metrics/Settings-only reads (skills.aggregate / summary.budget). Heavier
   // than the fleet poll (full transcript reads for skills; a small JSON file
