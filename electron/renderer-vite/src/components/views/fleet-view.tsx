@@ -31,8 +31,21 @@ const STATE_ORDER: SessionState[] = ['need', 'block', 'work', 'idle', 'done'];
 const HARNESS_ORDER: Harness[] = ['claude-code', 'codex'];
 const TIER_ORDER: Tier[] = ['hot', 'drifting', 'archived'];
 const TIER_LABEL: Record<Tier, string> = { hot: 'hot (recent)', drifting: 'drifting', archived: 'archived' };
-const TIER_INDICATOR: Record<Tier, ProgressIndicator> = { hot: 'iris', drifting: 'ink3', archived: 'rule2' };
+// Tier (hot/drifting/archived) has no hue of its own in
+// docs/design-system.md section 1.6's table -- it is an activity-recency
+// axis, not a session state or a harness, so it is never a state hue or a
+// series hue (section 1.6: "A state hue and a series hue never appear in
+// one figure"). Stage 2 (#68) replaces the old ad hoc `iris`/`ink3`/`rule2`
+// mix (an invented, un-owned "fake intensity" ramp using the identity hue
+// for emphasis, which P2 forbids -- iris signals identity/selection/focus,
+// nothing else) with a genuine ink-alpha intensity ladder: P1, "Hierarchy
+// is carried by ink alpha."
+const TIER_INDICATOR: Record<Tier, ProgressIndicator> = { hot: 'ink2', drifting: 'ink3', archived: 'ink4' };
 const HARNESS_LABEL: Record<Harness, string> = { 'claude-code': 'claude', codex: 'codex' };
+// By-harness is a chart-series figure, not a state figure (section 1.6),
+// so its colour comes from the series pair, never a vendor-named hue --
+// see components/ui/progress.tsx's header comment for where `claude`/
+// `codex` are repointed onto `--series-1`/`--series-2`.
 const HARNESS_INDICATOR: Record<Harness, ProgressIndicator> = { 'claude-code': 'claude', codex: 'codex' };
 const STATE_INDICATOR: Record<SessionState, ProgressIndicator> = { need: 'need', block: 'block', work: 'work', idle: 'idle', done: 'done' };
 
@@ -40,9 +53,9 @@ function CountBar({ label, count, total, indicator }: { label: string; count: nu
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
     <div className="flex items-center gap-3 px-6 py-1.5">
-      <span className="w-28 flex-none truncate font-mono text-[10px] uppercase tracking-wider text-ink3">{label}</span>
+      <span className="w-28 flex-none truncate font-mono text-[10px] uppercase tracking-wider text-ink-3">{label}</span>
       <Progress value={pct} indicator={indicator} aria-label={`${label}: ${count} of ${total}`} className="flex-1" />
-      <span className="w-8 flex-none text-right font-mono text-[11px] text-ink3">{count}</span>
+      <span className="w-8 flex-none text-right font-mono text-[11px] text-ink-3">{count}</span>
     </div>
   );
 }
@@ -50,14 +63,14 @@ function CountBar({ label, count, total, indicator }: { label: string; count: nu
 function HeadlineTile({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-1 flex-col items-center gap-0.5 py-4">
-      <span className="font-mono text-[28px] font-semibold leading-none text-foreground">{value}</span>
-      <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink4">{label}</span>
+      <span className="font-mono text-[28px] font-semibold leading-none text-ink">{value}</span>
+      <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink-4">{label}</span>
     </div>
   );
 }
 
 function SectionLabel({ children }: { children: string }) {
-  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink4">{children}</div>;
+  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-4">{children}</div>;
 }
 
 export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status | null }) {
@@ -82,7 +95,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
   }, [rows]);
 
   const tiles = (
-    <div className="flex divide-x divide-border border-b border-border">
+    <div className="flex divide-x divide-hairline border-b border-b-hairline">
       <HeadlineTile value={status?.needsYou ?? 0} label="need you" />
       <HeadlineTile value={status?.working ?? 0} label="moving" />
       <HeadlineTile value={status?.sessions ?? total} label="total" />
@@ -90,7 +103,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
   );
 
   const nextNote = (
-    <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink4">
+    <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink-4">
       next: a live force-directed graph of session relationships. this pass ships the flat shape overview only.
     </div>
   );

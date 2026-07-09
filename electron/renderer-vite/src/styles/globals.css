@@ -2,222 +2,392 @@
 @import "tw-animate-css";
 
 /* ============================================================
-   humanctl design tokens: colors, fonts, spacing, radii (see DESIGN.md).
-   Fonts stay LOCAL stacks only (no network), matching the born-clean rule;
-   if Space Grotesk / JetBrains Mono are not installed locally, the stack
-   falls through to system sans/mono.
+   humanctl design tokens (docs/design-system.md is the law).
+   Stage 2 (design-system stage 2, #68): the token foundation --
+   colour (section 1), the hairline (3.5), elevation (4), motion (5),
+   and the colour half of the Tailwind bridge (9). Fonts stay LOCAL
+   stacks only (no network, born-clean), matching the born-clean
+   rule; type roles and font sizes are stage 3 (#69), the radius
+   scale is stage 5 (#71) -- neither is touched here, so every
+   existing Tailwind default font size/radius keeps working exactly
+   as before this change.
+
+   MAGENTA CANARY: every retired token/@theme key name below is
+   aliased to #ff00ff for the duration of the migration (see the
+   @theme inline block). An unmigrated call site screams magenta in
+   a screenshot instead of silently no-opping -- Tailwind v4 deletes
+   an unknown @theme key's generated class with no build error, no
+   type error, and no failing test (see #68). The aliases are
+   deleted in stage 7, once grep on the retired names returns zero.
    ============================================================ */
 :root {
-  /* canvas, dark-first premium near-black (identical values to index.html) */
-  --bg: #0a0c10;
-  --bg2: #0d1016;
-  --panel: #141821;
-  --panel2: #171c26;
-  --rule: #222836;
-  --rule2: #2b3444;
-  --ink: #eef1f6;
-  --ink2: #a7b0bf;
-  --ink3: #8b93a3;
-  --ink4: #7d89a0;
-  --iris: #8b89f7;
-  --iris-dim: #6f6ddb;
+  color-scheme: dark;
 
-  /* semantic hues, one per axis (color = meaning only, never decoration) */
-  --s-work: #33c98d;
-  --s-need: #f5b73d;
-  --s-block: #f0603f;
-  --s-idle: #7b8598;
-  --s-done: #4db6f0;
-  --h-codex: #f0883e;
-  --h-claude: #b07cf5;
+  /* -- surfaces. Hue 110: graphite, 175 degrees from iris (P2). -- */
+  --surface-0:        oklch(0.155 0.010 110);   /* #0c0d08 */
+  --surface-1:        oklch(0.192 0.011 110);   /* #14150f */
+  --surface-2:        oklch(0.230 0.012 110);   /* #1d1d17 */
+  --surface-sunken:   oklch(0.120 0.008 110);   /* #060604 */
+  --surface-inverted: oklch(0.945 0.005 110);   /* #edede9 */
 
+  /* -- ink: one solid, then alpha. Asymmetric ladder by design (1.3):
+     do not symmetrize dark/light. -- */
+  --ink:          oklch(0.965 0.005 110);         /* #f3f4f0 */
+  --ink-2:        oklch(0.965 0.005 110 / 0.68);
+  --ink-3:        oklch(0.965 0.005 110 / 0.54);
+  --ink-4:        oklch(0.965 0.005 110 / 0.44);
+  --ink-inverted: oklch(0.170 0.010 110);
+
+  /* -- overlays: alpha over whatever is beneath, including a solid fill
+     (P4). Dark selected mixes iris-contrast, never iris-solid -- see
+     1.4's "worst bug the colour system can have". -- */
+  --overlay-hover:    oklch(1 0 0 / 0.06);
+  --overlay-press:    oklch(0 0 0 / 0.16);
+  --overlay-selected: oklch(0.800 0.105 285 / 0.20);   /* iris-contrast */
+
+  /* -- the hairline. Not a border (P3): drawn as an inset box-shadow via
+     the `hairline` utility below. Alpha compensates for the 0.5px draw
+     at 2dppx (3.5). -- */
+  --hairline-w: 1px;
+  --hairline: oklch(1 0 0 / 0.18);
+
+  /* -- shadow tint. Dark theme shadows are black. -- */
+  --shade-1: oklch(0 0 0 / 0.30);
+  --shade-2: oklch(0 0 0 / 0.45);
+  --shade-3: oklch(0 0 0 / 0.60);
+
+  /* -- the two solid fills. Theme invariant. Declared once (1.5). There
+     is no <hue>-solid-hover: hover/press on a solid fill are the
+     `solid-hover`/`solid-press` utilities below (P4), never a second
+     hardcoded fill. -- */
+  --on-solid:    oklch(0.990 0 0);
+  --iris-solid:  oklch(0.490 0.190 285);   /* #5b45c5 */
+  --block-solid: oklch(0.485 0.185 026);   /* #b0161e */
+
+  /* -- dark: contrast is light, soft is dark (1.5). -- */
+  --iris-contrast:     oklch(0.800 0.105 285);  /* #b6b4ff */
+  --work-contrast:     oklch(0.860 0.140 152);  /* #85eba3 */
+  --need-contrast:     oklch(0.845 0.115 070);  /* #fcbf76 */
+  --block-contrast:    oklch(0.735 0.155 026);  /* #fc7e75 */
+  --done-contrast:     oklch(0.800 0.100 215);  /* #69cee6 */
+  --idle-contrast:     oklch(0.720 0.012 110);  /* #a5a59d */
+  --series-1-contrast: oklch(0.700 0.135 245);  /* #4ba6ec */
+  --series-2-contrast: oklch(0.880 0.100 075);  /* #fece8c */
+
+  --iris-soft:     oklch(0.255 0.050 285);
+  --work-soft:     oklch(0.245 0.045 152);
+  --need-soft:     oklch(0.255 0.046 070);
+  --block-soft:    oklch(0.250 0.052 026);
+  --done-soft:     oklch(0.245 0.042 215);
+  --idle-soft:     oklch(0.240 0.010 110);
+  --series-1-soft: oklch(0.250 0.048 245);
+  --series-2-soft: oklch(0.255 0.046 075);
+
+  --focus: var(--iris-contrast);
+
+  /* -- elevation (section 4). Ring first, always: the ring and the
+     elevation are one property, so a selection ring swap costs zero
+     layout. Exposed as custom utilities below, never shadow-* utilities
+     ("shadow-flat on a chip invites someone to add a real shadow next
+     to it"). -- */
+  --elev-ring:
+    inset 0 0 0 var(--hairline-w) var(--hairline);
+  --elev-raised:
+    inset 0 0 0 var(--hairline-w) var(--hairline),
+    0 1px 2px -1px var(--shade-1),
+    0 4px 10px -4px var(--shade-2);
+  --elev-overlay:
+    inset 0 0 0 var(--hairline-w) var(--hairline),
+    0 8px 24px -8px var(--shade-2),
+    0 20px 64px -12px var(--shade-3);
+
+  /* -- motion (section 5). Two durations, nothing slower; three eases. -- */
+  --motion-fast: 160ms;   /* opacity, colour, background */
+  --motion-base: 200ms;   /* shape, shadow, transform-in */
+  --motion-ease-enter: cubic-bezier(0.2, 0, 0, 1);      /* decelerate */
+  --motion-ease-morph: cubic-bezier(0.42, 0, 0.58, 1);  /* symmetric */
+  --motion-ease-exit:  cubic-bezier(0.4, 0, 1, 1);      /* accelerate */
+  --motion-press: translateY(1px);
+
+  /* -- canvas: dark-first premium near-black. UNCHANGED this stage (stage
+     3/#69 owns type; stage 5/#71 owns the radius scale) -- font stacks
+     stay local-only, radii stay the existing shadcn-scaffold scale so no
+     existing rounded-* class shifts size in this PR. -- */
   --font-disp: 'Space Grotesk', -apple-system, system-ui, sans-serif;
   --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
 
   --radius: 9px; /* --r2 in the old kit */
   --radius-sm: 6px; /* --r1 */
   --radius-lg: 13px; /* --r3 */
-
-  /* shadcn semantic tokens, mapped onto the humanctl palette above so
-     shadcn primitives (Select, Sheet, ContextMenu, Dialog, Tooltip) render
-     in the SAME language as the bespoke components they replace, not
-     default shadcn zinc. */
-  --background: var(--bg);
-  --foreground: var(--ink);
-  --card: var(--panel);
-  --card-foreground: var(--ink);
-  --popover: var(--panel2);
-  --popover-foreground: var(--ink);
-  --primary: var(--iris);
-  --primary-foreground: #0a0c10;
-  --secondary: var(--panel2);
-  --secondary-foreground: var(--ink);
-  --muted: var(--panel2);
-  --muted-foreground: var(--ink3);
-  --accent: var(--panel2);
-  --accent-foreground: var(--ink);
-  --destructive: var(--s-block);
-  --destructive-foreground: #ffffff;
-  --border: var(--rule2);
-  --input: var(--rule2);
-  --ring: var(--iris);
-
-  /* shadcn Sidebar tokens (stage 2b), mapped onto the SAME palette the old
-     nav rail used (bg-card surface, panel2 hover/accent, iris active
-     treatment) so the shadcn Sidebar primitive never renders stock zinc. */
-  --sidebar: var(--card);
-  --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--iris);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--panel2);
-  --sidebar-accent-foreground: var(--ink);
-  --sidebar-border: var(--rule2);
-  --sidebar-ring: var(--iris);
 }
 
-/* light theme override, identical values to index.html's body.light block */
+@media (min-resolution: 2dppx) {
+  :root { --hairline-w: 0.5px; }
+}
+
+/* light theme override, identical structure to :root above (1.7) */
 .light {
-  --bg: #f4f5f8;
-  --bg2: #eceef3;
-  --panel: #ffffff;
-  --panel2: #f7f8fb;
-  --rule: #e2e6ee;
-  --rule2: #d3d9e4;
-  --ink: #12151c;
-  --ink2: #454c5a;
-  --ink3: #5c6373;
-  --ink4: #5f6674;
+  color-scheme: light;
 
-  --background: var(--bg);
-  --foreground: var(--ink);
-  --card: var(--panel);
-  --card-foreground: var(--ink);
-  --popover: var(--panel2);
-  --popover-foreground: var(--ink);
-  --primary: var(--iris);
-  --primary-foreground: #ffffff;
-  --secondary: var(--panel2);
-  --secondary-foreground: var(--ink);
-  --muted: var(--panel2);
-  --muted-foreground: var(--ink3);
-  --accent: var(--panel2);
-  --accent-foreground: var(--ink);
-  --border: var(--rule2);
-  --input: var(--rule2);
-  --ring: var(--iris);
+  --surface-0:        oklch(0.975 0.004 110);   /* #f7f7f4 */
+  --surface-1:        oklch(1 0 0);             /* #ffffff */
+  --surface-2:        oklch(1 0 0);             /* #ffffff */
+  --surface-sunken:   oklch(0.950 0.005 110);   /* #eeefeb */
+  --surface-inverted: oklch(0.225 0.010 110);   /* #1c1c17 */
 
-  --sidebar: var(--card);
-  --sidebar-foreground: var(--ink);
-  --sidebar-primary: var(--iris);
-  --sidebar-primary-foreground: var(--primary-foreground);
-  --sidebar-accent: var(--panel2);
-  --sidebar-accent-foreground: var(--ink);
-  --sidebar-border: var(--rule2);
-  --sidebar-ring: var(--iris);
+  --ink:          oklch(0.205 0.010 110);         /* #171812 */
+  --ink-2:        oklch(0.205 0.010 110 / 0.74);
+  --ink-3:        oklch(0.205 0.010 110 / 0.61);
+  --ink-4:        oklch(0.205 0.010 110 / 0.48);
+  --ink-inverted: oklch(0.975 0.004 110);
+
+  --overlay-hover:    oklch(0.205 0.010 110 / 0.045);
+  --overlay-press:    oklch(0 0 0 / 0.06);
+  --overlay-selected: oklch(0.490 0.190 285 / 0.14);   /* iris-solid */
+
+  --hairline: oklch(0.205 0.010 110 / 0.13);
+
+  /* Light-theme shadows are graphite-tinted, never black. Pure black on
+     white is the tell of an amateur light theme. */
+  --shade-1: oklch(0.30 0.030 110 / 0.06);
+  --shade-2: oklch(0.30 0.030 110 / 0.10);
+  --shade-3: oklch(0.30 0.030 110 / 0.16);
+
+  --iris-contrast:     oklch(0.440 0.170 285);  /* #4e3baa */
+  --work-contrast:     oklch(0.400 0.095 152);  /* #12562d */
+  --need-contrast:     oklch(0.470 0.100 070);  /* #7e4f04 */
+  --block-contrast:    oklch(0.500 0.165 026);  /* #ae2e2c */
+  --done-contrast:     oklch(0.445 0.078 215);  /* #025e6f */
+  --idle-contrast:     oklch(0.470 0.012 110);  /* #5b5b54 */
+  --series-1-contrast: oklch(0.420 0.100 245);  /* #0b517f */
+  --series-2-contrast: oklch(0.520 0.105 075);  /* #8c5f0e */
+
+  --iris-soft:     oklch(0.935 0.030 285);
+  --work-soft:     oklch(0.935 0.032 152);
+  --need-soft:     oklch(0.940 0.034 070);
+  --block-soft:    oklch(0.935 0.030 026);
+  --done-soft:     oklch(0.935 0.028 215);
+  --idle-soft:     oklch(0.945 0.008 110);
+  --series-1-soft: oklch(0.935 0.030 245);
+  --series-2-soft: oklch(0.940 0.036 075);
 }
 
 @theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --color-card: var(--card);
-  --color-card-foreground: var(--card-foreground);
-  --color-popover: var(--popover);
-  --color-popover-foreground: var(--popover-foreground);
-  --color-primary: var(--primary);
-  --color-primary-foreground: var(--primary-foreground);
-  --color-secondary: var(--secondary);
-  --color-secondary-foreground: var(--secondary-foreground);
-  --color-muted: var(--muted);
-  --color-muted-foreground: var(--muted-foreground);
-  --color-accent: var(--accent);
-  --color-accent-foreground: var(--accent-foreground);
-  --color-destructive: var(--destructive);
-  --color-destructive-foreground: var(--destructive-foreground);
-  --color-border: var(--border);
-  --color-input: var(--input);
-  --color-ring: var(--ring);
+  /* -- --spacing stays at Tailwind's 4px default this stage (geometry is
+     out of scope for #68; see the PR body). -- */
 
-  /* humanctl semantic hues, exposed as Tailwind utilities too:
-     bg-work, text-need, border-block, etc. */
-  --color-work: var(--s-work);
-  --color-need: var(--s-need);
-  --color-block: var(--s-block);
-  --color-idle: var(--s-idle);
-  --color-done: var(--s-done);
-  --color-codex: var(--h-codex);
-  --color-claude: var(--h-claude);
-  --color-bg2: var(--bg2);
-  --color-panel: var(--panel);
-  --color-panel2: var(--panel2);
-  --color-rule: var(--rule);
-  --color-rule2: var(--rule2);
-  --color-ink2: var(--ink2);
-  --color-ink3: var(--ink3);
-  --color-ink4: var(--ink4);
-  --color-iris: var(--iris);
-  --color-iris-dim: var(--iris-dim);
-
-  /* shadcn Sidebar's own token namespace (bg-sidebar, text-sidebar-foreground,
-     bg-sidebar-accent, border-sidebar-border, etc.), bridged the same way as
-     every other --color-* utility above. */
-  --color-sidebar: var(--sidebar);
-  --color-sidebar-foreground: var(--sidebar-foreground);
-  --color-sidebar-primary: var(--sidebar-primary);
-  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
-  --color-sidebar-accent: var(--sidebar-accent);
-  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
-  --color-sidebar-border: var(--sidebar-border);
-  --color-sidebar-ring: var(--sidebar-ring);
-
+  /* Raw tokens and bridge keys never share a name (section 9): a
+     self-referential `--font-mono: var(--font-mono)` is a latent trap the
+     day globals.css gets wrapped in a layer. font-sans/font-mono are
+     UNCHANGED this stage (stage 3 owns @font-face + the font stack
+     rename to --font-*-stack). */
   --font-sans: var(--font-disp);
   --font-mono: var(--font-mono);
 
+  /* -- colour bridge (section 9). This is the whole of what stage 2 adds
+     to @theme: every consumer below reaches these through a Tailwind
+     utility (bg-surface-2, text-ink-3, border-hairline, ...), never a
+     raw var(). -- */
+  --color-surface-0:        var(--surface-0);
+  --color-surface-1:        var(--surface-1);
+  --color-surface-2:        var(--surface-2);
+  --color-surface-sunken:   var(--surface-sunken);
+  --color-surface-inverted: var(--surface-inverted);
+  --color-ink:          var(--ink);
+  --color-ink-2:        var(--ink-2);
+  --color-ink-3:        var(--ink-3);
+  --color-ink-4:        var(--ink-4);
+  --color-ink-inverted: var(--ink-inverted);
+  --color-hairline: var(--hairline);
+  --color-hover:    var(--overlay-hover);
+  --color-press:    var(--overlay-press);
+  --color-selected: var(--overlay-selected);
+  --color-focus:    var(--focus);
+  --color-on-solid:    var(--on-solid);
+  --color-iris-solid:  var(--iris-solid);
+  --color-block-solid: var(--block-solid);
+
+  --color-iris-contrast:     var(--iris-contrast);
+  --color-work-contrast:     var(--work-contrast);
+  --color-need-contrast:     var(--need-contrast);
+  --color-block-contrast:    var(--block-contrast);
+  --color-done-contrast:     var(--done-contrast);
+  --color-idle-contrast:     var(--idle-contrast);
+  --color-series-1-contrast: var(--series-1-contrast);
+  --color-series-2-contrast: var(--series-2-contrast);
+
+  --color-iris-soft:     var(--iris-soft);
+  --color-work-soft:     var(--work-soft);
+  --color-need-soft:     var(--need-soft);
+  --color-block-soft:    var(--block-soft);
+  --color-done-soft:     var(--done-soft);
+  --color-idle-soft:     var(--idle-soft);
+  --color-series-1-soft: var(--series-1-soft);
+  --color-series-2-soft: var(--series-2-soft);
+
+  /* -- radius: UNCHANGED this stage (stage 5/#71 owns the control-height
+     radius table in section 3.2). Kept verbatim from the pre-stage-2
+     scaffold so no existing rounded-* class shifts size. -- */
   --radius-xs: calc(var(--radius) * 0.6);
   --radius-sm: var(--radius-sm);
   --radius-md: calc(var(--radius) * 0.9);
-  --radius-lg: var(--radius);
+  --radius-lg: var(--radius-lg);
   --radius-xl: var(--radius-lg);
+
+  --ease-enter: var(--motion-ease-enter);
+  --ease-morph: var(--motion-ease-morph);
+  --ease-exit:  var(--motion-ease-exit);
+
+  /* ============================================================
+     MAGENTA CANARY (#68): every name retired by this stage, aliased to
+     #ff00ff. There is no shadcn compatibility bridge any more --
+     --background, --card, --popover, --primary, --muted, --accent, and
+     the --sidebar-* family do not exist (section 9) -- and the whole
+     pre-stage-2 semantic hue layer (--work/--need/--block/--idle/--done,
+     the vendor-named --codex/--claude, and the flat --iris/--iris-dim)
+     is replaced by the contrast/soft pairs above. Every one of these
+     MUST have zero remaining call sites by the end of this PR (verified
+     by the CDP magenta scan in the PR body); the aliases themselves are
+     deleted in stage 7 once grep on the names below returns zero.
+     ============================================================ */
+  --color-background: #ff00ff;
+  --color-foreground: #ff00ff;
+  --color-card: #ff00ff;
+  --color-card-foreground: #ff00ff;
+  --color-popover: #ff00ff;
+  --color-popover-foreground: #ff00ff;
+  --color-primary: #ff00ff;
+  --color-primary-foreground: #ff00ff;
+  --color-secondary: #ff00ff;
+  --color-secondary-foreground: #ff00ff;
+  --color-muted: #ff00ff;
+  --color-muted-foreground: #ff00ff;
+  --color-accent: #ff00ff;
+  --color-accent-foreground: #ff00ff;
+  --color-destructive: #ff00ff;
+  --color-destructive-foreground: #ff00ff;
+  --color-border: #ff00ff;
+  --color-input: #ff00ff;
+  --color-ring: #ff00ff;
+  --color-sidebar: #ff00ff;
+  --color-sidebar-foreground: #ff00ff;
+  --color-sidebar-primary: #ff00ff;
+  --color-sidebar-primary-foreground: #ff00ff;
+  --color-sidebar-accent: #ff00ff;
+  --color-sidebar-accent-foreground: #ff00ff;
+  --color-sidebar-border: #ff00ff;
+  --color-sidebar-ring: #ff00ff;
+
+  --color-bg2: #ff00ff;
+  --color-panel: #ff00ff;
+  --color-panel2: #ff00ff;
+  --color-rule: #ff00ff;
+  --color-rule2: #ff00ff;
+  --color-ink2: #ff00ff;
+  --color-ink3: #ff00ff;
+  --color-ink4: #ff00ff;
+  --color-iris: #ff00ff;
+  --color-iris-dim: #ff00ff;
+  --color-work: #ff00ff;
+  --color-need: #ff00ff;
+  --color-block: #ff00ff;
+  --color-idle: #ff00ff;
+  --color-done: #ff00ff;
+  --color-codex: #ff00ff;
+  --color-claude: #ff00ff;
 }
 
+/* Elevation utilities (section 4): the ring first, always -- a selection
+   ring swap costs zero layout because it is the same box-shadow
+   property. `hairline` is every bounded object; `raised` is exactly one
+   inline object at a time (expanded/focused); `overlay` is a floating
+   surface (palette, menu, sheet, tooltip, toast). Rows/chips/inputs/bars
+   never get a shadow -- there is no stock Tailwind shadow anywhere in
+   this app (section 7); every prior `shadow-xs`/`shadow-md`/`shadow-lg`/
+   `shadow-2xl` call site is migrated off in this PR. */
+@utility hairline { box-shadow: var(--elev-ring); }
+@utility raised   { box-shadow: var(--elev-raised); }
+@utility overlay  { box-shadow: var(--elev-overlay); }
+
+/* P4's "hover, press, and selected are overlays, not new hex values" --
+   and per 1.4's worst-bug warning, they must COMPOSE, never replace one
+   another. A plain `hover:bg-hover` (background-color) swap only composes
+   correctly when NOTHING else on the element is also fighting over
+   background-color. It fails the instant the same element can ALSO be
+   `bg-selected` (any row, toggle item, or menu item that persists a
+   selected/active state): both classes set the same CSS property, so
+   whichever one Tailwind happens to emit later in the stylesheet wins
+   outright and the other is erased -- this is #66's exact bug,
+   reproduced with new token names, if hover is ever expressed this way
+   on a selectable element. `--overlay-hover`/`--overlay-press` are
+   instead painted as an INSET BOX-SHADOW with an oversized spread: box-
+   shadow is a different CSS property than background-color, so it always
+   composes on top of whatever background is already there (a transparent
+   resting fill, a flat surface colour, a `bg-selected` tint, or an opaque
+   solid button fill) via the browser's ordinary layered painting, with
+   zero layout shift (the same property P3 uses for the hairline ring).
+   Used UNIVERSALLY for every interactive hover/press in this app, not
+   only on solid fills, so there is exactly one hover mechanism and exactly
+   one press mechanism -- never a second, plain-swap dialect that silently
+   breaks the day a selected state is added to whatever it is applied to.
+   Verifies against 1.5's measured on-solid numbers (iris-solid rest 6.59,
+   hover 5.77, press 7.40) and section 1.8's selected-beats-hover contract
+   (tokens:check). Not part of design-system.md's own utility table
+   verbatim (which names the mechanism, not the CSS) -- named distinctly
+   from `overlay` (elevation, section 4) to avoid confusion with this
+   interaction-state pair. */
+@utility wash-hover { box-shadow: inset 0 0 0 999px var(--overlay-hover); }
+@utility wash-press { box-shadow: inset 0 0 0 999px var(--overlay-press); }
+
+/* box-shadow is a single property: an element that carries BOTH the
+   `hairline` ring (always-on) AND a `hover:wash-hover`/`active:wash-press`
+   overlay would have the hover/press rule's higher specificity silently
+   erase the ring the instant the pointer arrived -- the same "one rule
+   wins outright and the other loses" failure P4 exists to prevent, just
+   between a ring and a wash instead of between two overlays. These two
+   variants fold the ring and the wash into ONE declared box-shadow (wash
+   first/topmost, ring beneath) for the small set of elements that need
+   both together (`Button`'s `outline` variant is the real, actively-used
+   one; a couple of vendored shadcn variants unused by this app today keep
+   the same treatment for consistency, not because they render anywhere
+   yet). */
+@utility ring-wash-hover { box-shadow: inset 0 0 0 999px var(--overlay-hover), inset 0 0 0 var(--hairline-w) var(--hairline); }
+@utility ring-wash-press { box-shadow: inset 0 0 0 999px var(--overlay-press), inset 0 0 0 var(--hairline-w) var(--hairline); }
+
 @layer base {
-  * {
-    @apply border-border outline-ring/50;
-  }
   body {
-    @apply bg-background text-foreground;
+    background-color: var(--surface-0);
+    color: var(--ink);
     font-family: var(--font-disp);
     -webkit-font-smoothing: antialiased;
     letter-spacing: -0.005em;
   }
-  /* one shared focus-visible contract, ported from a11y-base in index.html:
-     keyboard focus only, never on mouse/touch clicks. shadcn/Radix primitives
-     already emit :focus-visible on their own interactive parts, so this rule
-     is inherited "for free" rather than re-declared per component.
-     docs/design-system.md section 8 (Reconciliation with DESIGN.md, the
-     "Focus indicator" row): this is the ONE focus indicator in the app.
-     Every per-primitive `focus-visible:ring-[3px]` (and its matching
-     `outline-none`) is a second owner and has been deleted in the same
-     change that landed this comment. No `border-radius` on the rule: that
-     property would set the FOCUSED ELEMENT's own radius, not the outline's,
-     and every modern engine already curves an outline to follow whatever
-     radius the element already has. This app's token layer has not yet
-     migrated to docs/design-system.md's oklch tokens (a separate stage), so
-     this still reads `var(--iris)` rather than the not-yet-defined
-     `var(--focus)` the doc names; same iris hue either way. */
+  /* one shared focus-visible contract (docs/design-system.md section 8,
+     the "Focus indicator" reconciliation row): keyboard focus only,
+     never on mouse/touch clicks. shadcn/Radix primitives already emit
+     :focus-visible on their own interactive parts, so this rule is
+     inherited "for free" rather than re-declared per component. No
+     `outline-none` anywhere in a cva base string (section 7): that would
+     land in @layer utilities and beat this @layer base rule, deleting
+     every visible keyboard focus indicator in the app (a WCAG 2.4.7
+     failure invisible to every automated gate). No `border-radius` on
+     the rule: that property sets the FOCUSED ELEMENT's own radius, not
+     the outline's, and every modern engine already curves an outline to
+     follow whatever radius the element already has. */
   :focus {
     outline: none;
   }
   :focus-visible {
-    outline: 2px solid var(--iris);
+    outline: 2px solid var(--focus);
     outline-offset: 2px;
   }
-  /* docs/design-system.md P9 + section 3.4: every lucide icon is 1px stroke,
-     universally, enforced once here so it holds even for a render that
-     bypasses components/ui/icon.tsx (the size choke point -- see that file).
-     `svg.lucide` is the class lucide-react's own Icon primitive puts on
-     every glyph it renders (see node_modules/lucide-react/dist/esm/Icon.js),
-     so this needs no per-icon className and survives new icons being added
-     without anyone remembering this rule exists. */
+  /* docs/design-system.md P9 + section 3.4: every lucide icon is 1px
+     stroke, universally, enforced once here so it holds even for a
+     render that bypasses components/ui/icon.tsx (the size choke point --
+     see that file). `svg.lucide` is the class lucide-react's own Icon
+     primitive puts on every glyph it renders, so this needs no per-icon
+     className and survives new icons being added without anyone
+     remembering this rule exists. */
   svg.lucide {
     stroke-width: 1;
   }
@@ -229,12 +399,16 @@
   }
 }
 
-/* The .hc-chip dialect is retired: components/ui/chip.tsx (built on shadcn
-   Badge) is now the one shared small-labeled-pill component everywhere,
-   applying the same color-mix recipe (15% hue bg, 78%-toward-ink text, 23%
-   hue border) via inline style + Tailwind utilities instead of a bespoke
-   global CSS class + per-hue modifier classes. */
+/* The .hc-chip dialect is retired: components/ui/chip.tsx (built on
+   shadcn Badge) is now the one shared small-labeled-pill component
+   everywhere, painting `--<hue>-soft`/`--<hue>-contrast` directly
+   (section 1.5's contrast/soft pair) instead of a runtime `color-mix`
+   recipe -- section 10 pins the compositing model precisely so the
+   checker and the renderer cannot disagree, which a per-component
+   color-mix escape hatch would defeat. */
 
-::-webkit-scrollbar { width: 8px; height: 8px; }
-::-webkit-scrollbar-thumb { background: var(--rule2); border-radius: 8px; }
-::-webkit-scrollbar-track { background: transparent; }
+/* No ::-webkit-scrollbar rule here: ScrollArea (components/ui/scroll-area.tsx)
+   is the ONE owner of scrollbar styling (section 8's "one owner per
+   token", extended from DESIGN.md's "ScrollArea always, no native
+   scrollbars"). Two homes for the scrollbar -- this rule plus the
+   ScrollArea primitive -- was the same defect as two homes for a count. */

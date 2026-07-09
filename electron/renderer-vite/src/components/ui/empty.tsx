@@ -4,7 +4,7 @@ import { cn } from "@/lib/utils"
 
 // The one quiet, instructive empty-state primitive (DESIGN.md: "Empty states
 // are quiet and instructive, never celebratory"), replacing five hand-rolled
-// one-off `<div className="p-... text-ink3">` placeholders (session-detail's
+// one-off `<div className="p-... text-ink-3">` placeholders (session-detail's
 // two, sessions-view's two, fleet-view's one, inbox's one). Hand-ported
 // (`npx shadcn add empty` produces a dashed-border, rounded-lg, bg-muted
 // icon-medallion card -- DESIGN.md's "flat surfaces, no cards, no
@@ -29,7 +29,7 @@ function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="empty-title"
       className={cn(
-        "font-mono text-[10px] font-semibold uppercase tracking-wider text-ink4",
+        "font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4",
         className
       )}
       {...props}
@@ -42,7 +42,7 @@ function EmptyDescription({ className, ...props }: React.ComponentProps<"div">) 
     <div
       data-slot="empty-description"
       className={cn(
-        "max-w-sm font-mono text-[11.5px] leading-relaxed text-ink3 [&>code]:rounded [&>code]:bg-panel2 [&>code]:px-1.5 [&>code]:py-px [&>code]:font-mono",
+        "max-w-sm font-mono text-[11.5px] leading-relaxed text-ink-3 [&>code]:rounded [&>code]:bg-surface-2 [&>code]:px-1.5 [&>code]:py-px [&>code]:font-mono",
         className
       )}
       {...props}

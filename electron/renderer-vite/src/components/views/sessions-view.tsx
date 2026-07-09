@@ -89,22 +89,25 @@ function SessionRowItem({
       onKeyDown={(e) => {
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); onSelect(row.id); }
       }}
+      // Stage 2 (#68), one of the five selection dialects unified onto
+      // `--overlay-selected` (same fix as thread-row.tsx -- see that file's
+      // header comment for the full P4/#66 rationale).
       className={cn(
-        'grid cursor-pointer grid-cols-[1fr_28px] items-start gap-2 border-b border-border border-l-2 border-l-transparent px-6 py-3 hover:bg-panel',
-        selected && 'border-l-iris bg-panel2',
+        'grid cursor-pointer grid-cols-[1fr_28px] items-start gap-2 border-b border-b-hairline px-6 py-3 hover:wash-hover',
+        selected && 'bg-selected',
       )}
     >
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={row.harness} />
-          <span className="flex-1 truncate text-[13px] font-semibold text-foreground">{title}</span>
-          <span className="flex-none font-mono text-[9.5px] text-ink4">{row.age}</span>
+          <span className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
+          <span className="flex-none font-mono text-[9.5px] text-ink-4">{row.age}</span>
         </span>
         <span className="flex min-w-0 items-center gap-2">
           <StateChip state={row.state} />
-          <span className="flex-1 truncate text-[11.5px] text-ink3">{msg}</span>
+          <span className="flex-1 truncate text-[11.5px] text-ink-3">{msg}</span>
         </span>
-        <span className="flex min-w-0 items-center gap-1.5 font-mono text-[9px] text-ink4">
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-[9px] text-ink-4">
           <span className="truncate">{cwdBase(row.cwd || row.repo)}</span>
           {row.contextPct != null && <span className="flex-none">· {row.contextPct}% ctx</span>}
           {cost && <span className="flex-none">· {cost}</span>}
@@ -118,8 +121,8 @@ function SessionRowItem({
         aria-label={pinned ? `unpin ${title}` : `pin ${title}`}
         title={pinned ? 'unpin' : 'pin'}
         className={cn(
-          'mt-0.5 flex-none rounded text-ink4 hover:bg-transparent hover:text-foreground',
-          pinned && 'text-iris hover:text-iris',
+          'mt-0.5 flex-none rounded text-ink-4 hover:bg-transparent hover:text-ink',
+          pinned && 'text-iris-contrast hover:text-iris-contrast',
         )}
       >
         <Icon icon={Bookmark} size="sm" fill={pinned ? 'currentColor' : 'none'} aria-hidden="true" />
@@ -130,7 +133,7 @@ function SessionRowItem({
 
 function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChange: (next: SessionsFilter) => void }) {
   return (
-    <div className="flex flex-none flex-wrap items-center gap-2 border-b border-border px-6 py-2">
+    <div className="flex flex-none flex-wrap items-center gap-2 border-b border-b-hairline px-6 py-2">
       <Input
         value={filter.q}
         onChange={(e) => onChange({ ...filter, q: e.target.value })}
@@ -257,10 +260,10 @@ export function SessionsView({
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
                 >
                   {item.kind === 'pinned-header' ? (
-                    <div className="flex items-center gap-2 border-b border-border bg-bg2 px-6 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ink3">
-                      <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris" aria-hidden="true" />
+                    <div className="flex items-center gap-2 border-b border-b-hairline bg-surface-0 px-6 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">
+                      <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris-contrast" aria-hidden="true" />
                       Pinned
-                      <span className="text-ink4">{item.count}</span>
+                      <span className="text-ink-4">{item.count}</span>
                     </div>
                   ) : (
                     <SessionRowItem

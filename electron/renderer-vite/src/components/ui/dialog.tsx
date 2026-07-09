@@ -30,6 +30,11 @@ function DialogClose({
   return <DialogPrimitive.Close data-slot="dialog-close" {...props} />
 }
 
+// No scrim (section 4): "An overlay earns its separation by elevation and
+// inset alone. The page behind stays at full opacity and full contrast."
+// The Radix Overlay element stays mounted (transparent, pointer-events
+// intact) so click-outside-to-close and the `aria-hidden` on the page
+// behind keep working -- only the visual dimming is removed.
 function DialogOverlay({
   className,
   ...props
@@ -38,7 +43,7 @@ function DialogOverlay({
     <DialogPrimitive.Overlay
       data-slot="dialog-overlay"
       className={cn(
-        "fixed inset-0 z-50 bg-black/50 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
+        "fixed inset-0 z-50 bg-transparent data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:animate-in data-[state=open]:fade-in-0",
         className
       )}
       {...props}
@@ -60,16 +65,23 @@ function DialogContent({
       <DialogPrimitive.Content
         data-slot="dialog-content"
         className={cn(
-          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg border bg-background p-6 shadow-lg duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
+          "fixed top-[50%] left-[50%] z-50 grid w-full max-w-[calc(100%-2rem)] translate-x-[-50%] translate-y-[-50%] gap-4 rounded-lg overlay bg-surface-2 p-6 duration-200 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=closed]:zoom-out-95 data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=open]:zoom-in-95 sm:max-w-lg",
           className
         )}
         {...props}
       >
         {children}
         {showCloseButton && (
+          // No per-primitive focus ring (section 8's "Focus indicator"
+          // reconciliation row): the one global :focus-visible rule in
+          // globals.css already renders this button's focus ring, so the
+          // old `focus:ring-2 focus:ring-ring focus:ring-offset-2
+          // focus:outline-hidden` cluster -- a second owner, and one that
+          // fired on every focus rather than only keyboard focus -- is
+          // deleted rather than retargeted.
           <DialogPrimitive.Close
             data-slot="dialog-close"
-            className="absolute top-4 right-4 rounded-xs opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:outline-hidden disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground [&_svg]:pointer-events-none [&_svg]:shrink-0"
+            className="absolute top-4 right-4 rounded-xs opacity-70 transition-opacity hover:opacity-100 disabled:pointer-events-none data-[state=open]:bg-hover data-[state=open]:text-ink-3 [&_svg]:pointer-events-none [&_svg]:shrink-0"
           >
             <Icon icon={XIcon} />
             <span className="sr-only">Close</span>
@@ -137,7 +149,7 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-muted-foreground", className)}
+      className={cn("text-sm text-ink-3", className)}
       {...props}
     />
   )

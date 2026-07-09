@@ -91,7 +91,7 @@ export function AppSidebar({
         style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
         aria-hidden="true"
       />
-      <SidebarContent className="gap-0 border-r border-sidebar-border py-2">
+      <SidebarContent className="gap-0 border-r border-r-hairline py-2">
         <SidebarMenu className="gap-0.5 px-2">
           {NAV_ITEMS.map((item) => {
             const active = view === item.view;
@@ -109,16 +109,20 @@ export function AppSidebar({
                   // whenever this button is visible at all (expanded-only).
                   onClick={() => onNavigate(item.view)}
                   aria-label={`${item.label}${unread ? `, ${unreadCount} unread` : ''}`}
-                  // The primitive's default active treatment is
-                  // data-[active=true]:bg-sidebar-accent (same hue as
-                  // hover). Forced (!) so the humanctl iris active language
-                  // wins over that default regardless of Tailwind's
-                  // generated rule order, since both rules share the same
-                  // data-[active=true] variant scope and CSS specificity
-                  // alone would not reliably decide the winner.
-                  className={cn(active && '!bg-iris/16 !text-foreground')}
+                  // Stage 2 (#68), one of the five selection dialects
+                  // unified onto `--overlay-selected`: this used to force a
+                  // hardcoded `!bg-iris/16` fill over the primitive's own
+                  // `data-[active=true]:bg-sidebar-accent`. The primitive's
+                  // own active treatment is now `bg-selected` too (see
+                  // sidebar.tsx), so there is nothing left to out-rank and
+                  // the `!important` override is deleted along with it.
+                  className={cn(active && 'text-ink')}
                 >
-                  <Icon icon={NavIcon} className={cn(active && 'text-iris')} aria-hidden="true" />
+                  {/* No icon color change for active (section 0, P2: "An
+                      icon never changes colour to signal state"). The row's
+                      `bg-selected` fill is the one and only selection
+                      signal; the icon just inherits it like any other icon. */}
+                  <Icon icon={NavIcon} aria-hidden="true" />
                   <span>{item.label}</span>
                 </SidebarMenuButton>
                 {unread && (
@@ -130,8 +134,10 @@ export function AppSidebar({
                     // whole rail is off-window), so that override is dead
                     // code now -- the badge only ever renders in the
                     // expanded row, where the primitive's default geometry
-                    // already fits.
-                    className="rounded-full bg-iris font-mono text-[8.5px] font-semibold text-primary-foreground"
+                    // already fits. `alert` per section 6's CountToken row:
+                    // "Attention is a fill; ... Only the sidebar unread
+                    // badge is alert."
+                    className="rounded-full bg-iris-solid font-mono text-[8.5px] font-semibold text-on-solid"
                   >
                     {unreadCount}
                   </SidebarMenuBadge>
@@ -141,21 +147,26 @@ export function AppSidebar({
           })}
         </SidebarMenu>
       </SidebarContent>
-      <SidebarFooter className="border-r border-t border-sidebar-border p-2">
+      <SidebarFooter className="border-r border-r-hairline border-t border-t-hairline p-2">
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton aria-label="theme, settings">
-              <span className="flex size-4 flex-none items-center justify-center rounded-full bg-iris font-mono text-[7px] font-bold text-primary-foreground">
+              <span className="flex size-4 flex-none items-center justify-center rounded-full bg-iris-solid font-mono text-[7px] font-bold text-on-solid">
                 Y
               </span>
-              <span className="flex-1 truncate text-[12.5px] font-semibold text-foreground">You</span>
-              <Icon icon={Settings2} className="text-muted-foreground" aria-hidden="true" />
+              <span className="flex-1 truncate text-[12.5px] font-semibold text-ink">You</span>
+              <Icon icon={Settings2} className="text-ink-3" aria-hidden="true" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="end" className="w-56">
-            <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-wider text-muted-foreground">Theme</DropdownMenuLabel>
+            <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-wider text-ink-3">Theme</DropdownMenuLabel>
             {(['light', 'dark', 'system'] as const).map((t) => (
-              <DropdownMenuItem key={t} onSelect={() => onSetTheme(t)} className={cn(theme === t && 'bg-iris text-primary-foreground')}>
+              // Sixth selection dialect found beyond the five named in #68
+              // (issue #66's original audit also flagged this one): the
+              // active theme entry used the same hardcoded solid-iris-fill
+              // pattern. Unified onto `--overlay-selected` for the same
+              // reason as the other five.
+              <DropdownMenuItem key={t} onSelect={() => onSetTheme(t)} className={cn(theme === t && 'bg-selected text-ink')}>
                 {t[0].toUpperCase() + t.slice(1)}
               </DropdownMenuItem>
             ))}

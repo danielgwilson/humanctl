@@ -66,4 +66,11 @@ jobs:
       # Renderer bundle budget. This one DOES run in CI: it needs only a browser
       # `vite build`, no Electron window and no display server. See docs/perf.md.
       - run: npm run bundle:check
+      # docs/design-system.md section 10, gate 1: parses globals.css, converts
+      # every authored oklch to sRGB, asserts gamut, composites alpha
+      # source-over in sRGB, and asserts the full section 1.8 colour contract
+      # (ink ladder, hue contrast/soft pairs, solid-fill hover/press, the
+      # hairline, the focus ring, and the selected-beats-hover orderings).
+      # Pure Node + tsx, no browser, no display server.
+      - run: npm run tokens:check
       - run: npm run build

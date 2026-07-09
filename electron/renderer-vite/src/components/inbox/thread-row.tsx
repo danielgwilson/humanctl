@@ -66,23 +66,35 @@ export function ThreadRow({
       title={thread.repo || ''}
       onClick={() => onSelect(thread.sessionId)}
       onDoubleClick={() => onOpenDetail(thread.sessionId)}
+      // Stage 2 (#68), one of the five selection dialects unified onto
+      // `--overlay-selected`: this used to be `border-l-iris bg-panel2`, a
+      // left accent bar plus a hardcoded surface swap (section 7 forbids
+      // both -- "a left accent bar on an active row" and "a hardcoded
+      // surface swap for hover"). `selected && 'bg-selected'` sets
+      // background-color; `hover:wash-hover` paints an inset box-shadow, a
+      // DIFFERENT CSS property, on top of it. Because they never fight over
+      // the same property, a selected row under hover shows both at once
+      // (P4: they compose) instead of hover erasing the selection tint --
+      // the #66 regression. A plain `hover:bg-hover` here would have
+      // reproduced #66 exactly, just with new token names (verified against
+      // this exact row while building the gate for this PR).
       className={cn(
-        'grid w-full cursor-pointer grid-cols-[14px_1fr] items-start gap-2 border-b border-border border-l-2 border-l-transparent px-6 py-3 text-left hover:bg-panel',
-        selected && 'border-l-iris bg-panel2',
+        'grid w-full cursor-pointer grid-cols-[14px_1fr] items-start gap-2 border-b border-b-hairline px-6 py-3 text-left hover:wash-hover',
+        selected && 'bg-selected',
       )}
     >
-      <span className={cn('mt-[5px] h-[7px] w-[7px] rounded-full', unread ? 'bg-iris' : 'bg-transparent')} aria-hidden="true" />
+      <span className={cn('mt-[5px] h-[7px] w-[7px] rounded-full', unread ? 'bg-iris-solid' : 'bg-transparent')} aria-hidden="true" />
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={harnessOf(thread, byId)} />
-          <span className="flex-1 truncate text-[13px] font-semibold text-foreground">{title}</span>
-          <span className="flex-none font-mono text-[9.5px] text-ink4">{when}</span>
+          <span className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
+          <span className="flex-none font-mono text-[9.5px] text-ink-4">{when}</span>
         </span>
         <span className="flex min-w-0 items-center gap-2">
           <StateChip state={state} />
-          <span className="flex-1 truncate text-[11.5px] text-ink3">{msg}</span>
+          <span className="flex-1 truncate text-[11.5px] text-ink-3">{msg}</span>
         </span>
-        <span className="truncate font-mono text-[9px] text-ink4">{repoBase(thread, byId)}</span>
+        <span className="truncate font-mono text-[9px] text-ink-4">{repoBase(thread, byId)}</span>
       </span>
     </button>
   );

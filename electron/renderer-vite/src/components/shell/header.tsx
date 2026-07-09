@@ -49,14 +49,23 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
   return (
     <header
       className={cn(
-        'flex h-[44px] shrink-0 items-center gap-3 bg-bg2 pr-6',
-        sidebarOpen ? 'border-b border-border pl-6' : 'pl-[76px]',
+        'flex h-[44px] shrink-0 items-center gap-3 bg-surface-0 pr-6',
+        sidebarOpen ? 'border-b border-b-hairline pl-6' : 'pl-[76px]',
       )}
       style={{ WebkitAppRegion: 'drag' } as React.CSSProperties}
     >
       <div className="flex flex-none items-center gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <Tooltip>
           <TooltipTrigger asChild>
+            {/* IconButton contract (section 6): "No ring at rest. Ring
+                appears only when it holds a value or is toggled on." The
+                ring is a single box-shadow property, so the neutral
+                `hairline` ring and the toggled-on colored ring are written
+                as mutually exclusive branches (never both classes at once)
+                rather than layered -- two classes setting the same
+                box-shadow property would leave the winner to Tailwind's
+                generated rule order, exactly what P3's ring-swap technique
+                exists to avoid. */}
             <Button
               type="button"
               variant="ghost"
@@ -64,8 +73,10 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
               onClick={toggleSidebar}
               aria-label={sidebarOpen ? 'collapse sidebar' : 'expand sidebar'}
               className={cn(
-                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
-                sidebarOpen && 'border-iris-dim text-iris',
+                'h-7 w-7 rounded-md hover:bg-transparent hover:text-ink',
+                sidebarOpen
+                  ? 'shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] text-iris-contrast'
+                  : 'hairline text-ink-3',
               )}
             >
               <Icon icon={PanelLeft} aria-hidden="true" />
@@ -76,11 +87,11 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
       </div>
       <div className="flex flex-none items-baseline gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
         <span className="text-[15px] font-bold tracking-tight">
-          human<b className="text-iris">ctl</b>
+          human<b className="text-iris-contrast">ctl</b>
         </span>
-        <span className="font-mono text-[9px] uppercase tracking-widest text-ink3">{version ? `v${version}` : 'demo'}</span>
+        <span className="font-mono text-[9px] uppercase tracking-widest text-ink-3">{version ? `v${version}` : 'demo'}</span>
         {demo && (
-          <span className="rounded border border-need/40 px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wider text-need">
+          <span className="rounded shadow-[inset_0_0_0_var(--hairline-w)_var(--need-contrast)] px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wider text-need-contrast">
             demo &middot; fixture
           </span>
         )}
@@ -96,8 +107,10 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
               onClick={onToggleRightRail}
               aria-label="toggle chief-of-staff chat"
               className={cn(
-                'h-7 w-7 rounded-md border border-border text-ink3 hover:bg-transparent hover:text-foreground',
-                rightRailOpen && 'border-iris-dim text-iris',
+                'h-7 w-7 rounded-md hover:bg-transparent hover:text-ink',
+                rightRailOpen
+                  ? 'shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] text-iris-contrast'
+                  : 'hairline text-ink-3',
               )}
             >
               <Icon icon={PanelRight} aria-hidden="true" />

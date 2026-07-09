@@ -46,12 +46,12 @@ const Toaster = ({ className, ...props }: ToasterProps) => {
         unstyled: true,
         classNames: {
           toast:
-            "flex w-full items-center gap-2.5 rounded-md border border-border bg-panel2 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-foreground shadow-none data-[type=error]:border-block/45 data-[type=error]:text-block",
+            "flex w-full items-center gap-2.5 rounded-md hairline bg-surface-2 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink shadow-none data-[type=error]:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[type=error]:text-block-contrast",
           title: "font-medium",
-          description: "text-ink3",
+          description: "text-ink-3",
           actionButton:
-            "ml-auto rounded-[5px] border border-iris-dim bg-transparent px-2 py-1 font-mono text-[10px] text-iris hover:bg-iris/10",
-          cancelButton: "rounded-[5px] px-2 py-1 font-mono text-[10px] text-ink3 hover:text-foreground",
+            "ml-auto rounded-[5px] shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] bg-transparent px-2 py-1 font-mono text-[10px] text-iris-contrast hover:bg-iris-soft",
+          cancelButton: "rounded-[5px] px-2 py-1 font-mono text-[10px] text-ink-3 hover:text-ink",
         },
       }}
       {...props}

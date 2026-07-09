@@ -63,39 +63,39 @@ function StreamRow({ item }: { item: ThreadItem }) {
 
   if (item.kind === 'note') {
     return (
-      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris pl-3">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-iris" size="label" dot={false}>{item.level}</Chip>
-          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.message}</div>
+          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.message}</div>
         </ItemContent>
       </Item>
     );
   }
   if (item.kind === 'ask') {
     return (
-      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-need pl-3">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-need-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-need" size="label" dot={false}>asks you</Chip>
-          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">{item.reason}</div>
+          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.reason}</div>
         </ItemContent>
       </Item>
     );
   }
   if (item.kind === 'ask-interrupted') {
     return (
-      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-block pl-3">
+      <Item size="sm" className="flex-col items-stretch border-l-2 border-l-block-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
-          <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="text-[13px] leading-relaxed text-foreground">
+          <div className="text-[13px] leading-relaxed text-ink">
             {item.question || 'a question was interrupted when the app closed.'}
           </div>
         </ItemContent>
@@ -103,14 +103,14 @@ function StreamRow({ item }: { item: ThreadItem }) {
     );
   }
   return (
-    <Item size="sm" className="flex-col items-stretch border-l-2 border-l-done pl-3">
+    <Item size="sm" className="flex-col items-stretch border-l-2 border-l-done-contrast pl-3">
       <ItemHeader>
         <Chip variant="label-done" size="label" dot={false}>{item.engine || 'answer'}</Chip>
-        <span className="font-mono text-[9.5px] text-ink4">{ts}</span>
+        <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
       </ItemHeader>
       <ItemContent>
-        <div className="text-[12.5px] text-ink2">{item.question}</div>
-        <div className="whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">
+        <div className="text-[12.5px] text-ink-2">{item.question}</div>
+        <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 text-[13px] leading-relaxed text-ink">
           {item.answer}
         </div>
       </ItemContent>
@@ -139,7 +139,7 @@ function SummarySection({
           <Chip variant="label" size="label" dot={false}>AI summary</Chip>
         )}
         {!error && (
-          <span className="font-mono text-[9.5px] text-ink4">
+          <span className="font-mono text-[9.5px] text-ink-4">
             {loading
               ? `via ${row.summary?.engine || 'claude'} CLI`
               : row.summary
@@ -149,15 +149,15 @@ function SummarySection({
         )}
       </ItemHeader>
       <ItemContent>
-        {loading && <div className="font-mono text-[11px] text-ink3">summarizing recent activity...</div>}
-        {!loading && error && <div className="text-[12.5px] text-ink3">{error}</div>}
+        {loading && <div className="font-mono text-[11px] text-ink-3">summarizing recent activity...</div>}
+        {!loading && error && <div className="text-[12.5px] text-ink-3">{error}</div>}
         {!loading && !error && row.summary && (
-          <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-foreground">{row.summary.text}</div>
+          <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">{row.summary.text}</div>
         )}
       </ItemContent>
       {!loading && (
         <ItemFooter className="justify-start">
-          <Button variant="outline" size="sm" className="h-6 font-mono text-[9px] text-ink3" onClick={onGenerate}>
+          <Button variant="outline" size="sm" className="h-6 font-mono text-[9px] text-ink-3" onClick={onGenerate}>
             {label}
           </Button>
         </ItemFooter>
@@ -233,7 +233,7 @@ export function SessionDetail({
             variant="ghost"
             size="sm"
             onClick={onBack}
-            className="mb-2 h-auto w-fit justify-start px-0 py-0 font-mono text-[10.5px] text-ink3 hover:bg-transparent hover:text-foreground"
+            className="mb-2 h-auto w-fit justify-start px-0 py-0 font-mono text-[10.5px] text-ink-3 hover:bg-transparent hover:text-ink"
           >
             &#8592; {backLabel || 'back'}
           </Button>
@@ -245,7 +245,7 @@ export function SessionDetail({
               <h1 className="text-[21px] font-bold tracking-tight">{title}</h1>
               <StateChip state={state} />
             </div>
-            <div className="mt-1 font-mono text-[10.5px] text-ink3">
+            <div className="mt-1 font-mono text-[10.5px] text-ink-3">
               {repoBase}{row?.model ? ` · ${row.model}` : ''}{row?.contextPct != null ? ` · ${row.contextPct}% context` : ''}
             </div>
           </div>
@@ -276,7 +276,7 @@ export function SessionDetail({
             ))
           ) : (
             <Empty className="p-3">
-              <EmptyDescription className="text-ink4">no updates in this thread yet.</EmptyDescription>
+              <EmptyDescription className="text-ink-4">no updates in this thread yet.</EmptyDescription>
             </Empty>
           )}
         </ItemGroup>
@@ -306,8 +306,8 @@ export function SessionDetail({
         {answer && (
           <ScrollArea className="min-h-0 flex-1">
             <div className="grid gap-1 pr-2">
-              <div className="pl-2 text-[12.5px] text-ink2">{q || 'your question'}</div>
-              <div className="whitespace-pre-wrap border-l-2 border-rule2 pl-2 text-[13px] leading-relaxed text-foreground">{answer}</div>
+              <div className="pl-2 text-[12.5px] text-ink-2">{q || 'your question'}</div>
+              <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 text-[13px] leading-relaxed text-ink">{answer}</div>
             </div>
           </ScrollArea>
         )}
@@ -319,7 +319,7 @@ export function SessionDetail({
             placeholder="Ask the session a question..."
             aria-label="Ask the session a question"
             disabled={asking || !row}
-            className={cn('flex-1 focus-visible:border-done')}
+            className={cn('flex-1 focus-visible:shadow-[inset_0_0_0_var(--hairline-w)_var(--done-contrast)]')}
           />
           <Button
             type="button"
