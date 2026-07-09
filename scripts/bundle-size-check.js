@@ -27,9 +27,18 @@ const KB = 1000;
 // Measured 2026-07-07 on the browser build (`npm run renderer:build`):
 // JS 532.86 kB, CSS 62.85 kB. Budgets are set ~12% above that: enough headroom
 // for ordinary feature work, tight enough that a heavy new dependency trips it.
+//
+// Stage 3 (#69, fixes #64) adds a `fonts` budget: four self-hosted latin-subset
+// woff2 files (Space Grotesk 500/600, JetBrains Mono 500/600), measured
+// ~70.3 kB combined. docs/design-system.md section 10.4 pins this budget at
+// roughly 90kB "give or take" -- 120kB leaves headroom for a future weight
+// without inviting a full family-index import (which would pull latin-ext,
+// cyrillic, greek, and vietnamese subsets, five @font-face blocks per family
+// instead of one).
 const BUDGETS = {
   js: 600 * KB,
   css: 72 * KB,
+  fonts: 120 * KB,
 };
 
 const ASSETS_DIR = path.join(__dirname, '..', 'electron', 'renderer-vite', 'dist', 'assets');
@@ -52,11 +61,17 @@ function main() {
   const entries = fs.readdirSync(ASSETS_DIR);
   const js = entries.filter((f) => f.endsWith('.js'));
   const css = entries.filter((f) => f.endsWith('.css'));
+  const fonts = entries.filter((f) => f.endsWith('.woff2'));
 
-  // Zero emitted files of EITHER kind must FAIL, never pass with a 0.00 kB
-  // reading. Otherwise any build change that relocates or inlines an artifact
-  // silently retires that budget forever and the gate reports a green it did
-  // not earn. A gate that cannot fail is decoration (see AGENTS.md).
+  // Zero emitted files of ANY of the three kinds must FAIL, never pass with a
+  // 0.00 kB reading. Otherwise any build change that relocates or inlines an
+  // artifact silently retires that budget forever and the gate reports a
+  // green it did not earn. A gate that cannot fail is decoration (see
+  // AGENTS.md). The fonts check is the one most likely to go quietly missing:
+  // a font-loading regression (a bad @font-face src path, a build config that
+  // stops emitting woff2 as a separate asset) produces a working-looking app
+  // that silently fell back to the system face -- exactly issue #64's original
+  // bug -- with no other signal anywhere in this script.
   if (js.length === 0) {
     console.error(`[bundle:check] FAIL: no .js emitted into ${ASSETS_DIR}; the build did not produce a renderer bundle.`);
     process.exit(1);
@@ -65,13 +80,19 @@ function main() {
     console.error(`[bundle:check] FAIL: no .css emitted into ${ASSETS_DIR}; the build did not produce a renderer stylesheet, so the CSS budget below would be vacuously satisfied.`);
     process.exit(1);
   }
+  if (fonts.length === 0) {
+    console.error(`[bundle:check] FAIL: no .woff2 emitted into ${ASSETS_DIR}; the build did not self-host the four latin-subset font files (docs/design-system.md 2.2), so the app would silently fall back to the system face (issue #64).`);
+    process.exit(1);
+  }
 
   const jsBytes = totalBytes(js);
   const cssBytes = totalBytes(css);
+  const fontsBytes = totalBytes(fonts);
 
   const rows = [
-    ['JS ', jsBytes, BUDGETS.js, js.length],
-    ['CSS', cssBytes, BUDGETS.css, css.length],
+    ['JS   ', jsBytes, BUDGETS.js, js.length],
+    ['CSS  ', cssBytes, BUDGETS.css, css.length],
+    ['FONTS', fontsBytes, BUDGETS.fonts, fonts.length],
   ];
 
   let failed = false;

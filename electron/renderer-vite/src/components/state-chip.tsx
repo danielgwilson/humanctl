@@ -34,7 +34,9 @@ export function HarnessGlyph({ harness, className }: { harness: string; classNam
   const codex = harness === 'codex';
   return (
     <span
-      className={cn('font-mono text-[12px] leading-none inline-flex items-center', className)}
+      // DESIGN.md row anatomy: "line 1 [harness glyph] session title (mono
+      // 13)" -- the glyph shares the `row` role with the title it leads.
+      className={cn('font-mono text-row inline-flex items-center', className)}
       aria-hidden="true"
     >
       {codex ? '◯' : '◉'}

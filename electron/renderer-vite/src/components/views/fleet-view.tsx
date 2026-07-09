@@ -53,9 +53,9 @@ function CountBar({ label, count, total, indicator }: { label: string; count: nu
   const pct = total > 0 ? Math.round((count / total) * 100) : 0;
   return (
     <div className="flex items-center gap-3 px-6 py-1.5">
-      <span className="w-28 flex-none truncate font-mono text-[10px] uppercase tracking-wider text-ink-3">{label}</span>
+      <span className="w-28 flex-none truncate font-mono text-row text-ink-3">{label}</span>
       <Progress value={pct} indicator={indicator} aria-label={`${label}: ${count} of ${total}`} className="flex-1" />
-      <span className="w-8 flex-none text-right font-mono text-[11px] text-ink-3">{count}</span>
+      <span className="w-8 flex-none text-right font-mono text-micro text-ink-3" data-numeric>{count}</span>
     </div>
   );
 }
@@ -63,14 +63,14 @@ function CountBar({ label, count, total, indicator }: { label: string; count: nu
 function HeadlineTile({ value, label }: { value: number; label: string }) {
   return (
     <div className="flex flex-1 flex-col items-center gap-0.5 py-4">
-      <span className="font-mono text-[28px] font-semibold leading-none text-ink">{value}</span>
-      <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink-4">{label}</span>
+      <span className="font-mono text-stat text-ink" data-numeric>{value}</span>
+      <span className="font-mono text-micro text-ink-4">{label}</span>
     </div>
   );
 }
 
 function SectionLabel({ children }: { children: string }) {
-  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-4">{children}</div>;
+  return <div className="px-6 pb-1 pt-5 font-mono text-label uppercase text-ink-4">{children}</div>;
 }
 
 export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status | null }) {
@@ -103,7 +103,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
   );
 
   const nextNote = (
-    <div className="px-6 pt-6 font-mono text-[10px] leading-relaxed text-ink-4">
+    <div className="px-6 pt-6 font-mono text-micro text-ink-4">
       next: a live force-directed graph of session relationships. this pass ships the flat shape overview only.
     </div>
   );
@@ -123,7 +123,7 @@ export function FleetView({ rows, status }: { rows: SessionRow[]; status: Status
         <div className="flex min-h-0 flex-1 flex-col">
           {tiles}
           <Empty>
-            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
+            <EmptyDescription>no sessions in the last 72h.</EmptyDescription>
           </Empty>
           {nextNote}
         </div>

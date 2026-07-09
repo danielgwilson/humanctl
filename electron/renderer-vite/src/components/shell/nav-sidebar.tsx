@@ -137,7 +137,7 @@ export function AppSidebar({
                     // already fits. `alert` per section 6's CountToken row:
                     // "Attention is a fill; ... Only the sidebar unread
                     // badge is alert."
-                    className="rounded-full bg-iris-solid font-mono text-[8.5px] font-semibold text-on-solid"
+                    className="rounded-full bg-iris-solid text-on-solid"
                   >
                     {unreadCount}
                   </SidebarMenuBadge>
@@ -151,15 +151,15 @@ export function AppSidebar({
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
             <SidebarMenuButton aria-label="theme, settings">
-              <span className="flex size-4 flex-none items-center justify-center rounded-full bg-iris-solid font-mono text-[7px] font-bold text-on-solid">
+              <span className="flex size-4 flex-none items-center justify-center rounded-full bg-iris-solid font-mono text-label text-on-solid">
                 Y
               </span>
-              <span className="flex-1 truncate text-[12.5px] font-semibold text-ink">You</span>
+              <span className="flex-1 truncate font-mono text-row text-ink">You</span>
               <Icon icon={Settings2} className="text-ink-3" aria-hidden="true" />
             </SidebarMenuButton>
           </DropdownMenuTrigger>
           <DropdownMenuContent side="right" align="end" className="w-56">
-            <DropdownMenuLabel className="font-mono text-[9px] uppercase tracking-wider text-ink-3">Theme</DropdownMenuLabel>
+            <DropdownMenuLabel className="font-mono text-label uppercase text-ink-3">Theme</DropdownMenuLabel>
             {(['light', 'dark', 'system'] as const).map((t) => (
               // Sixth selection dialect found beyond the five named in #68
               // (issue #66's original audit also flagged this one): the

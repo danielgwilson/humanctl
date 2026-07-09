@@ -24,25 +24,28 @@ function Empty({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// docs/design-system.md section 6: Empty's "slot" grade title is a centred
+// `row` title at --ink-2 (not a section label -- uppercase/tracking-wider
+// belonged to `label`, which section 7 forbids everywhere else).
 function EmptyTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="empty-title"
-      className={cn(
-        "font-mono text-[10px] font-semibold uppercase tracking-wider text-ink-4",
-        className
-      )}
+      className={cn("font-mono text-row text-ink-2", className)}
       {...props}
     />
   )
 }
 
+// Empty-state copy is one of docs/design-system.md 2.1's enumerated sans
+// call sites verbatim ("empty-state copy"), and section 6 says it plainly:
+// "Body copy is prose, and prose is never mono."
 function EmptyDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="empty-description"
       className={cn(
-        "max-w-sm font-mono text-[11.5px] leading-relaxed text-ink-3 [&>code]:rounded [&>code]:bg-surface-2 [&>code]:px-1.5 [&>code]:py-px [&>code]:font-mono",
+        "max-w-sm font-sans text-prose text-ink-3 [&>code]:rounded [&>code]:bg-surface-2 [&>code]:px-1.5 [&>code]:py-px [&>code]:font-mono",
         className
       )}
       {...props}

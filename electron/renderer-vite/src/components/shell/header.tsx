@@ -86,12 +86,16 @@ export function Header({ demo, version, rightRailOpen, onToggleRightRail }: { de
         </Tooltip>
       </div>
       <div className="flex flex-none items-baseline gap-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
-        <span className="text-[15px] font-bold tracking-tight">
-          human<b className="text-iris-contrast">ctl</b>
+        {/* Brand wordmark, not "the view name" (view-header.tsx's
+            ViewHeader owns `title`, once per screen) -- demoted from bold to
+            plain `row` weight, identity carried by the iris-contrast colour
+            split alone (P1: demotion is alpha/colour, never weight). */}
+        <span className="font-mono text-row">
+          human<b className="font-medium text-iris-contrast">ctl</b>
         </span>
-        <span className="font-mono text-[9px] uppercase tracking-widest text-ink-3">{version ? `v${version}` : 'demo'}</span>
+        <span className="font-mono text-label uppercase text-ink-3">{version ? `v${version}` : 'demo'}</span>
         {demo && (
-          <span className="rounded shadow-[inset_0_0_0_var(--hairline-w)_var(--need-contrast)] px-1.5 py-px font-mono text-[8.5px] uppercase tracking-wider text-need-contrast">
+          <span className="rounded shadow-[inset_0_0_0_var(--hairline-w)_var(--need-contrast)] px-1.5 py-px font-mono text-label uppercase text-need-contrast">
             demo &middot; fixture
           </span>
         )}

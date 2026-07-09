@@ -22,21 +22,25 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
     return (
       <Item size="sm" className="gap-2">
         <Chip variant="label" size="label" dot={false}>tools</Chip>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-4">
+        <span className="min-w-0 flex-1 truncate font-mono text-micro text-ink-4" data-numeric>
           {event.n} tool call{event.n === 1 ? '' : 's'}
         </span>
-        {ts && <span className="flex-none font-mono text-[9.5px] text-ink-4">{ts}</span>}
+        {ts && <span className="flex-none font-mono text-micro text-ink-4" data-numeric>{ts}</span>}
       </Item>
     );
   }
   if (event.k === 'interrupt') {
+    // A system notice, not language addressed to the human -- stays mono
+    // (docs/design-system.md 2.1's enumerated sans call sites are "the
+    // message to the human, a note body, chat, the composer, empty-state
+    // copy, toast copy"; this is none of those).
     return (
       <Item size="sm" className="gap-2">
         <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
+        <span className="min-w-0 flex-1 truncate font-mono text-micro text-ink-3">
           {event.t || 'the session was interrupted'}
         </span>
-        {ts && <span className="flex-none font-mono text-[9.5px] text-ink-4">{ts}</span>}
+        {ts && <span className="flex-none font-mono text-micro text-ink-4" data-numeric>{ts}</span>}
       </Item>
     );
   }
@@ -47,10 +51,12 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
         <Chip variant={isUser ? 'label-iris' : 'label-done'} size="label" dot={false}>
           {isUser ? 'you' : 'agent'}
         </Chip>
-        {ts && <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>}
+        {ts && <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>}
       </ItemHeader>
       <ItemContent>
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">
+        {/* The actual user/agent turn: "chat", one of 2.1's enumerated sans
+            call sites verbatim, same as cos-drawer.tsx's history. */}
+        <div className="whitespace-pre-wrap font-sans text-prose text-ink">
           {event.t || '(no text)'}
         </div>
       </ItemContent>
@@ -166,34 +172,42 @@ export function SessionTimeline({
         {tl.live && <Chip variant="label-done" size="label" dot={false} className="ml-auto">live</Chip>}
       </ItemHeader>
       <ItemContent>
+        {/* This whole cluster (unavailable / loading / error / empty) is one
+            conditional slot that swaps content by state -- kept uniformly
+            mono/micro (same call as cos-drawer.tsx's "thinking..."
+            placeholder) rather than splitting some branches to `prose`,
+            which would flip the typeface mid-slot for no functional reason
+            as state changes. */}
         {!row ? (
-          <div className="py-2 font-mono text-[11px] text-ink-4">session no longer in the recent scan; conversation is unavailable.</div>
+          <div className="py-2 font-mono text-micro text-ink-4">session no longer in the recent scan; conversation is unavailable.</div>
         ) : tl.loading ? (
-          <div className="py-2 font-mono text-[11px] text-ink-4">reading timeline...</div>
+          <div className="py-2 font-mono text-micro text-ink-4">reading timeline...</div>
         ) : tl.error ? (
-          <div className="py-2 font-mono text-[11px] text-ink-4">{tl.error}</div>
+          <div className="py-2 font-mono text-micro text-ink-4">{tl.error}</div>
         ) : (
           <div className="min-h-[120px]">
             {tl.atStart ? (
-              <div className="py-2 text-center font-mono text-[9.5px] uppercase tracking-wider text-ink-4">
+              <div className="py-2 text-center font-mono text-label uppercase text-ink-4">
                 start of session
               </div>
             ) : (
               <div className="flex justify-center py-1.5">
+                {/* Button label is `row` at every size (section 6); no
+                    per-instance size/tracking override any more. */}
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
                   onClick={handleLoadOlder}
                   disabled={tl.loadingOlder}
-                  className="h-auto w-auto px-0 py-0 font-mono text-[10px] tracking-wide text-ink-3 hover:bg-transparent hover:text-ink disabled:cursor-default disabled:opacity-60"
+                  className="h-auto w-auto px-0 py-0 text-ink-3 hover:bg-transparent hover:text-ink disabled:cursor-default disabled:opacity-60"
                 >
                   {olderLabel}
                 </Button>
               </div>
             )}
             {tl.items.length === 0 ? (
-              <div className="py-2 font-mono text-[11px] text-ink-4">no substantive events in this slice.</div>
+              <div className="py-2 font-mono text-micro text-ink-4">no substantive events in this slice.</div>
             ) : (
               tl.items.map(({ key, event }) => <TimelineRow key={key} event={event} />)
             )}

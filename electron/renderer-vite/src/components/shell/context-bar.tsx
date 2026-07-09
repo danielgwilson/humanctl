@@ -25,6 +25,7 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
   const cls = quotaCls(pct);
   const body = (
     <span
+      data-numeric
       className={cn(
         'inline-flex flex-none items-center gap-1.5',
         cls === 'q-amber' && 'text-need-contrast',
@@ -82,12 +83,16 @@ export function ContextBar({ status, claudeQuota, ctxPct }: { status: Status | n
     : 'requires a signed-in Claude subscription; read from the Claude Code CLI, never from transcripts';
   return (
     <footer
-      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-t-hairline bg-surface-0 px-4 font-mono text-[10.5px] text-ink-3"
+      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-t-hairline bg-surface-0 px-4 font-mono text-micro text-ink-3"
     >
-      <span className="flex-1 overflow-hidden text-ellipsis font-sans text-[11.5px] text-ink/90">
+      {/* The fleet digest sentence reads as language addressed to the human
+          (already sans before this stage); font-semibold on "need you" is
+          demoted per section 7 (illegal outside title/label) with no
+          substitute signal added -- a restyle, not a new emphasis. */}
+      <span className="flex-1 overflow-hidden text-ellipsis font-sans text-prose text-ink/90" data-numeric>
         {status ? (
           <>
-            <b className="font-semibold text-ink">{status.needsYou} need you</b>, {status.working} moving, {status.sessions} sessions
+            {status.needsYou} need you, {status.working} moving, {status.sessions} sessions
           </>
         ) : (
           'loading fleet...'
@@ -102,7 +107,7 @@ export function ContextBar({ status, claudeQuota, ctxPct }: { status: Status | n
           <Separator orientation="vertical" className="h-3.5 flex-none bg-hairline" />
           <Tooltip>
             <TooltipTrigger asChild>
-              <span className="flex-none">{ctxPct}% context</span>
+              <span className="flex-none" data-numeric>{ctxPct}% context</span>
             </TooltipTrigger>
             <TooltipContent>context window fill for the open session</TooltipContent>
           </Tooltip>

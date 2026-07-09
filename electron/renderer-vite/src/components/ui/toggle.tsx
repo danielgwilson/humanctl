@@ -29,10 +29,14 @@ const toggleVariants = cva(
         default: "bg-transparent",
         outline: "hairline bg-transparent hover:ring-wash-hover",
       },
+      // Label is `row` regardless of size (section 6's Button pattern,
+      // generalized): only the box height/padding differentiates the three
+      // sizes now, never the font size -- there is no room for a fourth or
+      // fifth mono size under the five-size budget (2.3).
       size: {
-        default: "h-7 px-3 text-[10.5px]",
-        sm: "h-6 px-2 text-[9.5px]",
-        lg: "h-8 px-3.5 text-[11px]",
+        default: "h-7 px-3 font-mono text-row",
+        sm: "h-6 px-2 font-mono text-row",
+        lg: "h-8 px-3.5 font-mono text-row",
       },
     },
     defaultVariants: {

@@ -63,3 +63,15 @@ radii) and maps them onto shadcn's semantic token names so Radix primitives
 (Select, Sheet, ContextMenu, DropdownMenu, Tooltip) render in the same visual
 language throughout the app, not default shadcn zinc. See the repo root
 `DESIGN.md`, which this renderer must match exactly.
+
+## Fonts
+
+`src/fonts/` vendors four self-hosted, latin-subset woff2 files: Space
+Grotesk 500/600 and JetBrains Mono 500/600 (both SIL Open Font License 1.1,
+`src/fonts/OFL.txt`). Hand-written `@font-face` blocks live in
+`src/styles/globals.css`; `src/index.html` preloads all four. No font is
+fetched over the network -- an Electron app must work offline (see
+`docs/design-system.md` section 2.2). Do not add a font package dependency
+(e.g. `@fontsource/*`): importing a package's index entry pulls extra
+subsets (latin-ext, cyrillic, greek, vietnamese) that this app never needs
+and that eat into the CSS budget (`scripts/bundle-size-check.js`).

@@ -28,11 +28,16 @@ import type { AppState } from '@/lib/types';
 const DEFAULT_BUDGET = 1.0;
 
 function SectionLabel({ children }: { children: string }) {
-  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-4">{children}</div>;
+  return <div className="px-6 pb-1 pt-5 font-mono text-label uppercase text-ink-4">{children}</div>;
 }
 
+// Settings' explanatory copy reads as sentences addressed to the human, but
+// it is not one of docs/design-system.md 2.1's enumerated sans call sites
+// (the message to the human, note bodies, chat, the composer, empty-state
+// copy, toast copy, the view title) -- it is a settings row's helper
+// caption, the same kind as a field's `micro` label, so it stays mono.
 function SectionNote({ children }: { children: string }) {
-  return <p className="px-6 pb-2 text-[11.5px] leading-relaxed text-ink-3">{children}</p>;
+  return <p className="px-6 pb-2 font-mono text-micro text-ink-3">{children}</p>;
 }
 
 export function SettingsView({ state, patch }: { state: AppState; patch: (next: Partial<AppState>) => void }) {
@@ -57,7 +62,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <SectionLabel>Appearance</SectionLabel>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink-3">Theme</span>
+            <span className="font-mono text-micro text-ink-3">Theme</span>
             <ToggleGroup
               type="single"
               aria-label="Theme"
@@ -80,7 +85,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <SectionNote>Which local CLI generates the on-demand summary. It runs on your machine, through your own CLI auth.</SectionNote>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink-3">Engine</span>
+            <span className="font-mono text-micro text-ink-3">Engine</span>
             <ToggleGroup
               type="single"
               aria-label="AI summary engine"
@@ -111,7 +116,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         </SectionNote>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink-3">Daily budget (est USD)</span>
+            <span className="font-mono text-micro text-ink-3">Daily budget (est USD)</span>
             <Input
               type="number"
               min="0.10"
@@ -121,14 +126,15 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
               onBlur={commitBudget}
               onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); commitBudget(); } }}
               aria-label="Always-on summary daily budget in US dollars"
-              className="h-8 w-28 font-mono text-[12px]"
+              className="h-8 w-28 font-mono text-row"
+              data-numeric
             />
           </Item>
           {budget && (
             <>
               <ItemSeparator />
-              <div className="px-6 py-2 text-[11px] text-ink-4">
-                Today: {fmtUSD(budget.spentUSD)} of {fmtUSD(budget.dailyBudgetUSD)}
+              <div className="px-6 py-2 font-mono text-micro text-ink-4">
+                Today: <span data-numeric>{fmtUSD(budget.spentUSD)}</span> of <span data-numeric>{fmtUSD(budget.dailyBudgetUSD)}</span>
                 {budget.paused ? ' · paused for the rest of today' : ''}.
               </div>
             </>

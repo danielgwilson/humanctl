@@ -18,7 +18,12 @@ import { visibleThreads, type InboxFilter } from '@/lib/inbox-logic';
 // this holds up even if a title wraps oddly; `getItemKey` keys each virtual
 // slot to the thread's own sessionId (not the array index) so rows never
 // flicker/mismatch when filtering or sorting reorders the list.
-const ROW_ESTIMATE_PX = 76;
+//
+// Stage 3 (#69): measured via headless CDP against the real built renderer
+// (getBoundingClientRect on a mounted row) after the type-role line-height
+// changes -- 85px, not the pre-stage-3 76px. See sessions-view.tsx's own
+// ROW_ESTIMATE_PX comment for the line-height math.
+const ROW_ESTIMATE_PX = 85;
 
 // The two-pane Inbox shell (thread list + thread detail), built once and
 // kept mounted so the search input never loses focus across a refresh. The
@@ -81,9 +86,16 @@ export function InboxView({
       <aside className="flex min-h-0 flex-col border-r border-r-hairline bg-surface-0">
         <div className="flex h-[38px] flex-none items-center gap-2 border-b border-b-hairline px-6">
           <span aria-hidden="true">&#9993;</span>
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-ink-2">Inbox</span>
-          <span className="font-mono text-[9.5px] text-ink-4">{list.length} {list.length === 1 ? 'thread' : 'threads'}</span>
-          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 font-mono text-[9px] text-ink-3" onClick={onMarkAllRead}>
+          {/* Pane header, a section label -- `label` role (section 2.3),
+              dropping the explicit font-semibold/tracking-widest now baked
+              into the role token. */}
+          <span className="font-mono text-label uppercase text-ink-2">Inbox</span>
+          <span className="font-mono text-micro text-ink-4">
+            <span data-numeric>{list.length}</span> {list.length === 1 ? 'thread' : 'threads'}
+          </span>
+          {/* Button label is `row` at every size (section 6); no per-instance
+              size override any more. */}
+          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 text-ink-3" onClick={onMarkAllRead}>
             mark all read
           </Button>
         </div>

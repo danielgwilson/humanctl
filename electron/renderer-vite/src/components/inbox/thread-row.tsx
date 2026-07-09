@@ -87,14 +87,17 @@ export function ThreadRow({
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={harnessOf(thread, byId)} />
-          <span className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
-          <span className="flex-none font-mono text-[9.5px] text-ink-4">{when}</span>
+          <span className="flex-1 truncate font-mono text-row text-ink">{title}</span>
+          <span className="flex-none font-mono text-micro text-ink-4" data-numeric>{when}</span>
         </span>
         <span className="flex min-w-0 items-center gap-2">
           <StateChip state={state} />
-          <span className="flex-1 truncate text-[11.5px] text-ink-3">{msg}</span>
+          {/* Row anatomy line 2, "the message to the human" -- docs/design-
+              system.md 2.1's central sans call site (see sessions-view.tsx's
+              SessionRowItem for the identical precedent). */}
+          <span className="flex-1 truncate font-sans text-prose text-ink-3">{msg}</span>
         </span>
-        <span className="truncate font-mono text-[9px] text-ink-4">{repoBase(thread, byId)}</span>
+        <span className="truncate font-mono text-micro text-ink-4">{repoBase(thread, byId)}</span>
       </span>
     </button>
   );

@@ -5,12 +5,12 @@
    humanctl design tokens (docs/design-system.md is the law).
    Stage 2 (design-system stage 2, #68): the token foundation --
    colour (section 1), the hairline (3.5), elevation (4), motion (5),
-   and the colour half of the Tailwind bridge (9). Fonts stay LOCAL
-   stacks only (no network, born-clean), matching the born-clean
-   rule; type roles and font sizes are stage 3 (#69), the radius
-   scale is stage 5 (#71) -- neither is touched here, so every
-   existing Tailwind default font size/radius keeps working exactly
-   as before this change.
+   and the colour half of the Tailwind bridge (9). Stage 3 (#69,
+   fixes #64) adds type: the four self-hosted @font-face blocks, the
+   --font-*-stack rename, and the six text roles (section 2, section
+   9). The radius scale is stage 5 (#71) -- untouched here, so every
+   existing rounded-* class keeps working exactly as before this
+   change.
 
    MAGENTA CANARY: every retired token/@theme key name below is
    aliased to #ff00ff for the duration of the migration (see the
@@ -20,6 +20,52 @@
    type error, and no failing test (see #68). The aliases are
    deleted in stage 7, once grep on the retired names returns zero.
    ============================================================ */
+
+/* ------------------------------------------------------------
+   Type (stage 3, #69, fixes #64): four self-hosted woff2 files,
+   latin subset only, hand-written @font-face blocks (docs/design-
+   system.md 2.2). Do NOT import a font package's index entry: it
+   pulls latin-ext, cyrillic, greek, and vietnamese subsets, adding
+   five @font-face blocks per family against a CSS budget with
+   single-digit kB of headroom (section 10.4). `font-display:
+   optional`, never `block` (up to 3s invisible text against a
+   1500ms cold-open budget) or `swap` (flashes the system face this
+   change exists to escape) -- paired with a <link rel="preload">
+   per file in index.html. The unicode-range is the standard latin
+   subset, identical across all four blocks per 2.2. ------------ */
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 500;
+  font-display: optional;
+  src: url('../fonts/space-grotesk-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2192, U+2212;
+}
+@font-face {
+  font-family: 'Space Grotesk';
+  font-style: normal;
+  font-weight: 600;
+  font-display: optional;
+  src: url('../fonts/space-grotesk-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2192, U+2212;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 500;
+  font-display: optional;
+  src: url('../fonts/jetbrains-mono-500-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2192, U+2212;
+}
+@font-face {
+  font-family: 'JetBrains Mono';
+  font-style: normal;
+  font-weight: 600;
+  font-display: optional;
+  src: url('../fonts/jetbrains-mono-600-latin.woff2') format('woff2');
+  unicode-range: U+0000-00FF, U+0131, U+0152-0153, U+2000-206F, U+2192, U+2212;
+}
+
 :root {
   color-scheme: dark;
 
@@ -109,12 +155,20 @@
   --motion-ease-exit:  cubic-bezier(0.4, 0, 1, 1);      /* accelerate */
   --motion-press: translateY(1px);
 
-  /* -- canvas: dark-first premium near-black. UNCHANGED this stage (stage
-     3/#69 owns type; stage 5/#71 owns the radius scale) -- font stacks
-     stay local-only, radii stay the existing shadcn-scaffold scale so no
-     existing rounded-* class shifts size in this PR. -- */
-  --font-disp: 'Space Grotesk', -apple-system, system-ui, sans-serif;
-  --font-mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+  /* -- canvas: dark-first premium near-black. Radius is UNCHANGED this
+     stage (stage 5/#71 owns the control-height radius table, section
+     3.2) -- kept verbatim so no existing rounded-* class shifts size in
+     this PR. Font stacks are now self-hosted (stage 3/#69, fixes #64):
+     both families are vendored above as woff2, latin subset, so the
+     fallback links after the primary name only fire for the ~one paint
+     `font-display: optional` allows on a cold cache. Raw tokens are
+     named `--font-*-stack` (never `--font-sans`/`--font-mono`, section
+     9): `--font-mono: var(--font-mono)` was self-referential and only
+     survived because Tailwind emits its own copy inside `@layer theme`
+     while this unlayered :root wins regardless of order -- a latent
+     trap the day globals.css gets wrapped in a layer. -- */
+  --font-sans-stack: 'Space Grotesk', -apple-system, system-ui, sans-serif;
+  --font-mono-stack: 'JetBrains Mono', ui-monospace, Menlo, monospace;
 
   --radius: 9px; /* --r2 in the old kit */
   --radius-sm: 6px; /* --r1 */
@@ -177,12 +231,48 @@
      out of scope for #68; see the PR body). -- */
 
   /* Raw tokens and bridge keys never share a name (section 9): a
-     self-referential `--font-mono: var(--font-mono)` is a latent trap the
-     day globals.css gets wrapped in a layer. font-sans/font-mono are
-     UNCHANGED this stage (stage 3 owns @font-face + the font stack
-     rename to --font-*-stack). */
-  --font-sans: var(--font-disp);
-  --font-mono: var(--font-mono);
+     self-referential `--font-mono: var(--font-mono)` was a latent trap
+     the day globals.css got wrapped in a layer. Fixed in stage 3 (#69,
+     fixes #64) by renaming the raw stacks to --font-*-stack above. */
+  --font-sans: var(--font-sans-stack);
+  --font-mono: var(--font-mono-stack);
+
+  /* -- type roles (stage 3, #69; docs/design-system.md 2.3 + section 9).
+     Five permitted sizes -- 20, 14, 13, 11, 10 -- six roles. Every
+     Tailwind default named size (text-xs/sm/base/lg/xl/...) is removed
+     from the theme first so the arbitrary-value escape hatch (closed by
+     the eslint rule in section 10.2) is the only way to be wrong: a
+     stray `text-sm` now silently stops generating a class exactly like a
+     retired MAGENTA CANARY key (Tailwind v4 emits no build error), which
+     is why every call site is migrated onto text-title/prose/stat/row/
+     micro/label in this same PR rather than left to fall through. */
+  --text-*: initial;
+
+  --text-title: 20px;
+  --text-title--line-height: 24px;
+  --text-title--letter-spacing: -0.015em;
+  --text-title--font-weight: 600;
+
+  --text-prose: 14px;
+  --text-prose--line-height: 20px;
+  --text-prose--font-weight: 500;
+
+  --text-stat: 20px;
+  --text-stat--line-height: 24px;
+  --text-stat--font-weight: 500;
+
+  --text-row: 13px;
+  --text-row--line-height: 20px;
+  --text-row--font-weight: 500;
+
+  --text-micro: 11px;
+  --text-micro--line-height: 14px;
+  --text-micro--font-weight: 500;
+
+  --text-label: 10px;
+  --text-label--line-height: 10px;
+  --text-label--letter-spacing: 0.06em;
+  --text-label--font-weight: 600;
 
   /* -- colour bridge (section 9). This is the whole of what stage 2 adds
      to @theme: every consumer below reaches these through a Tailwind
@@ -355,12 +445,34 @@
 @utility ring-wash-press { box-shadow: inset 0 0 0 999px var(--overlay-press), inset 0 0 0 var(--hairline-w) var(--hairline); }
 
 @layer base {
+  /* Mono is the chrome (docs/design-system.md 2.1): body defaults to the
+     `row` role's numbers, stage 3/#69's inversion from the old sans-body
+     default. Sans (font-sans, `title`/`prose`) is opted into explicitly at
+     the two call sites that are language addressed to a human -- the view
+     title and prose (message to the human, note bodies, chat, the
+     composer, empty states, toasts). */
   body {
     background-color: var(--surface-0);
     color: var(--ink);
-    font-family: var(--font-disp);
+    font-family: var(--font-mono-stack);
+    font-size: 13px;
+    font-weight: 500;
+    line-height: 20px;
+    letter-spacing: 0;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.005em;
+  }
+  /* Mono never takes negative tracking (2.3): a monospace is already
+     spaced, and tightening it collides glyphs and destroys column
+     alignment. */
+  [class*="font-mono"], code, kbd, pre {
+    letter-spacing: 0;
+  }
+  /* Numerals never wobble (2.3): every metric/count/time/dollar cell in
+     the app carries data-numeric (or .tnum), never relying on JetBrains
+     Mono's tabular figures being merely the default -- explicit beats
+     implicit for the one property `[data-numeric]` alignment depends on. */
+  [data-numeric], .tnum {
+    font-variant-numeric: tabular-nums lining-nums slashed-zero;
   }
   /* one shared focus-visible contract (docs/design-system.md section 8,
      the "Focus indicator" reconciliation row): keyboard focus only,
