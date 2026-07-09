@@ -21,16 +21,16 @@ import type { ClaudeQuota, SessionRow, Status } from '@/lib/types';
 // is intentionally not duplicated here.
 
 function SectionLabel({ children }: { children: ReactNode }) {
-  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-4">{children}</div>;
+  return <div className="px-6 pb-1 pt-5 font-mono text-label uppercase text-ink-4">{children}</div>;
 }
 
 function StatRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
   return (
     <Item size="sm" className="justify-between px-6">
-      <span className="text-[12.5px] text-ink-3">{label}</span>
-      <span className="flex items-baseline gap-1.5 font-mono text-[13px] font-semibold text-ink">
+      <span className="font-mono text-micro text-ink-3">{label}</span>
+      <span className="flex items-baseline gap-1.5 font-mono text-stat text-ink" data-numeric>
         {value}
-        {hint && <span className="font-sans text-[10.5px] font-normal text-ink-4">{hint}</span>}
+        {hint && <span className="font-mono text-micro text-ink-4">{hint}</span>}
       </span>
     </Item>
   );
@@ -132,14 +132,14 @@ export function MetricsView({ rows, status, claudeQuota }: { rows: SessionRow[];
             <div className="flex flex-col gap-1.5 px-6 py-1">
               {topSkills.map(([name, count]) => (
                 <div key={name} className="flex items-center gap-3">
-                  <span className="w-32 flex-none truncate font-mono text-[10.5px] text-ink-3" title={name}>{name}</span>
+                  <span className="w-32 flex-none truncate font-mono text-row text-ink-3" title={name}>{name}</span>
                   <Progress
                     value={Math.max(6, Math.round((count / maxSkillCount) * 100))}
                     indicator="iris"
                     aria-label={`${name}: ${count}`}
                     className="flex-1"
                   />
-                  <span className="w-6 flex-none text-right font-mono text-[10.5px] text-ink-3">{count}</span>
+                  <span className="w-6 flex-none text-right font-mono text-micro text-ink-3" data-numeric>{count}</span>
                 </div>
               ))}
             </div>

@@ -58,18 +58,27 @@ const chipVariants = cva(
         review: "",
         // mono section/stream-tag label, no dot, no pill chrome -- replaces
         // the raw uppercase mono spans (item.level, "asks you",
-        // "interrupted", "AI summary", "Conversation", "Ask the session")
-        label: "bg-transparent p-0 font-semibold text-ink-3",
-        "label-iris": "bg-transparent p-0 font-semibold text-iris-contrast",
-        "label-need": "bg-transparent p-0 font-semibold text-need-contrast",
-        "label-block": "bg-transparent p-0 font-semibold text-block-contrast",
-        "label-done": "bg-transparent p-0 font-semibold text-done-contrast",
+        // "interrupted", "AI summary", "Conversation", "Ask the session").
+        // No font-semibold (section 7: illegal outside title/label, and
+        // section 6 assigns Chip's `meta` variant to `micro`, not `label`,
+        // "and nothing else"); the hue-contrast colour already carries the
+        // demotion/emphasis signal (P2).
+        label: "bg-transparent p-0 text-ink-3",
+        "label-iris": "bg-transparent p-0 text-iris-contrast",
+        "label-need": "bg-transparent p-0 text-need-contrast",
+        "label-block": "bg-transparent p-0 text-block-contrast",
+        "label-done": "bg-transparent p-0 text-done-contrast",
       },
       size: {
-        // matches .hc-chip exactly: 10px/500/0.02em, 2px 7px padding, 5px gap
-        chip: "gap-[5px] px-[7px] py-[2px] text-[10px] font-medium leading-[1.4]",
-        // matches the raw label spans: 9px/600/wider tracking, no padding
-        label: "gap-1 text-[9px] font-semibold tracking-wider",
+        // Section 6: Chip is `micro` for both the `state` and `meta`
+        // variants -- `label` (10px/600/uppercase) is reserved for section
+        // labels "and nothing else". Case (uppercase, from the base cva
+        // below) is UNCHANGED this stage: docs/design-system.md 2.3 already
+        // calls for sentence case here, but issue #69's own Changes list
+        // does not enumerate a chip-case pass, so it stays deferred rather
+        // than bundled into a type-role PR uninvited.
+        chip: "gap-[5px] px-[7px] py-[2px] font-mono text-micro",
+        label: "gap-1 font-mono text-micro",
       },
     },
     defaultVariants: {

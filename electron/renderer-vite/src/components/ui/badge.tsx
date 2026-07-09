@@ -10,7 +10,7 @@ import { cn } from "@/lib/utils"
 // `hover:bg-*` background-color swap). No `dark:` variants (section 7): the
 // app themes via a `.light` class on `<html>`, so `dark:` can never fire.
 const badgeVariants = cva(
-  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 text-xs font-medium whitespace-nowrap transition-[color,box-shadow] aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] [&>svg]:pointer-events-none [&>svg]:size-3",
+  "inline-flex w-fit shrink-0 items-center justify-center gap-1 overflow-hidden rounded-full border border-transparent px-2 py-0.5 font-mono text-micro whitespace-nowrap transition-[color,box-shadow] aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] [&>svg]:pointer-events-none [&>svg]:size-3",
   {
     variants: {
       variant: {

@@ -168,7 +168,7 @@ export function CommandPalette({
               <HarnessGlyph harness={row.harness} />
               <span className="flex-1 min-w-0 truncate">{displayTitle(row)}</span>
               <StateChip state={row.state} />
-              <span className="flex-none max-w-[110px] truncate font-mono text-[9.5px] text-ink-4">
+              <span className="flex-none max-w-[110px] truncate font-mono text-micro text-ink-4">
                 {cwdBase(row.cwd || row.repo)}
               </span>
             </CommandItem>

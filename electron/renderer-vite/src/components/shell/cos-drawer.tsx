@@ -30,28 +30,32 @@ export function CosDrawer({ open, onOpenChange }: { open: boolean; onOpenChange:
           top of that ring would double the left edge's weight for nothing. */}
       <SheetContent side="right" className="flex w-[340px] max-w-[90vw] flex-col gap-0 p-0 sm:max-w-[90vw]">
         <SheetHeader className="h-11 flex-none flex-row items-center gap-2 border-b border-b-hairline px-4 py-0 space-y-0">
-          <span className="text-[15px]" aria-hidden="true">🤝</span>
-          <SheetTitle className="font-mono text-[10px] font-semibold uppercase tracking-widest text-iris-contrast">Chief of staff</SheetTitle>
+          <span className="text-row" aria-hidden="true">🤝</span>
+          <SheetTitle className="font-mono text-label uppercase text-iris-contrast">Chief of staff</SheetTitle>
         </SheetHeader>
         <div className="flex min-h-0 flex-1 flex-col gap-3 p-4">
           <ScrollArea className="min-h-0 flex-1">
             <div className="flex flex-col gap-3">
               {history.length === 0 && !loading && (
-                <p className="font-mono text-[10.5px] leading-relaxed text-ink-4">
+                // Empty-state copy inside the chat drawer, one of docs/design-
+                // system.md 2.1's enumerated sans call sites twice over
+                // ("chat", "empty-state copy").
+                <p className="font-sans text-prose text-ink-4">
                   Ask your chief of staff things like &quot;what needs me right now?&quot; Answers are advisory only, grounded in pulse, notes,
                   and session states, and cite what they refer to.
                 </p>
               )}
               {history.map((x, i) => (
+                // Chat: one of 2.1's enumerated sans call sites verbatim.
                 <div key={i} className="grid gap-1.5">
-                  <div className="text-[12px] text-ink-2">{x.q}</div>
-                  <div className="whitespace-pre-wrap border-l-2 border-l-iris-contrast pl-2 text-[12.5px] leading-relaxed text-ink">{x.a}</div>
+                  <div className="font-sans text-prose text-ink-2">{x.q}</div>
+                  <div className="whitespace-pre-wrap border-l-2 border-l-iris-contrast pl-2 font-sans text-prose text-ink">{x.a}</div>
                 </div>
               ))}
               {loading && (
                 <div className="grid gap-1.5">
-                  <div className="text-[12px] text-ink-2">{q}</div>
-                  <div className="font-mono text-[11px] text-ink-3">thinking...</div>
+                  <div className="font-sans text-prose text-ink-2">{q}</div>
+                  <div className="font-mono text-micro text-ink-3">thinking...</div>
                 </div>
               )}
             </div>

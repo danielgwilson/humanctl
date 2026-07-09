@@ -31,7 +31,9 @@ const buttonVariants = cva(
   // No `focus-visible:` ring/outline override here (section 7 forbids
   // `outline-none` in a cva base string): the one global :focus-visible
   // rule in globals.css already renders every button's focus ring.
-  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] [&_svg]:pointer-events-none [&_svg]:shrink-0",
+  // Section 6: "Label is `row`" for every Button size -- the five size
+  // variants below differ only in box height/padding, never in font size.
+  "inline-flex shrink-0 items-center justify-center gap-2 rounded-md font-mono text-row whitespace-nowrap transition-all disabled:pointer-events-none disabled:opacity-50 aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] [&_svg]:pointer-events-none [&_svg]:shrink-0",
   {
     variants: {
       variant: {
@@ -69,7 +71,7 @@ const buttonVariants = cva(
       },
       size: {
         default: "h-9 px-4 py-2 has-[>svg]:px-3",
-        xs: "h-6 gap-1 rounded-md px-2 text-xs has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
+        xs: "h-6 gap-1 rounded-md px-2 has-[>svg]:px-1.5 [&_svg:not([class*='size-'])]:size-3",
         sm: "h-8 gap-1.5 rounded-md px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-9",

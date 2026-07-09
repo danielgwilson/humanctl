@@ -4,6 +4,18 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>humanctl</title>
+    <!-- Self-hosted type (docs/design-system.md 2.2, stage 3/#69, fixes
+         #64): preload all four latin-subset woff2 files so font-display:
+         optional wins the race against first paint essentially always,
+         instead of falling through to the fallback stack for a cold-cache
+         paint. Relative paths (not root-absolute) because the packaged
+         .app loads this file over file://, where an absolute /fonts/...
+         path would resolve against the filesystem root, not the app
+         bundle -- see AGENTS.md's packaged-app verification note. -->
+    <link rel="preload" href="./fonts/space-grotesk-500-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="./fonts/space-grotesk-600-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="./fonts/jetbrains-mono-500-latin.woff2" as="font" type="font/woff2" crossorigin />
+    <link rel="preload" href="./fonts/jetbrains-mono-600-latin.woff2" as="font" type="font/woff2" crossorigin />
   </head>
   <body>
     <div id="root"></div>

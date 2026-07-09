@@ -36,7 +36,16 @@ const DEFAULT_FILTER: SessionsFilter = { q: '', state: '', harness: '', sort: 'r
 // is still exactly one scroll region and the pinned/rest grouping, click-
 // to-open, pin toggling, and state chips all behave identically to the
 // unvirtualized version -- only which DOM rows are mounted changes.
-const ROW_ESTIMATE_PX = 76;
+// Stage 3 (#69): measured via headless CDP against the real built renderer
+// (getBoundingClientRect on a mounted row) after the type-role line-height
+// changes -- 85px, not the pre-stage-3 76px (py-3's 24px + two 3px inter-
+// line gaps + the three lines' own line-heights: row 20 + prose 20 + micro
+// 14 = 54px totals to 84px, plus ~1px of border/rounding). This is only the
+// virtualizer's INITIAL estimate; `measureElement` (below) corrects it
+// against the true rendered height per row regardless, so a stale estimate
+// was never a correctness bug, only a needless one-time layout snap on
+// first paint that this keeps accurate.
+const ROW_ESTIMATE_PX = 85;
 const HEADER_ESTIMATE_PX = 28;
 
 type SessionVirtualItem =
@@ -100,17 +109,19 @@ function SessionRowItem({
       <span className="flex min-w-0 flex-col gap-[3px]">
         <span className="flex min-w-0 items-center gap-2">
           <HarnessGlyph harness={row.harness} />
-          <span className="flex-1 truncate text-[13px] font-semibold text-ink">{title}</span>
-          <span className="flex-none font-mono text-[9.5px] text-ink-4">{row.age}</span>
+          <span className="flex-1 truncate font-mono text-row text-ink">{title}</span>
+          <span className="flex-none font-mono text-micro text-ink-4" data-numeric>{row.age}</span>
         </span>
         <span className="flex min-w-0 items-center gap-2">
           <StateChip state={row.state} />
-          <span className="flex-1 truncate text-[11.5px] text-ink-3">{msg}</span>
+          {/* Row anatomy line 2, "the message to the human" -- docs/design-
+              system.md 2.1's central sans call site. */}
+          <span className="flex-1 truncate font-sans text-prose text-ink-3">{msg}</span>
         </span>
-        <span className="flex min-w-0 items-center gap-1.5 font-mono text-[9px] text-ink-4">
+        <span className="flex min-w-0 items-center gap-1.5 font-mono text-micro text-ink-4">
           <span className="truncate">{cwdBase(row.cwd || row.repo)}</span>
-          {row.contextPct != null && <span className="flex-none">· {row.contextPct}% ctx</span>}
-          {cost && <span className="flex-none">· {cost}</span>}
+          {row.contextPct != null && <span className="flex-none" data-numeric>&middot; {row.contextPct}% ctx</span>}
+          {cost && <span className="flex-none" data-numeric>&middot; {cost}</span>}
         </span>
       </span>
       <Button
@@ -142,7 +153,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         className="min-w-[120px] flex-1 basis-[200px]"
       />
       <Select value={filter.state || 'all'} onValueChange={(v) => onChange({ ...filter, state: v === 'all' ? '' : v })}>
-        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all states" />
         </SelectTrigger>
         <SelectContent>
@@ -155,7 +166,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.harness || 'all'} onValueChange={(v) => onChange({ ...filter, harness: v === 'all' ? '' : v })}>
-        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all harnesses" />
         </SelectTrigger>
         <SelectContent>
@@ -165,7 +176,7 @@ function SessionsToolbar({ filter, onChange }: { filter: SessionsFilter; onChang
         </SelectContent>
       </Select>
       <Select value={filter.sort} onValueChange={(v) => onChange({ ...filter, sort: v as SessionsFilter['sort'] })}>
-        <SelectTrigger aria-label="Sort sessions" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Sort sessions" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>
@@ -242,11 +253,11 @@ export function SessionsView({
       <ScrollArea className="min-h-0 flex-1" viewportRef={scrollRef}>
         {total === 0 ? (
           <Empty className="h-full">
-            <EmptyDescription className="text-[12.5px]">no sessions in the last 72h.</EmptyDescription>
+            <EmptyDescription>no sessions in the last 72h.</EmptyDescription>
           </Empty>
         ) : filtered.length === 0 ? (
           <Empty className="h-full">
-            <EmptyDescription className="text-[12.5px]">no sessions match.</EmptyDescription>
+            <EmptyDescription>no sessions match.</EmptyDescription>
           </Empty>
         ) : (
           <div style={{ position: 'relative', height: rowVirtualizer.getTotalSize(), width: '100%' }}>
@@ -260,10 +271,10 @@ export function SessionsView({
                   style={{ position: 'absolute', top: 0, left: 0, width: '100%', transform: `translateY(${vRow.start}px)` }}
                 >
                   {item.kind === 'pinned-header' ? (
-                    <div className="flex items-center gap-2 border-b border-b-hairline bg-surface-0 px-6 py-1.5 font-mono text-[9px] font-semibold uppercase tracking-wider text-ink-3">
+                    <div className="flex items-center gap-2 border-b border-b-hairline bg-surface-0 px-6 py-1.5 font-mono text-label uppercase text-ink-3">
                       <span className="h-[5px] w-[5px] flex-none rounded-full bg-iris-contrast" aria-hidden="true" />
                       Pinned
-                      <span className="text-ink-4">{item.count}</span>
+                      <span className="text-ink-4" data-numeric>{item.count}</span>
                     </div>
                   ) : (
                     <SessionRowItem

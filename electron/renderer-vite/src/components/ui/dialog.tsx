@@ -136,7 +136,10 @@ function DialogTitle({
   return (
     <DialogPrimitive.Title
       data-slot="dialog-title"
-      className={cn("text-lg leading-none font-semibold", className)}
+      // A dialog heading is the closest thing an overlay has to a view title
+      // (section 6 does not name a separate dialog-title role); weight 600 is
+      // legal on `title` and nowhere else this text could plausibly sit.
+      className={cn("font-sans text-title leading-none", className)}
       {...props}
     />
   )
@@ -149,7 +152,9 @@ function DialogDescription({
   return (
     <DialogPrimitive.Description
       data-slot="dialog-description"
-      className={cn("text-sm text-ink-3", className)}
+      // A dialog description is a sentence addressed to the human (Command
+      // palette's own default: "Jump to a view, session, or action.").
+      className={cn("font-sans text-prose text-ink-3", className)}
       {...props}
     />
   )

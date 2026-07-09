@@ -23,7 +23,7 @@ function Textarea({ className, ...props }: React.ComponentProps<"textarea">) {
     <textarea
       data-slot="textarea"
       className={cn(
-        "h-16 max-h-[200px] w-full min-w-0 resize-none overflow-y-auto rounded-lg hairline bg-surface-sunken px-3 py-2 text-[13px] leading-relaxed text-ink transition-[color,box-shadow] placeholder:text-ink-3 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
+        "h-16 max-h-[200px] w-full min-w-0 resize-none overflow-y-auto rounded-lg hairline bg-surface-sunken px-3 py-2 font-sans text-prose text-ink transition-[color,box-shadow] placeholder:text-ink-3 disabled:pointer-events-none disabled:cursor-not-allowed disabled:opacity-50",
         "aria-invalid:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)]",
         className
       )}

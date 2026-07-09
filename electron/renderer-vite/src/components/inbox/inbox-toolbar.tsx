@@ -20,7 +20,7 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         className="min-w-[120px] flex-1 basis-[200px]"
       />
       <Select value={filter.state || 'all'} onValueChange={(v) => onChange({ ...filter, state: v === 'all' ? '' : v })}>
-        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Filter by state" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all states" />
         </SelectTrigger>
         <SelectContent>
@@ -33,7 +33,7 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         </SelectContent>
       </Select>
       <Select value={filter.harness || 'all'} onValueChange={(v) => onChange({ ...filter, harness: v === 'all' ? '' : v })}>
-        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Filter by harness" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue placeholder="all harnesses" />
         </SelectTrigger>
         <SelectContent>
@@ -43,7 +43,7 @@ export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChan
         </SelectContent>
       </Select>
       <Select value={filter.sort} onValueChange={(v) => onChange({ ...filter, sort: v as InboxFilter['sort'] })}>
-        <SelectTrigger aria-label="Sort inbox threads" className="h-[30px] w-auto font-mono text-[10px]">
+        <SelectTrigger aria-label="Sort inbox threads" className="h-[30px] w-auto font-mono text-micro">
           <SelectValue />
         </SelectTrigger>
         <SelectContent>

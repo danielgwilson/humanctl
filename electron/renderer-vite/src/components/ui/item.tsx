@@ -41,7 +41,7 @@ function ItemSeparator({
 }
 
 const itemVariants = cva(
-  "group/item flex flex-wrap items-center rounded-md border border-transparent text-sm transition-colors",
+  "group/item flex flex-wrap items-center rounded-md border border-transparent font-mono text-row transition-colors",
   {
     variants: {
       variant: {
@@ -126,27 +126,26 @@ function ItemContent({ className, ...props }: React.ComponentProps<"div">) {
   )
 }
 
+// docs/design-system.md 6, Empty's "slot" grade (the same title/description
+// pairing shape as this generic Item primitive): title is `row` at
+// --ink (full, since it is the row's own primary content, not a demotion).
 function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="item-title"
-      className={cn(
-        "flex items-center gap-2 text-[13px] leading-relaxed font-medium text-ink",
-        className
-      )}
+      className={cn("flex items-center gap-2 font-mono text-row text-ink", className)}
       {...props}
     />
   )
 }
 
+// ...and description is `prose` (Empty's own rule, generalized: "Body copy
+// is prose, and prose is never mono").
 function ItemDescription({ className, ...props }: React.ComponentProps<"div">) {
   return (
     <div
       data-slot="item-description"
-      className={cn(
-        "whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-3",
-        className
-      )}
+      className={cn("whitespace-pre-wrap font-sans text-prose text-ink-3", className)}
       {...props}
     />
   )

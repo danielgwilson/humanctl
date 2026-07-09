@@ -135,13 +135,15 @@ function AskReplyComposer({
         disabled={submitting}
       />
       <div className="flex items-center justify-between gap-2">
-        <span className="font-mono text-[9.5px] text-ink-4">cmd+enter to send &middot; esc to leave the reply box</span>
+        <span className="font-mono text-micro text-ink-4">cmd+enter to send &middot; esc to leave the reply box</span>
+        {/* Button label is `row` at every size (section 6): no per-instance
+            size override here any more. */}
         <Button
           type="button"
           variant="iris"
           onClick={send}
           disabled={submitting || !text.trim()}
-          className="flex-none px-3.5 py-1.5 font-mono text-[10.5px]"
+          className="flex-none px-3.5 py-1.5"
         >
           {submitting ? 'sending...' : 'Reply'}
         </Button>
@@ -175,15 +177,21 @@ function StreamRow({
 }) {
   const ts = agoTxt(Date.parse(item.ts));
 
+  // Every body below (note.message, ask.reason, answer.text, an interrupted
+  // ask's own question, a qa item's question/answer) is language addressed to
+  // or from the human -- docs/design-system.md 2.1's "a note body" and
+  // "chat" call sites verbatim, the same category as thread-row.tsx's line 2
+  // and cos-drawer.tsx's chat history. `ts` stays mono/micro: a relative
+  // timestamp is machine output, not language.
   if (item.kind === 'note') {
     return (
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-iris" size="label" dot={false}>{item.level}</Chip>
-          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+          <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.message}</div>
+          <div className="whitespace-pre-wrap font-sans text-prose text-ink">{item.message}</div>
         </ItemContent>
       </Item>
     );
@@ -193,10 +201,10 @@ function StreamRow({
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-need-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-need" size="label" dot={false}>asks you</Chip>
-          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+          <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.reason}</div>
+          <div className="whitespace-pre-wrap font-sans text-prose text-ink">{item.reason}</div>
           {canReply && sessionId && onAnswered && (
             <AskReplyComposer row={row ?? null} sessionId={sessionId} onAnswered={onAnswered} />
           )}
@@ -210,11 +218,13 @@ function StreamRow({
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-iris-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-iris" size="label" dot={false}>your answer</Chip>
-          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+          <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">{item.text}</div>
-          {line && <div className="font-mono text-[9.5px] text-ink-4">{line}</div>}
+          <div className="whitespace-pre-wrap font-sans text-prose text-ink">{item.text}</div>
+          {/* Delivery-channel description is a system status line, not
+              language addressed to the human -- stays mono/micro. */}
+          {line && <div className="font-mono text-micro text-ink-4">{line}</div>}
         </ItemContent>
       </Item>
     );
@@ -224,10 +234,10 @@ function StreamRow({
       <Item size="sm" className="flex-col items-stretch border-l-2 border-l-block-contrast pl-3">
         <ItemHeader>
           <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
-          <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+          <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
         </ItemHeader>
         <ItemContent>
-          <div className="text-[13px] leading-relaxed text-ink">
+          <div className="font-sans text-prose text-ink">
             {item.question || 'a question was interrupted when the app closed.'}
           </div>
         </ItemContent>
@@ -238,11 +248,11 @@ function StreamRow({
     <Item size="sm" className="flex-col items-stretch border-l-2 border-l-done-contrast pl-3">
       <ItemHeader>
         <Chip variant="label-done" size="label" dot={false}>{item.engine || 'answer'}</Chip>
-        <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>
+        <span className="font-mono text-micro text-ink-4" data-numeric>{ts}</span>
       </ItemHeader>
       <ItemContent>
-        <div className="text-[12.5px] text-ink-2">{item.question}</div>
-        <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 text-[13px] leading-relaxed text-ink">
+        <div className="font-sans text-prose text-ink-2">{item.question}</div>
+        <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 font-sans text-prose text-ink">
           {item.answer}
         </div>
       </ItemContent>
@@ -271,7 +281,7 @@ function SummarySection({
           <Chip variant="label" size="label" dot={false}>AI summary</Chip>
         )}
         {!error && (
-          <span className="font-mono text-[9.5px] text-ink-4">
+          <span className="font-mono text-micro text-ink-4" data-numeric>
             {loading
               ? `via ${row.summary?.engine || 'claude'} CLI`
               : row.summary
@@ -281,15 +291,20 @@ function SummarySection({
         )}
       </ItemHeader>
       <ItemContent>
-        {loading && <div className="font-mono text-[11px] text-ink-3">summarizing recent activity...</div>}
-        {!loading && error && <div className="text-[12.5px] text-ink-3">{error}</div>}
+        {/* "summarizing..." is a transient loading placeholder (chrome), same
+            call as cos-drawer.tsx's "thinking..."; the error line is a system
+            status too. The summary BODY is prose: it is AI-generated text
+            meant to be read like a note, docs/design-system.md 2.1's "a note
+            body". */}
+        {loading && <div className="font-mono text-micro text-ink-3">summarizing recent activity...</div>}
+        {!loading && error && <div className="font-mono text-micro text-ink-3">{error}</div>}
         {!loading && !error && row.summary && (
-          <div className="whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink">{row.summary.text}</div>
+          <div className="whitespace-pre-wrap font-sans text-prose text-ink">{row.summary.text}</div>
         )}
       </ItemContent>
       {!loading && (
         <ItemFooter className="justify-start">
-          <Button variant="outline" size="sm" className="h-6 font-mono text-[9px] text-ink-3" onClick={onGenerate}>
+          <Button variant="outline" size="sm" className="h-6 text-ink-3" onClick={onGenerate}>
             {label}
           </Button>
         </ItemFooter>
@@ -403,19 +418,32 @@ export function SessionDetail({
             variant="ghost"
             size="sm"
             onClick={onBack}
-            className="mb-2 h-auto w-fit justify-start px-0 py-0 font-mono text-[10.5px] text-ink-3 hover:bg-transparent hover:text-ink"
+            className="mb-2 h-auto w-fit justify-start px-0 py-0 text-ink-3 hover:bg-transparent hover:text-ink"
           >
             &#8592; {backLabel || 'back'}
           </Button>
         )}
         <div className="flex items-start gap-3">
-          <HarnessGlyph harness={thread.harness} className="mt-0.5 text-[26px]" />
+          {/* 26px was not a legal size (five sizes only, section 2.3); `stat`
+              (20, the largest role) is the ceiling. The glyph stays mono, not
+              a font-family choice this is a single Unicode glyph, but
+              HarnessGlyph's own base role is `row`/mono (state-chip.tsx),
+              and the glyph is chrome (identity), never language. */}
+          <HarnessGlyph harness={thread.harness} className="mt-0.5 text-stat" />
           <div className="min-w-0 flex-1">
             <div className="flex flex-wrap items-center gap-3">
-              <h1 className="text-[21px] font-bold tracking-tight">{title}</h1>
+              {/* The session's OWN title, not "the view name" (view-header.tsx
+                  owns `title`/sans) -- session titles are branch-shaped
+                  machine output (2.1's central example) even blown up to a
+                  detail-page hero size, so this stays mono. `stat` is the
+                  largest legal mono size; `font-bold`/`tracking-tight` are
+                  both forbidden (section 7), demoted to `stat`'s own 500
+                  weight and zero tracking, same demotion pattern as
+                  header.tsx's wordmark and cos-drawer.tsx's "need you". */}
+              <h1 className="font-mono text-stat">{title}</h1>
               <StateChip state={state} />
             </div>
-            <div className="mt-1 font-mono text-[10.5px] text-ink-3">
+            <div className="mt-1 font-mono text-micro text-ink-3" data-numeric>
               {repoBase}{row?.model ? ` · ${row.model}` : ''}{row?.contextPct != null ? ` · ${row.contextPct}% context` : ''}
             </div>
           </div>
@@ -482,8 +510,8 @@ export function SessionDetail({
         {answer && (
           <ScrollArea className="min-h-0 flex-1">
             <div className="grid gap-1 pr-2">
-              <div className="pl-2 text-[12.5px] text-ink-2">{q || 'your question'}</div>
-              <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 text-[13px] leading-relaxed text-ink">{answer}</div>
+              <div className="pl-2 font-sans text-prose text-ink-2">{q || 'your question'}</div>
+              <div className="whitespace-pre-wrap border-l-2 border-l-hairline pl-2 font-sans text-prose text-ink">{answer}</div>
             </div>
           </ScrollArea>
         )}
@@ -502,7 +530,7 @@ export function SessionDetail({
             variant="done"
             onClick={send}
             disabled={asking || !row || !q.trim()}
-            className="flex-none px-3.5 py-1.5 font-mono text-[10.5px]"
+            className="flex-none px-3.5 py-1.5"
           >
             {asking ? 'asking...' : 'Ask'}
           </Button>

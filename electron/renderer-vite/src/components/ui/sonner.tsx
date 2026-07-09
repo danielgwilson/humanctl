@@ -45,13 +45,20 @@ const Toaster = ({ className, ...props }: ToasterProps) => {
       toastOptions={{
         unstyled: true,
         classNames: {
+          // Toast copy is one of docs/design-system.md 2.1's enumerated sans
+          // call sites verbatim ("toasts") -- the one transient-feedback
+          // surface for a mutation, and the message inside it is language
+          // addressed to the human, not a machine value.
           toast:
-            "flex w-full items-center gap-2.5 rounded-md hairline bg-surface-2 px-3.5 py-2.5 font-mono text-[11.5px] leading-relaxed text-ink shadow-none data-[type=error]:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[type=error]:text-block-contrast",
+            "flex w-full items-center gap-2.5 rounded-md hairline bg-surface-2 px-3.5 py-2.5 font-sans text-prose text-ink shadow-none data-[type=error]:shadow-[inset_0_0_0_var(--hairline-w)_var(--block-contrast)] data-[type=error]:text-block-contrast",
           title: "font-medium",
           description: "text-ink-3",
+          // Buttons keep `row`, the one label role every Button/IconButton
+          // size resolves to (section 6) -- these sit inside sans-language
+          // toast copy, so the family must be re-asserted explicitly.
           actionButton:
-            "ml-auto rounded-[5px] shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] bg-transparent px-2 py-1 font-mono text-[10px] text-iris-contrast hover:bg-iris-soft",
-          cancelButton: "rounded-[5px] px-2 py-1 font-mono text-[10px] text-ink-3 hover:text-ink",
+            "ml-auto rounded-[5px] shadow-[inset_0_0_0_var(--hairline-w)_var(--iris-contrast)] bg-transparent px-2 py-1 font-mono text-row text-iris-contrast hover:bg-iris-soft",
+          cancelButton: "rounded-[5px] px-2 py-1 font-mono text-row text-ink-3 hover:text-ink",
         },
       }}
       {...props}
