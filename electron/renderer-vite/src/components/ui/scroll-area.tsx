@@ -54,11 +54,16 @@ function ScrollBar({
       data-slot="scroll-area-scrollbar"
       orientation={orientation}
       className={cn(
-        // Styled onto the humanctl palette (globals.css previously did this
-        // via ::-webkit-scrollbar-thumb { background: var(--rule2) }, 8px
-        // wide, transparent track): same width and thumb color, now applied
-        // consistently in every pane via this one shared primitive instead
-        // of relying on browser-default scrollbar chrome.
+        // Styled onto the humanctl palette (stage 2, #68): the thumb is a
+        // quiet ghost affordance at rest (`--ink-4`, section 1.3's "a place
+        // where you could put something" role, read broadly to include a
+        // resting scrollbar thumb) and one alpha step more visible on hover
+        // (`--ink-3`) -- 8px wide, transparent track, applied consistently
+        // in every pane via this one shared primitive instead of relying on
+        // browser-default scrollbar chrome. ScrollArea is the ONE owner of
+        // scrollbar styling (section 8): the retired global
+        // `::-webkit-scrollbar` rule is deleted from globals.css in the
+        // same change.
         "flex touch-none p-px transition-colors select-none",
         orientation === "vertical" &&
           "h-full w-2 border-l border-l-transparent",
@@ -70,7 +75,7 @@ function ScrollBar({
     >
       <ScrollAreaPrimitive.ScrollAreaThumb
         data-slot="scroll-area-thumb"
-        className="relative flex-1 rounded-full bg-rule2 transition-colors hover:bg-ink4"
+        className="relative flex-1 rounded-full bg-ink-4 transition-colors hover:bg-ink-3"
       />
     </ScrollAreaPrimitive.ScrollAreaScrollbar>
   )

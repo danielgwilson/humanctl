@@ -27,16 +27,16 @@ function QuotaItem({ label, pct, resetsAt, note }: { label: string; pct: number 
     <span
       className={cn(
         'inline-flex flex-none items-center gap-1.5',
-        cls === 'q-amber' && 'text-need',
-        cls === 'q-red' && 'text-block',
-        cls === 'q-na' && 'text-ink4',
+        cls === 'q-amber' && 'text-need-contrast',
+        cls === 'q-red' && 'text-block-contrast',
+        cls === 'q-na' && 'text-ink-4',
       )}
     >
       <span
         className={cn(
-          'h-[5px] w-[5px] rounded-full bg-idle',
-          cls === 'q-amber' && 'bg-need',
-          cls === 'q-red' && 'bg-block',
+          'h-[5px] w-[5px] rounded-full bg-idle-contrast',
+          cls === 'q-amber' && 'bg-need-contrast',
+          cls === 'q-red' && 'bg-block-contrast',
         )}
       />
       {pct == null ? `${label} n/a` : `${label} ${pct}%${resetsAt ? `, resets ${fmtResetClock(resetsAt)}` : ''}`}
@@ -82,24 +82,24 @@ export function ContextBar({ status, claudeQuota, ctxPct }: { status: Status | n
     : 'requires a signed-in Claude subscription; read from the Claude Code CLI, never from transcripts';
   return (
     <footer
-      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-border bg-bg2 px-4 font-mono text-[10.5px] text-ink3"
+      className="flex h-[30px] flex-none items-center gap-4 overflow-hidden whitespace-nowrap border-t border-t-hairline bg-surface-0 px-4 font-mono text-[10.5px] text-ink-3"
     >
-      <span className="flex-1 overflow-hidden text-ellipsis font-sans text-[11.5px] text-foreground/90">
+      <span className="flex-1 overflow-hidden text-ellipsis font-sans text-[11.5px] text-ink/90">
         {status ? (
           <>
-            <b className="font-semibold text-foreground">{status.needsYou} need you</b>, {status.working} moving, {status.sessions} sessions
+            <b className="font-semibold text-ink">{status.needsYou} need you</b>, {status.working} moving, {status.sessions} sessions
           </>
         ) : (
           'loading fleet...'
         )}
       </span>
-      <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
+      <Separator orientation="vertical" className="h-3.5 flex-none bg-hairline" />
       <QuotaItem label="codex" pct={qp?.used_percent != null ? Math.round(qp.used_percent) : null} resetsAt={qp?.resets_at} note={qs?.used_percent != null ? `weekly ${Math.round(qs.used_percent)}%` : undefined} />
-      <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
+      <Separator orientation="vertical" className="h-3.5 flex-none bg-hairline" />
       <QuotaItem label="claude" pct={cq ? Math.round(cq.used_percent) : null} note={claudeNote} />
       {ctxPct != null && (
         <>
-          <Separator orientation="vertical" className="h-3.5 flex-none bg-rule2" />
+          <Separator orientation="vertical" className="h-3.5 flex-none bg-hairline" />
           <Tooltip>
             <TooltipTrigger asChild>
               <span className="flex-none">{ctxPct}% context</span>

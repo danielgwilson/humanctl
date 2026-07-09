@@ -22,10 +22,10 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
     return (
       <Item size="sm" className="gap-2">
         <Chip variant="label" size="label" dot={false}>tools</Chip>
-        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink4">
+        <span className="min-w-0 flex-1 truncate font-mono text-[11px] text-ink-4">
           {event.n} tool call{event.n === 1 ? '' : 's'}
         </span>
-        {ts && <span className="flex-none font-mono text-[9.5px] text-ink4">{ts}</span>}
+        {ts && <span className="flex-none font-mono text-[9.5px] text-ink-4">{ts}</span>}
       </Item>
     );
   }
@@ -33,24 +33,24 @@ function TimelineRow({ event }: { event: TimelineEvent }) {
     return (
       <Item size="sm" className="gap-2">
         <Chip variant="label-block" size="label" dot={false}>interrupted</Chip>
-        <span className="min-w-0 flex-1 truncate text-[12px] text-ink3">
+        <span className="min-w-0 flex-1 truncate text-[12px] text-ink-3">
           {event.t || 'the session was interrupted'}
         </span>
-        {ts && <span className="flex-none font-mono text-[9.5px] text-ink4">{ts}</span>}
+        {ts && <span className="flex-none font-mono text-[9.5px] text-ink-4">{ts}</span>}
       </Item>
     );
   }
   const isUser = event.k === 'user';
   return (
-    <Item size="sm" className={cn('flex-col items-stretch border-l-2 pl-3', isUser ? 'border-l-iris' : 'border-l-done')}>
+    <Item size="sm" className={cn('flex-col items-stretch border-l-2 pl-3', isUser ? 'border-l-iris-contrast' : 'border-l-done-contrast')}>
       <ItemHeader>
         <Chip variant={isUser ? 'label-iris' : 'label-done'} size="label" dot={false}>
           {isUser ? 'you' : 'agent'}
         </Chip>
-        {ts && <span className="font-mono text-[9.5px] text-ink4">{ts}</span>}
+        {ts && <span className="font-mono text-[9.5px] text-ink-4">{ts}</span>}
       </ItemHeader>
       <ItemContent>
-        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-foreground">
+        <div className="whitespace-pre-wrap text-[13px] leading-relaxed text-ink">
           {event.t || '(no text)'}
         </div>
       </ItemContent>
@@ -167,15 +167,15 @@ export function SessionTimeline({
       </ItemHeader>
       <ItemContent>
         {!row ? (
-          <div className="py-2 font-mono text-[11px] text-ink4">session no longer in the recent scan; conversation is unavailable.</div>
+          <div className="py-2 font-mono text-[11px] text-ink-4">session no longer in the recent scan; conversation is unavailable.</div>
         ) : tl.loading ? (
-          <div className="py-2 font-mono text-[11px] text-ink4">reading timeline...</div>
+          <div className="py-2 font-mono text-[11px] text-ink-4">reading timeline...</div>
         ) : tl.error ? (
-          <div className="py-2 font-mono text-[11px] text-ink4">{tl.error}</div>
+          <div className="py-2 font-mono text-[11px] text-ink-4">{tl.error}</div>
         ) : (
           <div className="min-h-[120px]">
             {tl.atStart ? (
-              <div className="py-2 text-center font-mono text-[9.5px] uppercase tracking-wider text-ink4">
+              <div className="py-2 text-center font-mono text-[9.5px] uppercase tracking-wider text-ink-4">
                 start of session
               </div>
             ) : (
@@ -186,14 +186,14 @@ export function SessionTimeline({
                   size="sm"
                   onClick={handleLoadOlder}
                   disabled={tl.loadingOlder}
-                  className="h-auto w-auto px-0 py-0 font-mono text-[10px] tracking-wide text-ink3 hover:bg-transparent hover:text-foreground disabled:cursor-default disabled:opacity-60"
+                  className="h-auto w-auto px-0 py-0 font-mono text-[10px] tracking-wide text-ink-3 hover:bg-transparent hover:text-ink disabled:cursor-default disabled:opacity-60"
                 >
                   {olderLabel}
                 </Button>
               </div>
             )}
             {tl.items.length === 0 ? (
-              <div className="py-2 font-mono text-[11px] text-ink4">no substantive events in this slice.</div>
+              <div className="py-2 font-mono text-[11px] text-ink-4">no substantive events in this slice.</div>
             ) : (
               tl.items.map(({ key, event }) => <TimelineRow key={key} event={event} />)
             )}

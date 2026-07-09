@@ -78,12 +78,12 @@ export function InboxView({
 
   return (
     <div className="grid h-full grid-cols-[340px_1fr]">
-      <aside className="flex min-h-0 flex-col border-r border-border bg-bg2">
-        <div className="flex h-[38px] flex-none items-center gap-2 border-b border-border px-6">
+      <aside className="flex min-h-0 flex-col border-r border-r-hairline bg-surface-0">
+        <div className="flex h-[38px] flex-none items-center gap-2 border-b border-b-hairline px-6">
           <span aria-hidden="true">&#9993;</span>
-          <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-ink2">Inbox</span>
-          <span className="font-mono text-[9.5px] text-ink4">{list.length} {list.length === 1 ? 'thread' : 'threads'}</span>
-          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 font-mono text-[9px] text-ink3" onClick={onMarkAllRead}>
+          <span className="font-mono text-[11px] font-semibold uppercase tracking-widest text-ink-2">Inbox</span>
+          <span className="font-mono text-[9.5px] text-ink-4">{list.length} {list.length === 1 ? 'thread' : 'threads'}</span>
+          <Button variant="outline" size="sm" className="ml-auto h-6 px-2 font-mono text-[9px] text-ink-3" onClick={onMarkAllRead}>
             mark all read
           </Button>
         </div>

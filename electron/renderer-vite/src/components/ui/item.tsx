@@ -48,8 +48,8 @@ const itemVariants = cva(
         // Flat: no border, no background -- the row separator (a hairline
         // ItemSeparator) carries hierarchy, never a box.
         default: "bg-transparent",
-        outline: "border-border",
-        muted: "bg-panel2",
+        outline: "hairline",
+        muted: "bg-surface-2",
       },
       size: {
         default: "gap-3 px-0 py-3",
@@ -91,7 +91,7 @@ const itemMediaVariants = cva(
     variants: {
       variant: {
         default: "bg-transparent",
-        icon: "size-8 rounded-md border border-border bg-panel2 [&_svg:not([class*='size-'])]:size-4",
+        icon: "size-8 rounded-md hairline bg-surface-2 [&_svg:not([class*='size-'])]:size-4",
         image: "size-10 overflow-hidden rounded-md [&_img]:size-full [&_img]:object-cover",
       },
     },
@@ -131,7 +131,7 @@ function ItemTitle({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="item-title"
       className={cn(
-        "flex items-center gap-2 text-[13px] leading-relaxed font-medium text-foreground",
+        "flex items-center gap-2 text-[13px] leading-relaxed font-medium text-ink",
         className
       )}
       {...props}
@@ -144,7 +144,7 @@ function ItemDescription({ className, ...props }: React.ComponentProps<"div">) {
     <div
       data-slot="item-description"
       className={cn(
-        "whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink3",
+        "whitespace-pre-wrap text-[12.5px] leading-relaxed text-ink-3",
         className
       )}
       {...props}

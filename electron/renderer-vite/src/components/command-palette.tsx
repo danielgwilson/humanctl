@@ -145,7 +145,7 @@ export function CommandPalette({
                   close();
                 }}
               >
-                <Icon icon={GoToIcon} className={cn(active && 'text-iris')} aria-hidden="true" />
+                <Icon icon={GoToIcon} className={cn(active && 'text-iris-contrast')} aria-hidden="true" />
                 <span className="flex-1 truncate">{item.label}</span>
                 {item.shortcut && <CommandShortcut>{item.shortcut}</CommandShortcut>}
               </CommandItem>
@@ -168,7 +168,7 @@ export function CommandPalette({
               <HarnessGlyph harness={row.harness} />
               <span className="flex-1 min-w-0 truncate">{displayTitle(row)}</span>
               <StateChip state={row.state} />
-              <span className="flex-none max-w-[110px] truncate font-mono text-[9.5px] text-ink4">
+              <span className="flex-none max-w-[110px] truncate font-mono text-[9.5px] text-ink-4">
                 {cwdBase(row.cwd || row.repo)}
               </span>
             </CommandItem>
@@ -204,7 +204,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <Icon icon={PanelLeft} className={cn(sidebarState === 'expanded' && 'text-iris')} aria-hidden="true" />
+            <Icon icon={PanelLeft} className={cn(sidebarState === 'expanded' && 'text-iris-contrast')} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle sidebar</span>
             <CommandShortcut className="normal-case tracking-normal">
               {sidebarState === 'expanded' ? 'open' : 'closed'}
@@ -217,7 +217,7 @@ export function CommandPalette({
               close();
             }}
           >
-            <Icon icon={PanelRight} className={cn(rightRailOpen && 'text-iris')} aria-hidden="true" />
+            <Icon icon={PanelRight} className={cn(rightRailOpen && 'text-iris-contrast')} aria-hidden="true" />
             <span className="flex-1 truncate">Toggle chief-of-staff drawer</span>
             <CommandShortcut>A</CommandShortcut>
           </CommandItem>

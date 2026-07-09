@@ -28,11 +28,11 @@ import type { AppState } from '@/lib/types';
 const DEFAULT_BUDGET = 1.0;
 
 function SectionLabel({ children }: { children: string }) {
-  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink4">{children}</div>;
+  return <div className="px-6 pb-1 pt-5 font-mono text-[9.5px] font-semibold uppercase tracking-wider text-ink-4">{children}</div>;
 }
 
 function SectionNote({ children }: { children: string }) {
-  return <p className="px-6 pb-2 text-[11.5px] leading-relaxed text-ink3">{children}</p>;
+  return <p className="px-6 pb-2 text-[11.5px] leading-relaxed text-ink-3">{children}</p>;
 }
 
 export function SettingsView({ state, patch }: { state: AppState; patch: (next: Partial<AppState>) => void }) {
@@ -57,7 +57,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <SectionLabel>Appearance</SectionLabel>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink3">Theme</span>
+            <span className="text-[12.5px] text-ink-3">Theme</span>
             <ToggleGroup
               type="single"
               aria-label="Theme"
@@ -80,7 +80,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         <SectionNote>Which local CLI generates the on-demand summary. It runs on your machine, through your own CLI auth.</SectionNote>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink3">Engine</span>
+            <span className="text-[12.5px] text-ink-3">Engine</span>
             <ToggleGroup
               type="single"
               aria-label="AI summary engine"
@@ -111,7 +111,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
         </SectionNote>
         <ItemGroup>
           <Item size="sm" className="justify-between px-6">
-            <span className="text-[12.5px] text-ink3">Daily budget (est USD)</span>
+            <span className="text-[12.5px] text-ink-3">Daily budget (est USD)</span>
             <Input
               type="number"
               min="0.10"
@@ -127,7 +127,7 @@ export function SettingsView({ state, patch }: { state: AppState; patch: (next: 
           {budget && (
             <>
               <ItemSeparator />
-              <div className="px-6 py-2 text-[11px] text-ink4">
+              <div className="px-6 py-2 text-[11px] text-ink-4">
                 Today: {fmtUSD(budget.spentUSD)} of {fmtUSD(budget.dailyBudgetUSD)}
                 {budget.paused ? ' · paused for the rest of today' : ''}.
               </div>

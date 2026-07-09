@@ -9,10 +9,10 @@ import { Icon } from '@/components/ui/icon';
 // language.
 export function ViewHeader({ icon: HeaderIcon, title, subtitle }: { icon: LucideIcon; title: string; subtitle: string }) {
   return (
-    <div className="flex flex-none items-center gap-2.5 border-b border-border px-6 py-3.5">
-      <Icon icon={HeaderIcon} className="flex-none text-ink3" aria-hidden="true" />
-      <span className="text-[15px] font-bold tracking-tight text-foreground">{title}</span>
-      <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink4">{subtitle}</span>
+    <div className="flex flex-none items-center gap-2.5 border-b border-b-hairline px-6 py-3.5">
+      <Icon icon={HeaderIcon} className="flex-none text-ink-3" aria-hidden="true" />
+      <span className="text-[15px] font-bold tracking-tight text-ink">{title}</span>
+      <span className="font-mono text-[9.5px] uppercase tracking-wider text-ink-4">{subtitle}</span>
     </div>
   );
 }

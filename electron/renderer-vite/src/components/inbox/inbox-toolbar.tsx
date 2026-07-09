@@ -11,7 +11,7 @@ import type { InboxFilter } from '@/lib/inbox-logic';
 // scroll containers.
 export function InboxToolbar({ filter, onChange }: { filter: InboxFilter; onChange: (next: InboxFilter) => void }) {
   return (
-    <div className="flex flex-none flex-wrap items-center gap-2 border-b border-border px-6 py-2">
+    <div className="flex flex-none flex-wrap items-center gap-2 border-b border-b-hairline px-6 py-2">
       <Input
         value={filter.q}
         onChange={(e) => onChange({ ...filter, q: e.target.value })}
