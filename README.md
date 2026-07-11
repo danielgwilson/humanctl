@@ -126,8 +126,7 @@ Historical and design-trail docs (kept for context, not current direction):
   [docs/how-we-got-here.md](./docs/how-we-got-here.md),
   [docs/source-identity.md](./docs/source-identity.md),
   [docs/decision-surface-research.md](./docs/decision-surface-research.md),
-  [docs/mvp-plan.md](./docs/mvp-plan.md), [docs/v1.md](./docs/v1.md),
-  [docs/repo-topology-and-privacy.md](./docs/repo-topology-and-privacy.md)
+  [docs/mvp-plan.md](./docs/mvp-plan.md), [docs/v1.md](./docs/v1.md)
 - notch docs ([docs/notch-mvp.md](./docs/notch-mvp.md),
   [docs/notch-next-spec.md](./docs/notch-next-spec.md),
   [docs/notch-recovery-protocol.md](./docs/notch-recovery-protocol.md),
@@ -152,10 +151,11 @@ See [AGENTS.md](./AGENTS.md) for the full operator notes.
 
 ## Hygiene
 
-This repo is public and born clean: no real session data, secrets, or
-personal paths in tracked files or history. Screenshots and demos use the
-synthetic fixtures, never real transcripts. `scripts/secret-scan.sh` gates
-the build. See [docs/repo-hygiene.md](./docs/repo-hygiene.md).
+This repo is public. Real session data, secrets, personal absolute paths, and
+private operating notes are not allowed in current tracked files or release
+artifacts. Screenshots and demos use synthetic fixtures, never real
+transcripts. `scripts/secret-scan.sh` and `npm run package:check` gate the
+repository and npm artifact. See [docs/repo-hygiene.md](./docs/repo-hygiene.md).
 
 ## Copy guardrail
 
@@ -176,8 +176,10 @@ same terms unless explicitly agreed otherwise.
 
 ## Publishing (maintainers)
 
-The npm package is intentionally CLI-only: the published tarball is limited
-by the `files` field in `package.json`, so the desktop app and site are not
-published to npm. Publishing runs via npm trusted publishing from GitHub
-Actions (`.github/workflows/publish.yml`); maintainer notes live in
-`humanctl-trusted-publishing-notes.md`.
+The published npm file surface is intentionally CLI-only.
+`npm run package:check` enforces an allowlist containing the compiled CLI, its
+two runtime libraries, the agent skill, README, license, and package metadata.
+It rejects docs, source maps, Electron output, and personal absolute paths,
+then installs and smokes the exact tarball before publication. Publishing runs via
+npm trusted publishing from GitHub Actions (`.github/workflows/publish.yml`);
+maintainer notes live in `humanctl-trusted-publishing-notes.md`.

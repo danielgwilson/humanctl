@@ -229,12 +229,11 @@ Do not rebuild orchestration logic in Swift.
 
 ## Near-Term Build Plan
 
-### Phase 0: repo and privacy decision
+### Phase 0: public repository boundary (complete)
 
-- Decide whether `danielgwilson/humanctl` remains public OSS or becomes private.
-- If it stays public, keep real personal operating traces out of the repo.
-- If it becomes private, update docs and site copy that currently say open source/public.
-- Do not move the repo into a new directory layout while the working tree is dirty.
+- Keep `humanctl` public and keep personal operating traces outside the repo.
+- Use synthetic data in examples, fixtures, screenshots, and tests.
+- Gate current tracked files and release artifacts before every publication.
 
 ### Phase 1: pulse prototype
 

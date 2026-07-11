@@ -1,0 +1,43 @@
+{
+  "id": "demo-loop-feedback",
+  "title": "Demo: choose the next loop step",
+  "summary": "Synthetic answered ask linked to a demo artifact for fixture coverage.",
+  "status": "answered",
+  "escalation": "ask",
+  "prompt": "What should the demo loop optimize for next?",
+  "whyNow": "The fixture should show how an artifact-backed ask records a bounded answer.",
+  "ifIgnored": "The fixture remains in an unresolved state.",
+  "artifactIds": [
+    "live-demo-checkpoint"
+  ],
+  "response": {
+    "type": "single-select",
+    "options": [
+      {
+        "id": "ship",
+        "label": "Keep the current loop",
+        "description": "Continue with asks, artifacts, and notification policy.",
+        "recommended": true
+      },
+      {
+        "id": "revise",
+        "label": "Tighten the surface first",
+        "description": "Polish the ask and artifact experience before adding channels.",
+        "recommended": false
+      },
+      {
+        "id": "pivot",
+        "label": "Change the interaction",
+        "description": "Keep the goal but revise the interaction model.",
+        "recommended": false
+      }
+    ],
+    "answer": {
+      "choiceId": "revise",
+      "answeredAt": "2026-03-16T06:52:25.188Z",
+      "actor": "fixture"
+    }
+  },
+  "createdAt": "2026-03-16T04:41:43.920Z",
+  "updatedAt": "2026-03-16T06:52:25.188Z"
+}

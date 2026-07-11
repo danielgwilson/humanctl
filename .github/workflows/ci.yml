@@ -42,6 +42,10 @@ jobs:
       - run: npm run lint:renderer
       - run: npm run typecheck:renderer
       - run: npm run build:lib
+      # Proves the npm artifact is CLI-only and scans both the repository and
+      # package contents for personal home paths and credential shapes.
+      - run: npm run package:check
+      - run: npm run publish:check
       - run: node --check dist/lib/sessions.js && node --check dist/lib/pulse.js && node --check dist/lib/commands.js && node --check dist/lib/span.js && node --check dist/lib/pricing.js && node --check dist/lib/harness-icons.js && node --check dist/lib/summary-budget.js && node --check dist/lib/claude-quota.js && node --check dist/bin/humanctl.js && node --check dist/electron/main.js && node --check dist/electron/preload.js && node --check dist/electron/reader-service.js
       - run: npm run pulse:selftest
       - run: npm run reader:selftest

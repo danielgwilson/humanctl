@@ -1,4 +1,4 @@
-# DESIGN.md (draft for the public repo root; builder copies verbatim after critic pass)
+# DESIGN.md
 
 humanctl is an attention router for a scarce human running many coding-agent sessions. Every design decision serves one job: route the human to the next bounded decision with the least noise possible. When in doubt, subtract.
 
@@ -10,7 +10,7 @@ humanctl is an attention router for a scarce human running many coding-agent ses
 > This file remains the law for everything above the token layer: information
 > architecture, vocabulary, one owner per signal, row anatomy, no cards,
 > ScrollArea always, the bespoke-controls and accessibility hardline, the
-> performance SLOs, the born-clean rules, and the process rules. Nothing here is
+> performance SLOs, the public-repo hygiene rules, and the process rules. Nothing here is
 > superseded. Where the two documents once conflicted, `docs/design-system.md`
 > section 8 states the resolution, and the conflicting sentences below have been
 > corrected rather than left standing.
@@ -75,11 +75,11 @@ The five SLOs below are checked by `npm run perf:selftest`, which drives a real 
 
 Renderer bundle size is a separate, cheap budget that CI *can* check, because it needs only a browser build and no display server: `npm run bundle:check` (see `docs/perf.md`).
 
-## Public-repo (born clean) UI rules
+## Public-repo hygiene rules
 
 - No third-party brand assets (Claude, Codex, or any vendor icons) are ever committed. Harness icons are extracted at runtime from locally installed apps, with neutral built-in glyph fallbacks used in fixture mode and screenshots.
 - All committed screenshots use synthetic fixture data only.
-- No real session titles, paths, transcripts, or personal data in code, fixtures, docs, or commit messages.
+- Do not add real session titles, paths, transcripts, or personal data to code, fixtures, docs, screenshots, or release artifacts.
 
 ## Bespoke controls and accessibility (hardline, 0.16.1)
 

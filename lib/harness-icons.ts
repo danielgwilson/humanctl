@@ -1,4 +1,4 @@
-// Runtime harness-icon extraction (PR-2 item 1, DESIGN.md "born clean"):
+// Runtime harness-icon extraction (PR-2 item 1, DESIGN.md public-repo hygiene):
 // read the LOCALLY INSTALLED harness app's own icon from its bundle, at
 // runtime, on this machine, never committed to the repo. This module is
 // plain Node (no Electron import) so it selftests without a display; the

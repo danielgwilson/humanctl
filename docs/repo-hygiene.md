@@ -94,3 +94,23 @@ Default posture:
 - ignore local residue
 
 If we are unsure, prefer keeping raw notes and debugging exhaust out of the repo until they are cleaned and promoted deliberately.
+
+## Automated Gates
+
+Before a PR merges or an npm release publishes:
+
+```bash
+bash scripts/secret-scan.sh
+npm run build:lib
+npm run package:check
+npm run publish:check
+```
+
+`package:check` rejects personal absolute home paths in current tracked files.
+It packs the real tarball, enforces an exact eight-file package, scans the
+extracted contents, installs it into an isolated temporary prefix, and smokes
+the CLI. Documentation, source maps, Electron output, source trees, additional
+compiled libraries, credential shapes, and unexpected paths fail the release.
+
+`publish:check` rehearses npm's full publish lifecycle without writing to the
+registry, including the `prepublishOnly` gate.

@@ -99,32 +99,32 @@ The spike is behaving correctly if:
 
 These are the files that matter in the current clean shell-only spike:
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/App/HumanctlNotchApp.swift`
+- `attic/notch/macos/HumanctlNotch/App/HumanctlNotchApp.swift`
   Menu bar extra, shell toggle action, and quit path.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/App/HumanctlNotchAppDelegate.swift`
+- `attic/notch/macos/HumanctlNotch/App/HumanctlNotchAppDelegate.swift`
   Accessory app lifecycle and runtime startup.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/App/NotchApplicationRuntime.swift`
+- `attic/notch/macos/HumanctlNotch/App/NotchApplicationRuntime.swift`
   Shared runtime object that owns the store, panel controller, and menu bar title.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Shell/NotchShellStateMachine.swift`
+- `attic/notch/macos/HumanctlNotch/Shell/NotchShellStateMachine.swift`
   Compact/expanded state transitions and hover-open / hover-close behavior.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Shell/NotchShellStore.swift`
+- `attic/notch/macos/HumanctlNotch/Shell/NotchShellStore.swift`
   Store that binds payload availability to shell state and produces snapshots for the UI.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Shell/NotchHostPanelController.swift`
+- `attic/notch/macos/HumanctlNotch/Shell/NotchHostPanelController.swift`
   Nonactivating top-level panel controller, visibility handling, and outside-click dismissal.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Shell/NotchLayoutResolver.swift`
+- `attic/notch/macos/HumanctlNotch/Shell/NotchLayoutResolver.swift`
   Compact and expanded frame calculation from the measured notch geometry.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Support/NSScreen+NotchShell.swift`
+- `attic/notch/macos/HumanctlNotch/Support/NSScreen+NotchShell.swift`
   Display helpers for notch sizing, center, frame, and stable screen targeting.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Support/NotchShellRootView.swift`
+- `attic/notch/macos/HumanctlNotch/Support/NotchShellRootView.swift`
   The actual shell rendering. Right now it should stay visually austere.
 
-- `/Users/danielgwilson/local_git/humanctl/native/macos/HumanctlNotch/Support/NotchShellShape.swift`
+- `attic/notch/macos/HumanctlNotch/Support/NotchShellShape.swift`
   The shell outline shared by compact and expanded states.

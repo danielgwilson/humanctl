@@ -189,17 +189,17 @@ The safe launch path is:
 
 ```bash
 pkill -x HumanctlNotch || true
-open -a /Users/danielgwilson/local_git/humanctl/native/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app
+open ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app
 ```
 
 Or just:
 
 ```bash
-cd /Users/danielgwilson/local_git/humanctl
-npm run native:open
+cd /path/to/humanctl
+npm run notch:open
 ```
 
-`native:open` should continue to kill stale instances first.
+`notch:open` should continue to kill stale instances first.
 
 ### Status item expectations
 

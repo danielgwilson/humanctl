@@ -306,7 +306,9 @@ release, and a CI-safe pure-logic subset:
 
 ## Hygiene
 
-This repo is public. Keep it born-clean: no real session data, secrets, tokens,
-or personal paths in tracked files or history. Screenshots and demos use the
-synthetic fixtures in `electron/renderer-vite/src/lib/fixtures.ts`, never real
-transcripts. Do not use em dashes in any file. See `docs/repo-hygiene.md`.
+This repo is public. Real session data, secrets, tokens, personal absolute
+paths, and private operating notes are not allowed in current tracked files or
+release artifacts. Screenshots and demos use the synthetic fixtures in
+`electron/renderer-vite/src/lib/fixtures.ts`, never real transcripts. Run the
+secret and package hygiene gates before release. Do not use em dashes in any
+file. See `docs/repo-hygiene.md`.

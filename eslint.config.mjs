@@ -2,7 +2,8 @@ import nextCoreWebVitals from "eslint-config-next/core-web-vitals";
 import nextTypescript from "eslint-config-next/typescript";
 
 // electron/, lib/, bin/, scripts/perf-selftest/, scripts/bundle-size-check.js,
-// scripts/capture-screenshots.js, and scripts/design-lint-classnames.js are
+// scripts/capture-screenshots.js, scripts/design-lint-classnames.js, and
+// scripts/package-hygiene-check.js are
 // separate runtimes (the Electron renderer + main + preload, the TS
 // backend/CLI shared by the desktop app and the CLI, and the plain-Node
 // perf, bundle-budget, screenshot-capture, and retired-classname-grep
@@ -32,6 +33,7 @@ const eslintConfig = [
       "scripts/bundle-size-check.js",
       "scripts/capture-screenshots.js",
       "scripts/design-lint-classnames.js",
+      "scripts/package-hygiene-check.js",
       "dist/**",
     ],
   },

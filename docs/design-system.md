@@ -20,7 +20,7 @@ Every contrast number in this document was computed, not promised. Section 1.7 p
 - **`ScrollArea` always, no native scrollbars**,
 - bespoke controls and the accessibility hardline,
 - performance SLOs,
-- the born-clean public-repo rules,
+- the public-repo hygiene rules,
 - process rules for UI changes.
 
 Those are product laws. This document is downstream of them and must never be read as licence to break one. Section 8 states the reconciliation and resolves the places where the two documents genuinely conflicted.
