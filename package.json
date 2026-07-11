@@ -1,8 +1,7 @@
 {
   "name": "humanctl",
-  "version": "0.18.3",
+  "version": "0.18.4",
   "description": "A control plane for the human bottleneck.",
-  "main": "dist/electron/main.js",
   "engines": {
     "node": ">=22"
   },
@@ -11,10 +10,11 @@
     "humanctl": "dist/bin/humanctl.js"
   },
   "files": [
-    ".agents/",
-    "dist/bin/",
-    "dist/lib/",
-    "docs/",
+    ".agents/skills/humanctl/SKILL.md",
+    ".agents/skills/humanctl/agents/openai.yaml",
+    "dist/bin/humanctl.js",
+    "dist/lib/commands.js",
+    "dist/lib/pulse.js",
     "README.md",
     "LICENSE"
   ],
@@ -28,6 +28,9 @@
     "lint": "eslint .",
     "lint:renderer": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run lint",
     "bundle:check": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build:browser && node ../../scripts/bundle-size-check.js",
+    "package:check": "node scripts/package-hygiene-check.js",
+    "publish:check": "npm publish --dry-run --provenance --access public --foreground-scripts --json",
+    "prepublishOnly": "npm run package:check",
     "tokens:check": "tsx scripts/tokens-check.ts",
     "lint:classnames": "node scripts/design-lint-classnames.js",
     "cli:init": "node ./dist/bin/humanctl.js init .",
@@ -63,6 +66,9 @@
     "appId": "com.danielgwilson.humanctl",
     "productName": "humanctl",
     "asar": true,
+    "extraMetadata": {
+      "main": "dist/electron/main.js"
+    },
     "files": [
       "dist/electron/**/*",
       "dist/lib/**/*",

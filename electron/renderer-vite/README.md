@@ -53,7 +53,7 @@ HUMANCTL_DEV_URL=http://localhost:5183 npm run desktop
 `src/hooks/use-humanctl.ts` calls the `window.humanctl` bridge exposed by
 `electron/preload.ts`. When that bridge is absent (this app opened in a plain
 browser, no Electron preload attached), it falls back to the synthetic
-fixtures in `src/lib/fixtures.ts`: born-clean by construction (no real ids,
+fixtures in `src/lib/fixtures.ts`: public-safe by construction (no real ids,
 generic demo repo names, never a vendor harness icon).
 
 ## Design tokens

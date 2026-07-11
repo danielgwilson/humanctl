@@ -388,7 +388,7 @@ self-triggered refresh (the poll returns early on an unchanged signature, and
 the `~/.humanctl` watcher ignores its own event-log writes via
 `isInboxRelevantChange`).
 
-## Privacy posture (born clean)
+## Privacy posture (public-safe)
 
 This repo is public. The rules that keep it safe:
 

@@ -31,11 +31,19 @@ Bootstrap is already complete:
 After GitHub + npm trusted publisher are connected:
 
 1. bump version in `package.json`
-2. update changelog/docs as needed
-3. push commit to `main`
-4. push tag `vX.Y.Z`
-5. let GitHub Actions publish via OIDC
+2. run `npm run build:lib && npm run package:check && npm run publish:check`
+3. update changelog/docs as needed
+4. push commit to `main`
+5. push tag `vX.Y.Z`
+6. let GitHub Actions publish via OIDC
 
 ## Important note
 
-The npm package is intentionally CLI-only. The published tarball is constrained by the `files` field in `package.json`, so the Next.js site source and build output are not shipped to npm.
+The published npm file surface is intentionally CLI-only. The tarball is constrained
+by the `files` field in `package.json`, and `npm run package:check` verifies,
+installs, and smokes the exact tarball before publication. The Next.js site
+source, docs, Electron output, and source maps are not shipped. The root
+Next.js and React runtime dependencies remain declared to preserve `npm start`;
+splitting them from the CLI is separate packaging work. Electron Builder injects
+the desktop entry point through `build.extraMetadata`; it is not npm package
+metadata.

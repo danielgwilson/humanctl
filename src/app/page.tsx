@@ -263,8 +263,8 @@ export default function Home() {
 
                   {activePanel === "block" ? (
                     <div className="block-card">
-                      <div className="block-label">Blocked on Daniel</div>
-                      <p>Need a yes or no on shipping open source from day one before the repo, docs, and license path can be finalized.</p>
+                      <div className="block-label">Blocked on you</div>
+                      <p>Need a yes or no on the release channel before packaging and docs can be finalized.</p>
                       <button className="button button-danger" type="button">
                         Answer now
                       </button>

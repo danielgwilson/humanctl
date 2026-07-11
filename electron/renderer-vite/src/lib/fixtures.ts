@@ -1,6 +1,6 @@
 // Synthetic fixture data. Used ONLY when window.humanctl is absent (plain
 // browser / vite dev with no Electron preload attached). OSS-safe: no real
-// ids, generic demo repo names, matches AGENTS.md's born-clean rule.
+// ids, generic demo repo names, matches AGENTS.md's public-repo hygiene rule.
 import type { BudgetStatus, ClaudeQuota, InboxThread, NoteItem, SessionRow, SkillAggregate, Status, TimelineEvent, TimelinePage } from './types';
 
 // FNV-1a, deterministic per-id seed so a given fixture session always shows
@@ -83,7 +83,7 @@ export function fixtureStatus(): Status {
 // Synthetic Claude quota. Fixture mode MUST NOT shell out: the browser dev loop
 // and every screenshot render this instead of spawning the `claude` CLI, so the
 // numbers below are invented and no real account is ever read (AGENTS.md's
-// born-clean rule). The shape deliberately exercises the dynamic-label path --
+// public-repo hygiene rule). The shape deliberately exercises the dynamic-label path --
 // a session window plus two weekly windows, one of them per-model -- and the
 // verbatim `resets_at_text` string, which carries no epoch.
 export function fixtureClaudeQuota(): ClaudeQuota {
@@ -97,7 +97,7 @@ export function fixtureClaudeQuota(): ClaudeQuota {
   };
 }
 
-// Generic demo skill names (born-clean; never the agent's real installed
+// Generic demo skill names (public-safe; never the agent's real installed
 // skill catalog) for the Metrics view's top-skills list.
 export const FIXTURE_SKILL_AGGREGATE: SkillAggregate = {
   skills: { 'code-review': 6, 'test-runner': 4, 'doc-gardener': 2, 'deploy-check': 1 },
