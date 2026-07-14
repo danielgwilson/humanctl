@@ -1,77 +1,95 @@
-# electron/renderer-vite
+# Electron renderer
 
-The humanctl desktop renderer: React + TypeScript + Tailwind v4 (CSS-first) +
-shadcn/ui (Radix underneath), built with Vite / electron-vite. It is the only
-renderer; `electron/main.ts` always loads its built output.
+This is Humanctl's only desktop renderer. React, Vite, and electron-vite mount
+a thin viewport over the Humanctl UI package.
 
-Scope still growing: the shell (nav rail, header, context bar, chief-of-staff
-drawer) and the Inbox view (two-pane: thread list + thread detail) plus a
-full-width session detail view reached from Inbox are complete. Sessions /
-Metrics / Fleet / Settings render as quiet "coming in a later stage"
-placeholders (routable, not dead links) until they are ported.
+## Architecture
 
-## Why this is a separate sub-package
+```text
+packages/ui/                         visual and interaction owner
 
-This directory is **not** part of the published npm package (root
-`package.json`'s `files` stays CLI-only: `dist/bin`, `dist/lib`, `docs`,
-`README.md`, `LICENSE`); React/Vite/Tailwind/shadcn are devDependencies of
-this sub-package only, so the CLI tarball never carries them.
+electron/renderer-vite/src/
+  runtime/                            preload and fixture adapters, resources,
+                                      subscriptions, state, intent dispatch
+  viewport/                           model-to-package wiring only
+  main.tsx                            mount point and package stylesheet import
+  index.html
+```
+
+`packages/ui` starts from the ShadCN Registry `base-nova` foundation with Base
+UI behavior. It owns primitives, product blocks, Inter and JetBrains Mono,
+tokens, responsive layout, loading states, motion, and accessibility.
+
+`src/runtime` is the only renderer code allowed to access `window.humanctl`.
+The desktop and fixture adapters implement the same interface. Runtime code
+does not render DOM.
+
+`src/viewport` receives the runtime model, renders package exports, and emits
+intents. It has no intrinsic DOM, CSS, primitive-library import, polling, or
+direct bridge access.
+
+The compiled application version is injected at build time and is available on
+the first paint. A real Electron launch never shows fixture labeling while an
+asynchronous status read completes.
+
+See [DESIGN.md](../../DESIGN.md),
+[ui-foundation-contract.md](../../docs/ui-foundation-contract.md), and
+[frontend-reset-behavior-ledger.md](../../docs/frontend-reset-behavior-ledger.md).
 
 ## Commands
 
-Run from this directory (`electron/renderer-vite/`), after `npm install` here:
+From this directory:
 
+```bash
+npm run dev
+npm run build
+npm run preview
+npm run typecheck
 ```
-npm run dev            # vite dev server, plain browser, fixture fallback (fast loop)
-npm run build          # electron-vite build: main + preload (unchanged, externalized)
-                        #   + this renderer, to dist-electron-vite/
-npm run preview        # vite preview of the last `vite build` output (browser only)
-npm run typecheck      # tsc --noEmit, strict
-```
 
-From the repo root, `npm run renderer` runs the same Vite dev server as
-`npm run dev` above.
+From the repository root:
 
-To boot the real Electron app against this renderer:
-
-```
-# from the repo root, after `npm run build:lib` and `npm run build` here:
+```bash
+npm run renderer
+npm run renderer:build
+npm run renderer:serve
 npm run desktop
 ```
 
-Or point at the Vite dev server for HMR while iterating inside Electron:
+For Electron HMR, run the renderer and desktop separately:
 
-```
-# terminal 1 (this directory):
-npm run dev
-# terminal 2 (repo root):
+```bash
+# terminal 1
+npm run renderer
+
+# terminal 2
 HUMANCTL_DEV_URL=http://localhost:5183 npm run desktop
 ```
 
-## Fixture fallback
+## Fixture mode
 
-`src/hooks/use-humanctl.ts` calls the `window.humanctl` bridge exposed by
-`electron/preload.ts`. When that bridge is absent (this app opened in a plain
-browser, no Electron preload attached), it falls back to the synthetic
-fixtures in `src/lib/fixtures.ts`: public-safe by construction (no real ids,
-generic demo repo names, never a vendor harness icon).
+When the preload bridge is absent, `src/runtime/fixture-adapter.ts` supplies
+public-safe synthetic data. It has no real session IDs, paths, transcripts, or
+vendor assets. Independent one-shot delays make resource skeletons and
+progressive loading observable in a browser.
 
-## Design tokens
+The browser is the default visual development loop. Use the real Electron app
+only for preload behavior, native window chrome, runtime-resolved icons,
+real-session reads, and packaged performance.
 
-`src/styles/globals.css` holds the humanctl design tokens (colors, fonts,
-radii) and maps them onto shadcn's semantic token names so Radix primitives
-(Select, Sheet, ContextMenu, DropdownMenu, Tooltip) render in the same visual
-language throughout the app, not default shadcn zinc. See the repo root
-`DESIGN.md`, which this renderer must match exactly.
+## UI ownership
 
-## Fonts
+Renderer source does not own visual implementation. New controls and product
+anatomy go into `packages/ui`, receive explicit leaf exports, and are exercised
+in the package catalog before viewport consumption.
 
-`src/fonts/` vendors four self-hosted, latin-subset woff2 files: Space
-Grotesk 500/600 and JetBrains Mono 500/600 (both SIL Open Font License 1.1,
-`src/fonts/OFL.txt`). Hand-written `@font-face` blocks live in
-`src/styles/globals.css`; `src/index.html` preloads all four. No font is
-fetched over the network -- an Electron app must work offline (see
-`docs/design-system.md` section 2.2). Do not add a font package dependency
-(e.g. `@fontsource/*`): importing a package's index entry pulls extra
-subsets (latin-ext, cyrillic, greek, vietnamese) that this app never needs
-and that eat into the CSS budget (`scripts/bundle-size-check.js`).
+Run the ownership and hygiene gates from the repository root:
+
+```bash
+node scripts/ui-foundation-ownership.mjs
+node scripts/ui-foundation-hygiene.mjs
+```
+
+Every visible change also requires synthetic full-application screenshots in
+both themes, keyboard and focus verification, bundle checks, and the local
+performance gates in `docs/perf.md`.

@@ -702,6 +702,7 @@ interface InboxThread {
   cwd: string;
   path: string;
   title: string;
+  session?: import('./sessions').SessionRow;
   items: Record<string, unknown>[];
   lastTs?: string | null;
 }
@@ -722,10 +723,20 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
         cwd: (row && row.cwd) || '',
         path: (row && row.path) || '',
         title: (row && (row.customTitle || row.title)) || '',
+        session: row,
         items: [],
       });
     }
-    return threads.get(sessionId) as InboxThread;
+    const thread = threads.get(sessionId) as InboxThread;
+    if (row && !thread.session) {
+      thread.repo = row.repo || '';
+      thread.harness = row.harness || '';
+      thread.cwd = row.cwd || '';
+      thread.path = row.path || '';
+      thread.title = row.customTitle || row.title || '';
+      thread.session = row;
+    }
+    return thread;
   };
   for (const n of notes) {
     if (!n.session) continue; // unsessioned notes have no thread to join (system thread candidate; left to the renderer)

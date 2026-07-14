@@ -265,6 +265,38 @@ async function run(): Promise<void> {
     assert.ok(!threads.some((t) => t.sessionId === sid), 'a session with no signal must not fabricate a thread');
   });
 
+  await checkAsync('inbox.threads: a needs-you session older than the renderer window carries its authoritative row', async () => {
+    const home = tempDir('inbox-old-session-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const sid = `old_${randomUUID().slice(0, 8)}`;
+      const transcriptDir = path.join(home, '.claude', 'projects', 'humanctl-selftest');
+      const transcript = path.join(transcriptDir, `${sid}.jsonl`);
+      const oldMs = Date.now() - (4 * 24 * 60 * 60 * 1000);
+      const at = (offsetMs: number) => new Date(oldMs + offsetMs).toISOString();
+      fs.mkdirSync(transcriptDir, { recursive: true });
+      fs.writeFileSync(transcript, [
+        { type: 'user', timestamp: at(0), cwd: '/tmp/humanctl-selftest', message: { role: 'user', content: 'Review the release paths.' } },
+        { type: 'assistant', timestamp: at(1000), cwd: '/tmp/humanctl-selftest', message: { role: 'assistant', content: [{ type: 'text', text: 'I am checking both paths.' }] } },
+        { type: 'user', timestamp: at(2000), cwd: '/tmp/humanctl-selftest', message: { role: 'user', content: 'Compare the tradeoffs.' } },
+        { type: 'assistant', timestamp: at(3000), cwd: '/tmp/humanctl-selftest', message: { role: 'assistant', content: [{ type: 'text', text: 'I need your choice. Which path should I take?' }] } },
+      ].map((line) => JSON.stringify(line)).join('\n') + '\n');
+      fs.utimesSync(transcript, new Date(oldMs), new Date(oldMs));
+
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
+      const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
+      const thread = (result.threads as any[]).find((candidate) => candidate.sessionId === sid);
+      assert.ok(thread, 'the 30-day Inbox scan must keep a 4-day-old pending decision');
+      assert.ok(thread.session, 'the thread must include the row that supplied its current state');
+      assert.strictEqual(thread.session.state, 'need');
+      assert.strictEqual(thread.session.harness, 'claude-code');
+      assert.ok(Date.now() - thread.session.ageMs > 72 * 60 * 60 * 1000, 'the fixture must sit outside the renderer session window');
+    } finally {
+      process.env.HOME = prevHome;
+    }
+  });
+
   check('appendAskLog + readAskLog: round-trips a Q&A entry and an interrupted-probe entry', () => {
     const home = tempDir('asklog-home');
     const prevHome = process.env.HOME;

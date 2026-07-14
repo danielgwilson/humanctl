@@ -1,159 +1,161 @@
 #!/usr/bin/env node
 'use strict';
 
-// docs/design-system.md section 10, gate 3: "A grep gate over a denylist of
-// retired class names (bg-accent, text-muted-foreground, border-border,
-// bg-sidebar-*, shadow-(xs|md|lg|2xl), rounded-(sm|md|lg)). Tailwind
-// silently drops unknown classes rather than erroring, so lint is the only
-// thing standing between a refactor and a hundred invisible no-ops."
-//
-// This is deliberately a plain text grep, not an AST rule (that's
-// eslint-rules/design-system.mjs, gate 2) -- a Tailwind class name that no
-// longer resolves to a real utility isn't a syntax error, it's just dead
-// text, so the only way to catch it is to search for the text itself.
-// Comments are stripped before matching (a simple string/comment-aware
-// scanner, not a full parser) so prose that DISCUSSES a retired name --
-// this repo's own header comments are full of that, e.g. "no dark:
-// variants" -- never trips the gate the way a naive `grep -r` would.
-//
-// Wired into `npm run lint:classnames`, run in CI right next to
-// `npm run tokens:check` (design-system stage 4, #70).
-//
-// Stage 5 (#71) item 10 removes Tailwind's default radius scale from the
-// theme (globals.css's `--radius-*: initial`, replaced by the four-step
-// rounded-1..4 control-height table) in this same PR, so `rounded-sm`,
-// `rounded-md`, and `rounded-lg` are now exactly like the other five
-// patterns below: dead text that Tailwind silently drops rather than
-// erroring. Every call site that used to read `--radius-sm`/`-md`/`-lg`
-// (chip.tsx, command.tsx, tooltip.tsx, header.tsx, sonner.tsx, sidebar.tsx,
-// ...) is migrated onto rounded-1..4 in this same PR, so the denylist is
-// enforced starting now rather than deferred again.
+// Registry source debt gate. Tailwind accepts unknown utility names without
+// reporting an error, so retired namespaces need a separate text check. This
+// scanner deliberately permits current token-backed utilities such as
+// border-border, bg-accent-soft, rounded-[var(...)], and shadow-[var(...)].
 
 const fs = require('fs');
 const path = require('path');
 
-const SRC_DIR = path.join(__dirname, '..', 'electron', 'renderer-vite', 'src');
+const SRC_DIR = path.join(__dirname, '..', 'packages', 'ui', 'src');
+const SOURCE_FILE = /\.(css|ts|tsx)$/;
 
-// Each entry: [label, regex]. Regexes are matched against COMMENT-STRIPPED
-// source text, so they can stay simple substring/word patterns rather than
-// JSX-attribute-aware AST matching.
-const DENYLIST = [
-  ['bg-accent', /\bbg-accent\b/],
-  ['text-muted-foreground', /\btext-muted-foreground\b/],
-  ['border-border', /\bborder-border\b/],
-  ['bg-sidebar-*', /\bbg-sidebar(-[a-z]+)*\b/],
-  ['shadow-(xs|md|lg|2xl)', /\bshadow-(xs|md|lg|2xl)\b/],
-  ['rounded-(sm|md|lg)', /\brounded-(sm|md|lg)\b/],
+const RULES = [
+  {
+    label: 'retired surface namespace',
+    pattern: /\b(?:bg|text|border|ring)-(?:card|popover|muted|secondary)(?:-[a-z0-9-]+)?\b/,
+    example: 'bg-card',
+  },
+  {
+    label: 'retired generic accent fill',
+    pattern: /\bbg-accent(?!-)/,
+    example: 'bg-accent',
+  },
+  {
+    label: 'retired sidebar namespace',
+    pattern: /\b(?:bg|text|border|ring)-sidebar(?:-[a-z0-9-]+)?\b/,
+    example: 'text-sidebar-foreground',
+  },
+  {
+    label: 'retired named shadow utility',
+    pattern: /\bshadow-(?:xs|sm|md|lg|xl|2xl)\b/,
+    example: 'shadow-lg',
+  },
+  {
+    label: 'component-local dark variant',
+    pattern: /\bdark:/,
+    example: 'dark:bg-black',
+  },
+  {
+    label: 'retired visual token namespace',
+    pattern: /\b(?:iris|graphite|violet)(?:-[a-z0-9-]+)?\b/i,
+    example: 'violet-contrast',
+  },
 ];
 
-/**
- * Strips `//` line comments and `/* *\/` block comments from `src`, leaving
- * everything inside string/template literals untouched (so a Tailwind class
- * string that happens to contain "//" -- none do today, but the scanner
- * should not corrupt one if it ever did -- survives intact). Not a full
- * JS/TS parser: doesn't handle regex-literal `/.../ ` ambiguity, which never
- * arises in this repo's component/view files (no bare regex literals in
- * className-adjacent code). Comment regions are replaced with spaces
- * (preserving line/column count, in case a future version wants to report
- * line numbers from the stripped text directly).
- */
-function stripComments(src) {
-  let out = '';
-  let i = 0;
-  const n = src.length;
-  let inString = null; // one of ' " ` or null
-  while (i < n) {
-    const c = src[i];
-    const c2 = src[i + 1];
-    if (inString) {
-      out += c;
-      if (c === '\\' && i + 1 < n) {
-        out += c2;
-        i += 2;
+function stripComments(source) {
+  let output = '';
+  let cursor = 0;
+  let quote = null;
+  while (cursor < source.length) {
+    const current = source[cursor];
+    const next = source[cursor + 1];
+    if (quote) {
+      output += current;
+      if (current === '\\' && cursor + 1 < source.length) {
+        output += next;
+        cursor += 2;
         continue;
       }
-      if (c === inString) inString = null;
-      i += 1;
+      if (current === quote) quote = null;
+      cursor += 1;
       continue;
     }
-    if (c === '"' || c === "'" || c === '`') {
-      inString = c;
-      out += c;
-      i += 1;
+    if (current === '"' || current === "'" || current === '`') {
+      quote = current;
+      output += current;
+      cursor += 1;
       continue;
     }
-    if (c === '/' && c2 === '/') {
-      while (i < n && src[i] !== '\n') {
-        out += ' ';
-        i += 1;
+    if (current === '/' && next === '/') {
+      while (cursor < source.length && source[cursor] !== '\n') {
+        output += ' ';
+        cursor += 1;
       }
       continue;
     }
-    if (c === '/' && c2 === '*') {
-      out += '  ';
-      i += 2;
-      while (i < n && !(src[i] === '*' && src[i + 1] === '/')) {
-        out += src[i] === '\n' ? '\n' : ' ';
-        i += 1;
+    if (current === '/' && next === '*') {
+      output += '  ';
+      cursor += 2;
+      while (cursor < source.length && !(source[cursor] === '*' && source[cursor + 1] === '/')) {
+        output += source[cursor] === '\n' ? '\n' : ' ';
+        cursor += 1;
       }
-      if (i < n) {
-        out += '  ';
-        i += 2;
+      if (cursor < source.length) {
+        output += '  ';
+        cursor += 2;
       }
       continue;
     }
-    out += c;
-    i += 1;
+    output += current;
+    cursor += 1;
   }
-  return out;
+  return output;
 }
 
-function walk(dir, files) {
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.name === 'node_modules' || entry.name === 'dist' || entry.name === 'dist-electron-vite') continue;
-    const full = path.join(dir, entry.name);
-    if (entry.isDirectory()) {
-      walk(full, files);
-    } else if (/\.(ts|tsx)$/.test(entry.name)) {
-      files.push(full);
-    }
+function walk(directory, files = []) {
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.name === 'dist' || entry.name === 'node_modules') continue;
+    const target = path.join(directory, entry.name);
+    if (entry.isDirectory()) walk(target, files);
+    else if (SOURCE_FILE.test(entry.name)) files.push(target);
   }
   return files;
 }
 
-function main() {
-  const files = walk(SRC_DIR, []);
-  let failed = false;
-  let checked = 0;
-
-  for (const file of files) {
-    const raw = fs.readFileSync(file, 'utf8');
-    const stripped = stripComments(raw);
-    const lines = stripped.split('\n');
-    checked += 1;
-
-    for (const [label, re] of DENYLIST) {
-      lines.forEach((line, idx) => {
-        if (re.test(line)) {
-          failed = true;
-          console.error(`[lint:classnames] FAIL  ${path.relative(process.cwd(), file)}:${idx + 1}  retired class "${label}"`);
-          console.error(`  ${line.trim()}`);
-        }
-      });
+function findingsFor(source) {
+  const findings = [];
+  const lines = stripComments(source).split('\n');
+  for (const [index, line] of lines.entries()) {
+    for (const rule of RULES) {
+      if (rule.pattern.test(line)) findings.push({ line: index + 1, rule, text: line.trim() });
     }
   }
+  return findings;
+}
 
-  if (checked === 0) {
-    console.error(`[lint:classnames] FAIL: found zero .ts/.tsx files under ${SRC_DIR}; the gate would be vacuously passing.`);
+function selftest() {
+  const clean = 'border-border bg-accent-soft rounded-[var(--radius-2)] shadow-[var(--elev-overlay)]';
+  if (findingsFor(clean).length !== 0) throw new Error('current Registry utility fixture produced a finding');
+  for (const rule of RULES) {
+    const findings = findingsFor(`const fixture = "${rule.example}";`);
+    if (!findings.some((finding) => finding.rule === rule)) {
+      throw new Error(`negative fixture did not trigger ${rule.label}`);
+    }
+  }
+  console.log(`[lint:classnames] selftest passed (${RULES.length} rules proved)`);
+}
+
+function main() {
+  if (process.argv.includes('--selftest')) {
+    selftest();
+    return;
+  }
+  if (!fs.existsSync(SRC_DIR)) {
+    console.error(`[lint:classnames] FAIL: source directory is missing: ${SRC_DIR}`);
+    process.exit(1);
+  }
+  const files = walk(SRC_DIR).sort();
+  if (files.length === 0) {
+    console.error(`[lint:classnames] FAIL: found zero source files under ${SRC_DIR}`);
     process.exit(1);
   }
 
-  if (failed) {
-    console.error('[lint:classnames] FAIL -- retired class name(s) found (docs/design-system.md 10.3). Tailwind drops unknown classes silently; these are dead no-ops, not just style debt.');
+  let failures = 0;
+  for (const file of files) {
+    for (const finding of findingsFor(fs.readFileSync(file, 'utf8'))) {
+      failures += 1;
+      console.error(`[lint:classnames] FAIL  ${path.relative(process.cwd(), file)}:${finding.line}  ${finding.rule.label}`);
+      console.error(`  ${finding.text}`);
+    }
+  }
+  if (failures > 0) {
+    console.error(`[lint:classnames] FAIL: ${failures} retired utility or token reference${failures === 1 ? '' : 's'} found`);
     process.exit(1);
   }
-
-  console.log(`[lint:classnames] PASS -- ${checked} files checked, zero retired class names (docs/design-system.md 10.3).`);
+  console.log(`[lint:classnames] PASS: ${files.length} Registry source files checked against ${RULES.length} active debt rules`);
 }
 
 main();

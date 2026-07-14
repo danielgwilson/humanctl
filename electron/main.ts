@@ -242,7 +242,7 @@ function migrateState(raw: unknown): UiState {
 }
 function readState(): UiState {
   let raw: unknown;
-  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'system', view: 'inbox', navPinned: false, rightRailOpen: false }; }
+  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'dark', view: 'inbox', navPinned: false, rightRailOpen: false }; }
   const migrated = migrateState(raw);
   if (migrated.__migrated) {
     delete migrated.__migrated;
@@ -260,7 +260,7 @@ function writeState(next: UiState): boolean {
   try { fs.writeFileSync(statePath(), JSON.stringify(clean, null, 2)); return true; } catch { return false; }
 }
 
-// The renderer is the electron-vite React/Tailwind/shadcn app
+// The renderer is a thin electron-vite viewport over the package-owned UI
 // (electron/renderer-vite/); there is no other renderer. Normal boot loads
 // the built output at
 // electron/renderer-vite/dist-electron-vite/renderer/index.html.
@@ -280,7 +280,7 @@ function createWindow(): void {
     height: 840,
     minWidth: 760,
     minHeight: 500,
-    backgroundColor: nativeTheme.shouldUseDarkColors ? '#0a0c10' : '#f7f8fa',
+    backgroundColor: nativeTheme.shouldUseDarkColors ? '#101112' : '#fbfbfb',
     titleBarStyle: 'hiddenInset',
     title: 'humanctl',
     icon: ICON_PATH,

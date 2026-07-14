@@ -2,9 +2,9 @@
 
 // Headless full-app screenshot capture over CDP (AGENTS.md "UI PRs" gate).
 //
-// Why headless Chrome and not Electron: the renderer's fixture fallback
-// (electron/renderer-vite/src/lib/use-humanctl.ts) means the whole app --
-// every view, both themes, session detail -- renders and is fully driveable
+// Why headless Chrome and not Electron: the renderer's fixture adapter
+// (electron/renderer-vite/src/runtime/fixture-adapter.ts) means the whole app,
+// including every view, both themes, and session detail, is fully driveable
 // in a plain browser tab with window.humanctl absent, no Electron preload
 // bridge and no real session data required (see AGENTS.md's "Local
 // development and testing" section). Electron itself has no headless mode,
@@ -18,10 +18,10 @@
 //
 // What it produces: the five views (inbox, metrics, fleet, sessions,
 // settings) x both themes, plus session detail x both themes, plus
-// /kitchen-sink (design-system stage 5, #71's own verification demand) x
-// both themes, one PNG each, via window.__humanctlPerf (electron/renderer-
-// vite/src/App.tsx) -- the same renderer-only test hook the perf gate uses,
-// extended here with setTheme, openDetail, and setKitchenSink. 14 PNGs
+// the package-owned product catalog x both themes, one PNG each, via
+// window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
+// Its compatibility surface remains setTheme, openDetail, and setKitchenSink.
+// The setKitchenSink key now opens the product catalog. 14 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the COMMITTED gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -47,9 +47,8 @@ const DEFAULT_OUT = path.join('output', 'screenshots');
 const VIEWS = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'];
 const THEMES = ['dark', 'light'];
 const VIEWPORT = { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false };
-// Extra settle time past rAF x2 + document.fonts.ready, covering the
-// slowest CSS transition in the renderer (duration-500 utility classes --
-// theme swap, sidebar, drawer) so a capture never lands mid-animation.
+// Extra settle time past rAF x2 + document.fonts.ready, covering the longest
+// token-declared overlay transition plus process scheduling variance.
 const SETTLE_EXTRA_MS = 400;
 const LAUNCH_TIMEOUT_MS = 15000;
 const BOOT_POLL_ATTEMPTS = 30;
@@ -269,30 +268,15 @@ async function capture(cdp, outDir, filename) {
   log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size} bytes)`);
 }
 
-// /kitchen-sink is one long page (every primitive in every variant, issue
-// #71's own verification demand) scrolled inside its own ScrollArea, which
-// is a real `overflow` clip, not a document-level scroll -- so
-// Page.captureScreenshot's captureBeyondViewport can't see past it the way
-// it can for ordinary page overflow (that flag extends the SHOT past the
-// window's viewport, it does not un-clip an element's own overflow:hidden/
-// scroll). Several of this route's sections also force a Radix Dialog/
-// DropdownMenu/Tooltip open simultaneously, each of which moves focus into
-// itself on mount and can auto-scroll the ScrollArea to bring itself into
-// view, which makes a plain fixed-viewport screenshot's scroll position
-// non-deterministic on top of that (observed: it landed mid-page, skipping
-// every primitive above Progress, on one run).
-//
-// Fixed by growing the BROWSER'S viewport to fit the content instead of
-// fighting the clip: every ancestor between the window and the kitchen-sink
-// ScrollArea sizes itself off the viewport (h-screen / h-full / flex-1), so
-// making the viewport tall enough that the ScrollArea's own "h-full" never
-// needs to scroll renders the whole page in one normal screenshot. Measures
-// the ScrollArea viewport's real scrollHeight, resizes to it (plus a little
-// headroom for the app's own header/context-bar chrome), settles once more,
-// captures, then restores the standard VIEWPORT for the next iteration.
-async function captureKitchenSink(cdp, outDir, filename) {
+// The package-owned product catalog is taller than the standard viewport.
+// Grow the browser viewport to the catalog root's measured height before the
+// capture. The Base UI ScrollArea selector remains the fallback for catalog
+// variants that use a clipped root viewport. Then restore the standard size.
+async function captureProductCatalog(cdp, outDir, filename) {
   const contentHeight = await evalJS(cdp, `
-    document.querySelector('[data-radix-scroll-area-viewport]')?.scrollHeight || document.body.scrollHeight
+    document.querySelector('[data-slot="foundation-catalog"]')?.scrollHeight ||
+      document.querySelector('[data-slot="scroll-area-viewport"]')?.scrollHeight ||
+      document.body.scrollHeight
   `);
   const tallViewport = { ...VIEWPORT, height: Math.ceil(contentHeight) + 120 };
   await cdp.send('Emulation.setDeviceMetricsOverride', tallViewport);
@@ -335,7 +319,7 @@ async function main() {
       if (ready) { booted = true; break; }
       await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
     }
-    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail/setKitchenSink -- did the App.tsx perf hook change shape?');
+    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail/setKitchenSink; did the product perf hook change shape?');
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
 
@@ -350,20 +334,17 @@ async function main() {
       }
 
       // Session detail: no id given, so the hook opens the first known
-      // fixture session (App.tsx's openDetail default).
+      // fixture session (the product hook's openDetail default).
       await evalJS(cdp, `window.__humanctlPerf.openDetail(); true`);
       await settle(cdp);
       await capture(cdp, outDir, `session-detail-${theme}.png`);
 
-      // /kitchen-sink (design-system stage 5, #71): App.tsx's render order
-      // checks kitchenSink BEFORE selectedThread, so it overrides the open
-      // session detail from the capture just above with no separate
-      // "close" step needed. Toggle the fixture-only route on, capture, and
-      // toggle it back off before the next theme iteration's own view loop
-      // runs.
+      // setKitchenSink is the stable perf-hook key for the package-owned
+      // product catalog. Keep the stable screenshot filename for downstream
+      // comparisons while the captured surface is the new catalog.
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(true); true`);
       await settle(cdp);
-      await captureKitchenSink(cdp, outDir, `kitchen-sink-${theme}.png`);
+      await captureProductCatalog(cdp, outDir, `kitchen-sink-${theme}.png`);
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(false); true`);
     }
 

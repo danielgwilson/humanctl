@@ -8,14 +8,17 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 - `electron/` is the desktop app. `main.ts` is the Electron main process
   (window, IPC, the session-dir watcher, runtime harness-icon extraction),
   compiled by tsup to `dist/electron/main.js` (see `tsup.config.ts`).
-  `renderer-vite/` is the UI: React 19 + TypeScript, built with Vite 7 /
-  electron-vite, styled with Tailwind v4 (CSS-first) and shadcn/ui (Radix
-  underneath) on the humanctl design tokens (see `DESIGN.md`). It is the only
-  renderer; there is no separate build-less renderer and no flag to switch
-  between renderers. `src/App.tsx` wires the shell (full-height sidebar,
-  inset header, inset context bar, chief-of-staff drawer) around the Inbox
-  view and the full-width session-detail view; see
-  `electron/renderer-vite/README.md` for its own layout and commands.
+  `renderer-vite/` is the only UI host: React 19 + TypeScript, built with Vite
+  and electron-vite. `src/runtime/` is the only renderer adapter allowed to
+  access `window.humanctl`; `src/viewport/` maps its model and intents to
+  package exports without owning DOM or styling. The compiled version is
+  injected at build time so first paint never waits on status. See
+  `electron/renderer-vite/README.md`.
+- `packages/ui/` is the only visual and interaction owner. It uses the ShadCN
+  Registry `base-nova` foundation with Base UI behavior and owns primitives,
+  Humanctl blocks, tokens, Space Grotesk and JetBrains Mono, skeletons, motion, and
+  accessibility. Consumers import explicit `@humanctl/ui/*` leaves. Read
+  `DESIGN.md` and `docs/ui-foundation-contract.md` before UI work.
 - `lib/` holds TypeScript modules (strict, `tsconfig.backend.json`) shared by
   the desktop app and the CLI, compiled by tsup to `dist/lib/*.js`:
   `sessions.ts` is the read-only cross-harness session reader (Codex +
@@ -174,7 +177,8 @@ rules exist to keep that class of bug from recurring as the app grows.
 in item 1 below mechanically: `scripts/capture-screenshots.js` builds and
 serves the renderer's browser bundle, drives it headless over CDP (system
 Chrome, not Electron -- see the script's header), and captures all five
-views in both themes plus session detail in both themes, 12 PNGs, on fixture
+views in both themes plus session detail in both themes and both catalog
+themes, 14 PNGs, on fixture
 data only. It never touches real session data or `~/.humanctl`. One command,
 one-shot: every timeout inside it bounds a single script run and nothing it
 starts survives the process exiting.
@@ -196,28 +200,34 @@ Every UI-visible change, in every PR:
    per the rule above.
 4. State explicit conformance to DESIGN.md: which section(s) the change
    follows, and any deliberate, called-out deviation.
+5. Keep visual implementation in `packages/ui`, then run
+   `node scripts/ui-foundation-ownership.mjs` and
+   `node scripts/ui-foundation-hygiene.mjs`. The renderer viewport may wire
+   package blocks to runtime intents; it may not create a second visual tree.
 
 The orchestrator reviews the screenshots and the one-owner audit before
 merge; a UI PR without both is incomplete, not merely under-documented.
 
 ## Local development and testing
 
-The renderer (`electron/renderer-vite/`) has a fixture fallback: when the
-`window.humanctl` IPC bridge is absent (i.e. the page is opened in a plain
-browser), it falls back to synthetic fixtures, so the whole UI renders and is
-fully driveable without launching Electron.
+The renderer (`electron/renderer-vite/`) has a fixture adapter. When the
+`window.humanctl` IPC bridge is absent, `src/runtime/fixture-adapter.ts`
+implements the same interface as the desktop adapter, so the whole UI remains
+driveable without launching Electron. Its staggered one-shot resource delays
+make independent skeletons and progressive loading testable. A real Electron
+launch uses the compiled version immediately and never passes through fixture
+labeling while status loads.
 
 Prefer the browser for UI work. It is the fast loop, needs no rebuild, and does
 not read any real session data:
 
     npm run renderer   # Vite dev server, HMR, http://localhost:5183
 
-Open that URL and verify layout, the Inbox / Sessions / Metrics / Fleet /
-Settings views, the theme toggle, the nav rail, the chief-of-staff drawer, and
-interactions against fixture data. Fixture mode always renders the built-in
-harness glyphs (never runtime-extracted icons) and never shows PR chips (both
-are real-app-only, see `docs/perf.md` and `docs/commands.md`). This is the
-default way to iterate on the interface.
+Open that URL and verify layout, independent loading states, Inbox, Sessions,
+Metrics, Fleet, Settings, session detail, both themes, the navigation rail, the
+chief-of-staff overlay, and interactions against fixture data. Fixture mode
+always renders neutral built-in harness marks and never reads real session
+content. This is the default interface-development loop.
 
 Toolchain is Node-ecosystem only, on the repo's Node (`.nvmrc`: 24). `npm run
 renderer` runs Vite directly against `electron/renderer-vite/`. `npm run
@@ -308,7 +318,8 @@ release, and a CI-safe pure-logic subset:
 
 This repo is public. Real session data, secrets, tokens, personal absolute
 paths, and private operating notes are not allowed in current tracked files or
-release artifacts. Screenshots and demos use the synthetic fixtures in
-`electron/renderer-vite/src/lib/fixtures.ts`, never real transcripts. Run the
-secret and package hygiene gates before release. Do not use em dashes in any
-file. See `docs/repo-hygiene.md`.
+release artifacts. Screenshots and browser previews use the synthetic adapter
+in `electron/renderer-vite/src/runtime/fixture-adapter.ts`, never real
+transcripts. Run the secret, package, UI ownership, and source-name hygiene
+gates before release. Do not use em dashes in any file. See
+`docs/repo-hygiene.md`.
