@@ -31,20 +31,20 @@ function ListRow({
       data-slot="list-row"
       data-selected={selected || undefined}
       className={cn(
-        "group/row grid min-h-[var(--row-task)] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 rounded-none border-x-0 border-t-0 border-b border-border px-4 py-2 text-left outline-none transition-colors duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] focus-visible:bg-[var(--overlay-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[selected]:bg-[var(--overlay-selected)] disabled:pointer-events-none disabled:opacity-45",
+        "group/row grid h-[var(--row-task)] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-none border-x-0 border-t-0 border-b border-border px-3 py-1.5 text-left outline-none transition-colors duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] focus-visible:bg-[var(--overlay-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[selected]:bg-[var(--overlay-selected)] disabled:pointer-events-none disabled:opacity-45",
         className,
       )}
     >
       {leading ? <span className="grid shrink-0 place-items-center text-ink-3">{leading}</span> : null}
       <span className="min-w-0">
-        <span className="block truncate text-[13px] leading-5 font-medium text-ink">{title}</span>
-        {summary || status ? (
-          <span className="mt-0.5 flex min-w-0 items-center gap-2">
-            {summary ? <span className="min-w-0 flex-1 truncate text-[13px] leading-5 text-ink-2">{summary}</span> : null}
+        <span className="block truncate text-sm leading-4 font-medium text-ink">{title}</span>
+        {summary || status || metadata ? (
+          <span className="mt-0.5 flex h-5 min-w-0 items-center gap-2">
+            {summary ? <span className="min-w-0 flex-1 truncate text-sm leading-4 text-ink-2">{summary}</span> : null}
             {status}
+            {metadata ? <span className="max-w-20 shrink truncate text-xs leading-4 text-ink-3">{metadata}</span> : null}
           </span>
         ) : null}
-        {metadata ? <span className="mt-0.5 block truncate font-mono text-[11px] leading-4 text-ink-3">{metadata}</span> : null}
       </span>
       <span className="flex shrink-0 items-center gap-2">
         {trailing}

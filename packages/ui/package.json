@@ -12,7 +12,7 @@
     "catalog:preview": "vite preview --config vite.config.ts",
     "typecheck": "tsc --noEmit",
     "verify": "node ./scripts/verify-foundation.mjs",
-    "registry:build": "shadcn build",
+    "registry:build": "node ./scripts/build-registry.mjs",
     "check": "npm run typecheck && npm run verify"
   },
   "exports": {
@@ -20,6 +20,8 @@
     "./styles/app.css": "./src/styles/app.css",
     "./styles/catalog.css": "./src/styles/catalog.css",
     "./styles/tokens.css": "./src/styles/tokens.css",
+    "./styles/typeset.css": "./src/styles/typeset.css",
+    "./hooks/use-mobile": "./src/hooks/use-mobile.ts",
     "./lib/cn": "./src/lib/cn.ts",
     "./components/button": "./src/components/button.tsx",
     "./components/alert": "./src/components/alert.tsx",
@@ -49,6 +51,7 @@
     "./components/separator": "./src/components/separator.tsx",
     "./components/scroll-area": "./src/components/scroll-area.tsx",
     "./components/skeleton": "./src/components/skeleton.tsx",
+    "./components/sidebar": "./src/components/sidebar.tsx",
     "./components/spinner": "./src/components/spinner.tsx",
     "./components/table": "./src/components/table.tsx",
     "./components/toggle-group": "./src/components/toggle-group.tsx",
@@ -66,8 +69,7 @@
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",
-    "@fontsource/jetbrains-mono": "5.2.8",
-    "@fontsource/space-grotesk": "5.2.8",
+    "@fontsource-variable/geist": "5.2.9",
     "@shadcn/react": "0.2.1",
     "class-variance-authority": "0.7.1",
     "clsx": "2.1.1",

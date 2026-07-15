@@ -13,14 +13,16 @@ const path = require('path');
 
 const KB = 1000;
 
-// Measured 2026-07-14 after the Registry reset: 545.99 kB initial JS,
-// 633.05 kB total JS including lazy secondary routes and the product catalog,
-// 49.95 kB CSS, and 61.85 kB of @fontsource WOFF2 files. Initial JS keeps the
-// existing 600 kB ceiling. Total JS has a distinct 700 kB ceiling.
+// Measured 2026-07-15 after restoring the full Registry Sidebar and Typeset:
+// 543.40 kB initial JS, 689.80 kB total JS, 80.95 kB initial CSS, 99.90 kB
+// total CSS, and 76.42 kB of Geist Variable WOFF2 files. Typeset is isolated
+// to the lazy conversation chunk, so rich prose does not consume the shell's
+// cold-open CSS budget. Initial and total CSS have distinct ceilings.
 const BUDGETS = {
   initialJs: 600 * KB,
   totalJs: 700 * KB,
-  css: 72 * KB,
+  initialCss: 84 * KB,
+  totalCss: 104 * KB,
   fonts: 120 * KB,
 };
 
@@ -66,6 +68,21 @@ function assetJavaScriptPath(url) {
   return relative.split('/').join(path.sep);
 }
 
+function assetCssPath(url) {
+  if (!url || /^(?:[a-z]+:)?\/\//i.test(url)) return null;
+  let decoded;
+  try {
+    decoded = decodeURIComponent(url.split(/[?#]/, 1)[0]).replace(/\\/g, '/');
+  } catch {
+    return null;
+  }
+  decoded = decoded.replace(/^\.?\//, '');
+  if (!decoded.startsWith('assets/') || !decoded.endsWith('.css')) return null;
+  const relative = path.posix.normalize(decoded.slice('assets/'.length));
+  if (!relative || relative === '..' || relative.startsWith('../') || path.posix.isAbsolute(relative)) return null;
+  return relative.split('/').join(path.sep);
+}
+
 function initialJavaScriptFiles(html) {
   const files = new Set();
   for (const tag of html.match(/<script\b[^>]*>/gi) ?? []) {
@@ -82,6 +99,17 @@ function initialJavaScriptFiles(html) {
   return [...files].sort();
 }
 
+function initialCssFiles(html) {
+  const files = new Set();
+  for (const tag of html.match(/<link\b[^>]*>/gi) ?? []) {
+    const rel = (attributeValue(tag, 'rel') || '').toLowerCase().split(/\s+/);
+    if (!rel.includes('stylesheet')) continue;
+    const file = assetCssPath(attributeValue(tag, 'href'));
+    if (file) files.add(file);
+  }
+  return [...files].sort();
+}
+
 function runSelftest() {
   const html = `<!doctype html>
     <link href="/assets/vendor.js?build=1" crossorigin rel="stylesheet modulepreload">
@@ -89,9 +117,13 @@ function runSelftest() {
     <script type="module" src="https://example.com/external.js"></script>
     <script type="application/json" src="/assets/not-entry.js"></script>`;
   assert.deepEqual(initialJavaScriptFiles(html), ['index.js', 'vendor.js']);
+  assert.deepEqual(initialCssFiles(html), []);
   assert.equal(assetJavaScriptPath('/assets/../escape.js'), null);
+  assert.equal(assetCssPath('/assets/../escape.css'), null);
   assert.equal(assetJavaScriptPath('/assets/product-catalog.js'), 'product-catalog.js');
+  assert.equal(assetCssPath('/assets/index.css?build=1'), 'index.css');
   assert.deepEqual(initialJavaScriptFiles('<script type="module" src="/assets/index.js"></script>'), ['index.js']);
+  assert.deepEqual(initialCssFiles('<link rel="stylesheet" href="/assets/index.css">'), ['index.css']);
   console.log('[bundle:check] entry parser selftest passed');
 }
 
@@ -110,13 +142,16 @@ function main() {
   const javascript = entries.filter((file) => file.endsWith('.js'));
   const css = entries.filter((file) => file.endsWith('.css'));
   const fonts = entries.filter((file) => file.endsWith('.woff2'));
-  const initialJavascript = initialJavaScriptFiles(fs.readFileSync(INDEX_PATH, 'utf8'));
+  const html = fs.readFileSync(INDEX_PATH, 'utf8');
+  const initialJavascript = initialJavaScriptFiles(html);
+  const initialCss = initialCssFiles(html);
 
-  if (javascript.length === 0 || css.length === 0 || fonts.length === 0 || initialJavascript.length === 0) {
+  if (javascript.length === 0 || css.length === 0 || fonts.length === 0 || initialJavascript.length === 0 || initialCss.length === 0) {
     if (javascript.length === 0) console.error(`[bundle:check] FAIL: no .js files emitted into ${ASSETS_DIR}`);
     if (css.length === 0) console.error(`[bundle:check] FAIL: no .css files emitted into ${ASSETS_DIR}`);
-    if (fonts.length === 0) console.error('[bundle:check] FAIL: no .woff2 files emitted; Space Grotesk and JetBrains Mono would fall back to system fonts.');
+    if (fonts.length === 0) console.error('[bundle:check] FAIL: no .woff2 files emitted; Geist Variable would fall back to a system font.');
     if (initialJavascript.length === 0) console.error(`[bundle:check] FAIL: ${INDEX_PATH} references no local module entry or modulepreload JavaScript.`);
+    if (initialCss.length === 0) console.error(`[bundle:check] FAIL: ${INDEX_PATH} references no local stylesheet.`);
     process.exit(1);
   }
 
@@ -129,12 +164,14 @@ function main() {
 
   const initialJsBytes = totalBytes(initialJavascript);
   const totalJsBytes = totalBytes(javascript);
-  const cssBytes = totalBytes(css);
+  const initialCssBytes = totalBytes(initialCss);
+  const totalCssBytes = totalBytes(css);
   const fontBytes = totalBytes(fonts);
   const rows = [
     ['INITIAL JS', initialJsBytes, BUDGETS.initialJs, initialJavascript.length],
     ['TOTAL JS  ', totalJsBytes, BUDGETS.totalJs, javascript.length],
-    ['CSS       ', cssBytes, BUDGETS.css, css.length],
+    ['INITIAL CSS', initialCssBytes, BUDGETS.initialCss, initialCss.length],
+    ['TOTAL CSS  ', totalCssBytes, BUDGETS.totalCss, css.length],
     ['FONTS     ', fontBytes, BUDGETS.fonts, fonts.length],
   ];
 
@@ -147,7 +184,8 @@ function main() {
       `[bundle:check] ${label}  ${kb(actual).padStart(10)} / ${kb(budget).padStart(10)} budget  (${percent.padStart(5)}% of budget, ${count} file${count === 1 ? '' : 's'})  ${verdict}`,
     );
   }
-  console.log(`[bundle:check] initial files: ${initialJavascript.join(', ')}`);
+  console.log(`[bundle:check] initial JS files: ${initialJavascript.join(', ')}`);
+  console.log(`[bundle:check] initial CSS files: ${initialCss.join(', ')}`);
 
   if (failed) {
     console.error('[bundle:check] FAIL: renderer output exceeded a hard bundle budget.');

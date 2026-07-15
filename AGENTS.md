@@ -16,7 +16,7 @@ Operator notes for agents working in this repo. Start with `README.md` for what
   `electron/renderer-vite/README.md`.
 - `packages/ui/` is the only visual and interaction owner. It uses the ShadCN
   Registry `base-nova` foundation with Base UI behavior and owns primitives,
-  Humanctl blocks, tokens, Space Grotesk and JetBrains Mono, skeletons, motion, and
+  Humanctl blocks, tokens, Geist Variable and semantic system mono, skeletons, motion, and
   accessibility. Consumers import explicit `@humanctl/ui/*` leaves. Read
   `DESIGN.md` and `docs/ui-foundation-contract.md` before UI work.
 - `lib/` holds TypeScript modules (strict, `tsconfig.backend.json`) shared by
@@ -225,7 +225,7 @@ not read any real session data:
 
 Open that URL and verify layout, independent loading states, Inbox, Sessions,
 Metrics, Fleet, Settings, session detail, both themes, the navigation rail, the
-chief-of-staff overlay, and interactions against fixture data. Fixture mode
+chief-of-staff rail, and interactions against fixture data. Fixture mode
 always renders neutral built-in harness marks and never reads real session
 content. This is the default interface-development loop.
 

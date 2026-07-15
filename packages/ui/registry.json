@@ -9,8 +9,7 @@
       "title": "Humanctl UI foundation",
       "description": "Neutral control-plane tokens, typography, motion, and class composition.",
       "dependencies": [
-        "@fontsource/space-grotesk@5.2.8",
-        "@fontsource/jetbrains-mono@5.2.8",
+        "@fontsource-variable/geist@5.2.9",
         "clsx@2.1.1",
         "tailwind-merge@3.4.0",
         "tailwindcss@4.3.2",
@@ -20,6 +19,7 @@
         { "path": "src/styles/globals.css", "type": "registry:style", "target": "src/styles/globals.css" },
         { "path": "src/styles/app.css", "type": "registry:style", "target": "src/styles/app.css" },
         { "path": "src/styles/tokens.css", "type": "registry:style", "target": "src/styles/tokens.css" },
+        { "path": "src/styles/typeset.css", "type": "registry:style", "target": "src/styles/typeset.css" },
         { "path": "src/lib/cn.ts", "type": "registry:lib", "target": "src/lib/cn.ts" }
       ]
     },
@@ -28,7 +28,7 @@
       "type": "registry:ui",
       "title": "Humanctl controls",
       "description": "Curated Registry controls for the desktop viewport.",
-      "registryDependencies": ["humanctl-foundation"],
+      "registryDependencies": ["https://humanctl.com/r/humanctl-foundation.json"],
       "dependencies": [
         "@base-ui/react@1.6.0",
         "class-variance-authority@0.7.1",
@@ -53,6 +53,8 @@
         { "path": "src/components/separator.tsx", "type": "registry:ui" },
         { "path": "src/components/scroll-area.tsx", "type": "registry:ui" },
         { "path": "src/components/skeleton.tsx", "type": "registry:ui" },
+        { "path": "src/components/sidebar.tsx", "type": "registry:ui" },
+        { "path": "src/hooks/use-mobile.ts", "type": "registry:hook" },
         { "path": "src/components/alert.tsx", "type": "registry:ui" },
         { "path": "src/components/badge.tsx", "type": "registry:ui" },
         { "path": "src/components/empty.tsx", "type": "registry:ui" },
@@ -70,7 +72,7 @@
       "type": "registry:ui",
       "title": "Humanctl messaging",
       "description": "Message, bubble, marker, and scroll behavior for task conversations.",
-      "registryDependencies": ["humanctl-controls"],
+      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "dependencies": ["@shadcn/react@0.2.1"],
       "files": [
         { "path": "src/components/bubble.tsx", "type": "registry:ui" },
@@ -84,7 +86,7 @@
       "type": "registry:block",
       "title": "Humanctl conversation",
       "description": "Role-aware task messages and compact event markers.",
-      "registryDependencies": ["humanctl-messaging"],
+      "registryDependencies": ["https://humanctl.com/r/humanctl-messaging.json"],
       "files": [
         { "path": "src/blocks/conversation.tsx", "type": "registry:block" }
       ]
@@ -94,7 +96,7 @@
       "type": "registry:block",
       "title": "Humanctl shell",
       "description": "Viewport shell and page framing with fixed chrome geometry.",
-      "registryDependencies": ["humanctl-controls"],
+      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "files": [
         { "path": "src/blocks/app-shell.tsx", "type": "registry:block" },
         { "path": "src/blocks/page-frame.tsx", "type": "registry:block" }
@@ -105,7 +107,7 @@
       "type": "registry:block",
       "title": "Humanctl data rows",
       "description": "Flat list, status, quota, and filter anatomy.",
-      "registryDependencies": ["humanctl-controls"],
+      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "files": [
         { "path": "src/blocks/list-row.tsx", "type": "registry:block" },
         { "path": "src/blocks/status.tsx", "type": "registry:block" },
@@ -118,7 +120,10 @@
       "type": "registry:block",
       "title": "Humanctl detail and composer",
       "description": "Scrollable detail pane and bounded reply composer.",
-      "registryDependencies": ["humanctl-controls", "humanctl-messaging"],
+      "registryDependencies": [
+        "https://humanctl.com/r/humanctl-controls.json",
+        "https://humanctl.com/r/humanctl-messaging.json"
+      ],
       "files": [
         { "path": "src/blocks/detail-pane.tsx", "type": "registry:block" },
         { "path": "src/blocks/composer.tsx", "type": "registry:block" }
@@ -130,11 +135,11 @@
       "title": "Humanctl foundation catalog",
       "description": "Executable states for visual, keyboard, and interaction review.",
       "registryDependencies": [
-        "humanctl-controls",
-        "humanctl-shell",
-        "humanctl-data-rows",
-        "humanctl-detail-composer",
-        "humanctl-conversation"
+        "https://humanctl.com/r/humanctl-controls.json",
+        "https://humanctl.com/r/humanctl-shell.json",
+        "https://humanctl.com/r/humanctl-data-rows.json",
+        "https://humanctl.com/r/humanctl-detail-composer.json",
+        "https://humanctl.com/r/humanctl-conversation.json"
       ],
       "files": [
         { "path": "src/catalog/foundation-catalog.tsx", "type": "registry:block" },

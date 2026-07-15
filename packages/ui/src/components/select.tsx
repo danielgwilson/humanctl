@@ -24,7 +24,7 @@ function SelectTrigger({
     <SelectPrimitive.Trigger
       data-slot="select-trigger"
       className={cn(
-        "flex h-[var(--control)] min-w-28 select-none items-center justify-between gap-2 rounded-[var(--radius-2)] bg-surface px-2.5 font-sans text-[13px] text-ink shadow-[var(--elev-ring)] outline-none transition-colors duration-[var(--duration-color)] hover:bg-[color-mix(in_oklch,var(--surface-1),var(--ink)_4%)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 data-placeholder:text-ink-3 [&_svg]:size-3.5 [&_svg]:shrink-0",
+        "flex h-[var(--control)] min-w-28 select-none items-center justify-between gap-2 rounded-[var(--radius-2)] bg-surface px-2.5 font-sans text-sm text-ink shadow-[var(--elev-ring)] outline-none transition-colors duration-[var(--duration-color)] hover:bg-[color-mix(in_oklch,var(--surface-1),var(--ink)_4%)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 data-placeholder:text-ink-3 [&_svg]:size-3.5 [&_svg]:shrink-0",
         className,
       )}
       {...props}
@@ -81,7 +81,7 @@ function SelectLabel({ className, ...props }: SelectPrimitive.GroupLabel.Props) 
   return (
     <SelectPrimitive.GroupLabel
       data-slot="select-label"
-      className={cn("px-2 py-1 font-mono text-[11px] text-ink-3", className)}
+      className={cn("px-2 py-1 text-xs font-medium text-ink-3", className)}
       {...props}
     />
   )
@@ -96,7 +96,7 @@ function SelectItem({
     <SelectPrimitive.Item
       data-slot="select-item"
       className={cn(
-        "relative flex h-[var(--control-sm)] cursor-default select-none items-center rounded-[var(--radius-1)] py-1 pr-8 pl-2 text-[13px] text-ink outline-none focus:bg-[var(--overlay-hover)] focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-overlay data-disabled:pointer-events-none data-disabled:opacity-45",
+        "relative flex h-[var(--control-sm)] cursor-default select-none items-center rounded-[var(--radius-1)] py-1 pr-8 pl-2 text-sm text-ink outline-none focus:bg-[var(--overlay-hover)] focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-overlay data-disabled:pointer-events-none data-disabled:opacity-45",
         className,
       )}
       {...props}

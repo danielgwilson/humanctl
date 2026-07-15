@@ -276,6 +276,7 @@ function rendererTarget(): { file?: string; url?: string } {
 
 function createWindow(): void {
   win = new BrowserWindow({
+    show: false,
     width: 1240,
     height: 840,
     minWidth: 760,
@@ -295,7 +296,11 @@ function createWindow(): void {
   if (target.url) win.loadURL(target.url);
   else win.loadFile(target.file!);
 
-  win.once('ready-to-show', () => { win!.show(); win!.focus(); });
+  win.once('ready-to-show', () => {
+    if (!win || win.isDestroyed()) return;
+    win.show();
+    win.focus();
+  });
 
   // `.on`, not `.once`: a window reload (HUMANCTL_DEV_URL's HMR reload path,
   // or a manual reload) discards the page's JS context and the reader port

@@ -17,7 +17,8 @@ electron/renderer-vite/src/
 ```
 
 `packages/ui` starts from the ShadCN Registry `base-nova` foundation with Base
-UI behavior. It owns primitives, product blocks, Inter and JetBrains Mono,
+UI behavior. It owns primitives, product blocks, Geist Variable and semantic
+system mono,
 tokens, responsive layout, loading states, motion, and accessibility.
 
 `src/runtime` is the only renderer code allowed to access `window.humanctl`.

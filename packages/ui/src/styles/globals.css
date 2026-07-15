@@ -1,42 +1,11 @@
 @import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "./tokens.css";
+@import "@fontsource-variable/geist";
 
 @source "../components";
 @source "../blocks";
 @source "../product";
-
-@font-face {
-  font-family: "Space Grotesk";
-  font-style: normal;
-  font-weight: 400;
-  font-display: optional;
-  src: url("@fontsource/space-grotesk/files/space-grotesk-latin-400-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  font-style: normal;
-  font-weight: 500;
-  font-display: optional;
-  src: url("@fontsource/space-grotesk/files/space-grotesk-latin-500-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "Space Grotesk";
-  font-style: normal;
-  font-weight: 600;
-  font-display: optional;
-  src: url("@fontsource/space-grotesk/files/space-grotesk-latin-600-normal.woff2") format("woff2");
-}
-
-@font-face {
-  font-family: "JetBrains Mono";
-  font-style: normal;
-  font-weight: 500;
-  font-display: optional;
-  src: url("@fontsource/jetbrains-mono/files/jetbrains-mono-latin-500-normal.woff2") format("woff2");
-}
 
 @layer base {
   * {
@@ -55,7 +24,7 @@
     color: var(--ink);
     font-family: var(--font-sans-stack);
     font-size: 14px;
-    font-weight: 500;
+    font-weight: 400;
     line-height: 1.45;
     text-rendering: optimizeLegibility;
     -webkit-font-smoothing: antialiased;
@@ -75,6 +44,10 @@
 
   ::selection {
     background: var(--overlay-selected);
+  }
+
+  html {
+    @apply font-sans;
   }
 }
 

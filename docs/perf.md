@@ -25,6 +25,9 @@ Checks, against the DESIGN.md perf SLOs:
   `scripts/perf-selftest/run.js`). The package-owned shell, active route frame,
   compiled application version, and correctly sized skeletons must be present
   before the slower fleet resources resolve.
+- **Launch frame**: the real Electron renderer must leave focus on `BODY`,
+  expose no `:focus-visible` artifact, and have Geist loaded before the gate
+  accepts startup.
 - **Click to paint**: under 100ms x10, measured across view switches
   (`setView`) via a double-`requestAnimationFrame` settle.
 - **60s idle self-refresh**: zero DOM mutation batches in a 60-second window
@@ -63,7 +66,8 @@ constants:
 | Heap growth over 20 cycles | reaches steady state |
 | Renderer initial JS (`bundle:check`, runs in CI) | < 600.00 kB |
 | Renderer total emitted JS (`bundle:check`, runs in CI) | < 700.00 kB |
-| Renderer bundle CSS (`bundle:check`, runs in CI) | < 72.00 kB |
+| Renderer initial CSS (`bundle:check`, runs in CI) | < 84.00 kB |
+| Renderer total emitted CSS (`bundle:check`, runs in CI) | < 104.00 kB |
 
 Every renderer reset and release records a fresh local result. Sessions,
 Inbox, status, quota, skills, budget, and timeline load independently. Quota
@@ -147,16 +151,25 @@ mutation cadence -- only that the supporting pure logic is still correct.
 The one perf-adjacent budget that CAN run in CI without a display server,
 because it needs only a browser build (`vite build`) and a `stat()`. It builds
 `electron/renderer-vite/` and fails if the initial renderer JS, total emitted
-JS, or CSS exceeds its budget, printing actual vs budget for all three.
+JS, initial CSS, or total emitted CSS exceeds its budget, printing actual vs
+budget for each.
 
 Budgets (`scripts/bundle-size-check.js`, restated in the SLO table above):
-**600.00 kB initial JS**, **700.00 kB total emitted JS**, **72.00 kB CSS**.
+**600.00 kB initial JS**, **700.00 kB total emitted JS**, **84.00 kB initial
+CSS**, and **104.00 kB total emitted CSS**.
 Initial JS is the entry chunk plus its module-preload dependencies. Total JS
 also includes lazy routes such as the component catalog. A heavy new
 dependency should trip the gate. Every KB of initial JS adds parse and compile
 work directly to the cold-open critical path. The budget is not raised to
 accommodate a renderer reset; a change must prove why the larger payload is
 necessary.
+
+The 2026-07-15 foundation correction split the prior single CSS ceiling into
+initial and total ceilings. The measured build was 80.95 kB initial CSS and
+99.90 kB total CSS after restoring the full Registry Sidebar and Typeset.
+Typeset contributes 14.67 kB in the lazy conversation chunk, so transcript
+prose does not enter the cold-open stylesheet. The new ceilings leave roughly
+3 kB initial and 4 kB total headroom while preserving a hard gate on both.
 
 It is wired into CI (`.github/workflows/ci.yml`, the `verify` job) rather than
 only into `app:install`, because it is cheap (one `vite build`, under a second

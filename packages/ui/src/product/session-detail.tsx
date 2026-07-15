@@ -118,7 +118,7 @@ function DeliveryReceipt({ result }: { result: HumanctlAnswerResult }) {
   if (result.error) details.push({ text: result.error, failed: true })
   if (details.length === 0) return null
   return (
-    <div className="flex flex-col gap-0.5 font-mono text-[11px]" aria-live="polite">
+    <div className="flex flex-col gap-0.5 text-xs" aria-live="polite">
       {details.map((detail, index) => <div key={`${detail.text}-${index}`} className={detail.failed ? "text-block" : "text-ink-4"}>{detail.text}</div>)}
     </div>
   )
@@ -131,7 +131,7 @@ function ThreadStream({
 }) {
   if (entries.length === 0) {
     return (
-      <MessageScrollerItem messageId="inbox-empty" className="border-b border-border px-4 py-5 text-[13px] text-ink-3">
+      <MessageScrollerItem messageId="inbox-empty" className="border-b border-border px-4 py-5 text-sm text-ink-3">
         No inbox updates for this task.
       </MessageScrollerItem>
     )
@@ -160,7 +160,7 @@ function CodexWriteDisclosure({ onAcknowledge }: { onAcknowledge: () => void }) 
   return (
     <Alert className="mb-2 border-need/30 bg-need-soft">
       <AlertTitle>Task transcript delivery</AlertTitle>
-      <AlertDescription className="text-[12px] leading-5 text-ink-2">Questions and replies are appended to the original task transcript. Humanctl refuses while that task is actively running.</AlertDescription>
+      <AlertDescription className="text-sm leading-5 text-ink-2">Questions and replies are appended to the original task transcript. Humanctl refuses while that task is actively running.</AlertDescription>
       <AlertAction><Button size="sm" variant="ghost" onClick={onAcknowledge}>Enable</Button></AlertAction>
     </Alert>
   )
@@ -187,7 +187,7 @@ function Timeline({
 
   if (resource.error && !timeline) {
     return (
-      <MessageScrollerItem messageId="timeline-error" className="border-b border-border px-4 py-5 text-[13px] text-block">
+      <MessageScrollerItem messageId="timeline-error" className="border-b border-border px-4 py-5 text-sm text-block">
         <p>{resource.error}</p>
         <Button size="sm" className="mt-3" onClick={() => { void dispatch({ type: "timeline.open", session }) }}>
           <RefreshCwIcon data-icon="inline-start" /> Retry
@@ -197,7 +197,7 @@ function Timeline({
   }
 
   if (!timeline || timeline.items.length === 0) {
-    return <MessageScrollerItem messageId="timeline-empty" className="border-b border-border px-4 py-5 text-[13px] text-ink-3">No conversation events were found.</MessageScrollerItem>
+    return <MessageScrollerItem messageId="timeline-empty" className="border-b border-border px-4 py-5 text-sm text-ink-3">No conversation events were found.</MessageScrollerItem>
   }
 
   return (
@@ -391,7 +391,7 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
           {pendingAsk ? (
             <Alert className="border-need/30 bg-need-soft">
               <AlertTitle>Waiting for your answer</AlertTitle>
-              <AlertDescription className="max-h-28 overflow-y-auto whitespace-pre-wrap text-[12px] leading-5 text-ink-2">
+              <AlertDescription className="max-h-28 overflow-y-auto whitespace-pre-wrap text-sm leading-5 text-ink-2">
                 {pendingAsk.reason}
               </AlertDescription>
             </Alert>
@@ -406,16 +406,16 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
             disabled={composerPending || !codexAcknowledged || Boolean(pendingAsk && !replyAllowed)}
             hint={pendingAsk && !replyAllowed ? `Reply unavailable while ${stateLabel(session.state).toLowerCase()}` : undefined}
           />
-          {composerError ? <p className="text-[12px] leading-5 text-block">{composerError}</p> : null}
+          {composerError ? <p className="text-sm leading-5 text-block">{composerError}</p> : null}
         </div>
       }
     >
       <MessageScrollerItem messageId="task-status" className="flex min-h-11 items-center gap-3 border-b border-border px-4">
           <SessionStatus state={session.state} />
-          <span className="truncate text-[12px] text-ink-3">{session.stateReason || "No status reason recorded"}</span>
-          {session.contextPct != null ? <span className="ml-auto font-mono text-[11px] tabular-nums text-ink-3">{Math.round(session.contextPct)}% context</span> : null}
+          <span className="truncate text-xs text-ink-3">{session.stateReason || "No status reason recorded"}</span>
+          {session.contextPct != null ? <span className="ml-auto text-xs tabular-nums text-ink-3">{Math.round(session.contextPct)}% context</span> : null}
       </MessageScrollerItem>
-      {resumeError ? <MessageScrollerItem messageId="resume-error" className="border-b border-border bg-block-soft px-4 py-2 text-[12px] leading-5 text-block">Resume failed: {resumeError}</MessageScrollerItem> : null}
+      {resumeError ? <MessageScrollerItem messageId="resume-error" className="border-b border-border bg-block-soft px-4 py-2 text-sm leading-5 text-block">Resume failed: {resumeError}</MessageScrollerItem> : null}
 
       <MessageScrollerItem messageId="section-summary">
         <SectionHeading trailing={
@@ -427,19 +427,19 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
           Summary
         </SectionHeading>
       </MessageScrollerItem>
-      <MessageScrollerItem messageId="summary" className="border-b border-border px-4 py-3 text-[13px] leading-5 text-ink-2">
+      <MessageScrollerItem messageId="summary" className="border-b border-border px-4 py-3 text-sm leading-5 text-ink-2">
         <div className="max-w-[var(--measure-prose)]">
           {summary || session.summary?.text || session.prevAgent || "No summary has been generated for this task."}
-          {session.summary?.engine && !summary ? <div className="mt-1 font-mono text-[11px] text-ink-3">Generated by {session.summary.engine}</div> : null}
-          {summaryError ? <div className="mt-2 text-[12px] text-block">Summary failed: {summaryError}</div> : null}
+          {session.summary?.engine && !summary ? <div className="mt-1 text-xs text-ink-3">Generated by {session.summary.engine}</div> : null}
+          {summaryError ? <div className="mt-2 text-sm text-block">Summary failed: {summaryError}</div> : null}
         </div>
       </MessageScrollerItem>
 
       <MessageScrollerItem messageId="section-facts">
         <SectionHeading>Task facts</SectionHeading>
       </MessageScrollerItem>
-      <MessageScrollerItem messageId="task-facts" className="divide-y divide-border border-b border-border text-[12px]">
-          <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-2"><span className="text-ink-3">Task ID</span><code className="truncate font-mono text-[11px] text-ink-2">{session.id}</code></div>
+      <MessageScrollerItem messageId="task-facts" className="divide-y divide-border border-b border-border text-xs">
+          <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-2"><span className="text-ink-3">Task ID</span><code className="truncate font-mono text-xs text-ink-2">{session.id}</code></div>
           <div className="grid grid-cols-[7rem_minmax(0,1fr)] gap-3 px-4 py-2"><span className="text-ink-3">Workspace</span><span className="truncate text-ink-2">{session.cwd || session.repo || "Unknown"}</span></div>
           {session.path ? <div className="grid grid-cols-[7rem_minmax(0,1fr)] items-center gap-3 px-4 py-2"><span className="text-ink-3">Transcript</span><Button size="sm" variant="ghost" className="min-w-0 justify-start px-0 text-primary" onClick={() => { void dispatch({ type: "session.reveal", path: session.path! }) }}><span className="truncate">{session.path}</span><ExternalLinkIcon data-icon="inline-end" /></Button></div> : null}
       </MessageScrollerItem>

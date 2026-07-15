@@ -2,11 +2,22 @@ import { useEffect, useMemo, useSyncExternalStore } from 'react';
 import type { RuntimeDispatch, RuntimeModel, RuntimeResources } from './contracts';
 import { createEnvironmentAdapter } from './desktop-adapter';
 import { createHumanctlRuntime, type HumanctlRuntime } from './runtime';
+import {
+  getBrowserShellStateStorage,
+  readShellStateCache,
+  writeShellStateCache,
+} from './shell-state-cache';
 
 let defaultRuntime: HumanctlRuntime | null = null;
 
 export function getDefaultRuntime(): HumanctlRuntime {
-  if (!defaultRuntime) defaultRuntime = createHumanctlRuntime(createEnvironmentAdapter());
+  if (!defaultRuntime) {
+    const storage = getBrowserShellStateStorage();
+    defaultRuntime = createHumanctlRuntime(createEnvironmentAdapter(), {
+      initialShellState: readShellStateCache(storage),
+      onShellStateChanged: (state) => writeShellStateCache(storage, state),
+    });
+  }
   return defaultRuntime;
 }
 export interface RuntimeBinding {

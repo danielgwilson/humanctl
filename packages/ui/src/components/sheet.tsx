@@ -88,7 +88,7 @@ function SheetTitle({ className, ...props }: SheetPrimitive.Title.Props) {
 }
 
 function SheetDescription({ className, ...props }: SheetPrimitive.Description.Props) {
-  return <SheetPrimitive.Description className={cn("text-[13px] text-ink-3", className)} {...props} />
+  return <SheetPrimitive.Description className={cn("text-sm text-ink-3", className)} {...props} />
 }
 
 export {

@@ -1,6 +1,8 @@
 import type { ReactNode } from "react"
 import { BotIcon, CircleAlertIcon, UserIcon, WrenchIcon } from "lucide-react"
 
+import "@humanctl/ui/styles/typeset.css"
+
 import { Bubble, BubbleContent } from "@humanctl/ui/components/bubble"
 import { Marker, MarkerContent, MarkerIcon } from "@humanctl/ui/components/marker"
 import {
@@ -52,14 +54,14 @@ function ConversationMessage({
       <Message align={human ? "end" : "start"}>
         <MessageAvatar aria-hidden="true"><Icon /></MessageAvatar>
         <MessageContent>
-          <MessageHeader className="gap-2 font-mono text-[11px] leading-4 text-ink-3">
+          <MessageHeader className="gap-2 text-xs leading-4 text-ink-3">
             <span>{label}</span>
             {timestamp ? <span className="text-ink-4">{timestamp}</span> : null}
           </MessageHeader>
           <Bubble align={human ? "end" : "start"} variant={bubbleTone}>
-            <BubbleContent className="text-[13px] leading-5 text-ink-2">{children}</BubbleContent>
+            <BubbleContent className="typeset typeset-chat text-ink-2">{children}</BubbleContent>
           </Bubble>
-          {receipt ? <MessageFooter className="font-mono text-[11px] leading-4 text-ink-3">{receipt}</MessageFooter> : null}
+          {receipt ? <MessageFooter className="text-xs leading-4 text-ink-3">{receipt}</MessageFooter> : null}
         </MessageContent>
       </Message>
     </MessageScrollerItem>
@@ -87,12 +89,12 @@ function ConversationMarker({
     <MessageScrollerItem messageId={messageId} className={cn("border-b border-border px-4 py-2.5", className)}>
       <Marker
         className={cn(
-          "font-mono text-[11px] leading-4",
+          "text-xs leading-4 font-medium",
           tone === "work" ? "text-work" : tone === "need" ? "text-need" : tone === "block" ? "text-block" : "text-ink-3",
         )}
       >
         {icon ? <MarkerIcon>{icon}</MarkerIcon> : null}
-        <MarkerContent className="flex-1 uppercase tracking-[0.06em]">{children}</MarkerContent>
+        <MarkerContent className="flex-1">{children}</MarkerContent>
         {timestamp ? <span className="text-ink-4">{timestamp}</span> : null}
       </Marker>
     </MessageScrollerItem>

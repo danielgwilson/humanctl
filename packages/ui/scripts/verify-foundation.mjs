@@ -25,10 +25,24 @@ const registryNames = new Set(registry.items.map((item) => item.name))
 
 for (const item of registry.items) {
   for (const dependency of item.registryDependencies ?? []) {
+    if (/^https:\/\//.test(dependency)) continue
     if (!registryNames.has(dependency)) failures.push(`${item.name} has unknown registry dependency ${dependency}`)
+    else failures.push(`${item.name} uses bare registry dependency ${dependency}; use an absolute Registry item URL`)
   }
   for (const file of item.files ?? []) {
     if (!existsSync(resolve(root, file.path))) failures.push(`${item.name} has missing file ${file.path}`)
+  }
+}
+
+for (const item of registry.items) {
+  const generatedPath = resolve(root, `public/r/${item.name}.json`)
+  if (!existsSync(generatedPath)) {
+    failures.push(`Generated Registry item is missing: ${item.name}`)
+    continue
+  }
+  const generated = readFileSync(generatedPath, "utf8")
+  if (generated.includes("@humanctl/ui/")) {
+    failures.push(`${item.name} exposes package-local @humanctl/ui imports to Registry consumers`)
   }
 }
 
@@ -36,10 +50,24 @@ if (existsSync(resolve(root, "src/components/card.tsx")) || packageJson.exports[
   failures.push("Card primitives are outside the foundation contract")
 }
 
+const globals = readFileSync(resolve(root, "src/styles/globals.css"), "utf8")
+const tokens = readFileSync(resolve(root, "src/styles/tokens.css"), "utf8")
+if (/font-sans\s+font-mono|font-mono\s+font-sans/.test(globals)) failures.push("The document root cannot apply both sans and mono fonts")
+if (!globals.includes('@import "@fontsource-variable/geist"')) failures.push("Geist Variable must be loaded by the foundation")
+if (/Space Grotesk|JetBrains Mono|Geist Mono/.test(`${globals}\n${tokens}`)) failures.push("Legacy or global mono font family remains in the foundation")
+if (!existsSync(resolve(root, "src/styles/typeset.css"))) failures.push("The shadcn Typeset foundation is missing")
+if (!packageJson.exports["./components/sidebar"]) failures.push("The official Sidebar foundation is not exported")
+
 const sources = sourceFiles(resolve(root, "src"))
 const declaredProperties = new Set()
 const referencedProperties = new Set()
-const runtimeProperties = new Set(["--anchor-width", "--available-height", "--transform-origin"])
+const runtimeProperties = new Set([
+  "--anchor-width",
+  "--available-height",
+  "--sidebar-width",
+  "--sidebar-width-icon",
+  "--transform-origin",
+])
 
 for (const file of sources) {
   const source = readFileSync(file, "utf8")

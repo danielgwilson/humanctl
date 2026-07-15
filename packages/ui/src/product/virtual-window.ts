@@ -13,7 +13,7 @@ export type VirtualWindow = {
   total: number
 }
 
-export const DEFAULT_VIRTUAL_ROW_HEIGHT = 80
+export const DEFAULT_VIRTUAL_ROW_HEIGHT = 52
 
 export type FixedRowGeometry = {
   lineHeights: ReadonlyArray<number>

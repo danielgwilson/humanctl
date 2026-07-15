@@ -9,27 +9,27 @@ function truthy(value: unknown, label: string) {
 }
 
 const authoredListRowMinimum = fixedRowMinimumHeight({
-  lineHeights: [20, 20, 16],
-  gaps: [2, 2],
-  verticalPadding: 16,
+  lineHeights: [16, 20],
+  gaps: [2],
+  verticalPadding: 12,
   border: 1,
 })
-equal(authoredListRowMinimum, 77, "authored three-line row minimum is explicit")
+equal(authoredListRowMinimum, 51, "authored compact two-line row minimum is explicit")
 truthy(DEFAULT_VIRTUAL_ROW_HEIGHT >= authoredListRowMinimum, "virtual allocation contains the authored row")
 
 const first = getVirtualWindow({ count: 240, scrollTop: 0, viewportHeight: 800, rowHeight: DEFAULT_VIRTUAL_ROW_HEIGHT, overscan: 6 })
 equal(first.start, 0, "first window starts at zero")
-equal(first.end, 16, "first window is bounded")
-equal(first.total, 19_200, "spacer represents every row")
+equal(first.end, 22, "first window is bounded")
+equal(first.total, 12_480, "spacer represents every row")
 
 const middle = getVirtualWindow({ count: 240, scrollTop: 8_000, viewportHeight: 800, rowHeight: DEFAULT_VIRTUAL_ROW_HEIGHT, overscan: 6 })
-equal(middle.start, 94, "middle window includes leading overscan")
-equal(middle.end, 116, "middle window includes trailing overscan")
-equal(middle.offset, 7_520, "middle window offset is stable")
+equal(middle.start, 147, "middle window includes leading overscan")
+equal(middle.end, 175, "middle window includes trailing overscan")
+equal(middle.offset, 7_644, "middle window offset is stable")
 
 const end = getVirtualWindow({ count: 240, scrollTop: 99_999, viewportHeight: 800, rowHeight: DEFAULT_VIRTUAL_ROW_HEIGHT, overscan: 6 })
 equal(end.start, 233, "out-of-range scroll keeps a bounded tail window")
 equal(end.end, 240, "out-of-range scroll never blanks a nonempty list")
-equal(end.offset, 18_640, "tail window offset follows the clamped first row")
+equal(end.offset, 12_116, "tail window offset follows the clamped first row")
 
 console.log("virtual-list.selftest: ok")

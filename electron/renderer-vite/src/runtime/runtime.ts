@@ -17,6 +17,7 @@ import {
   type TimelineEvent,
   type TimelineModel,
 } from './contracts';
+import { pickShellState, type ShellAppState } from './shell-state-cache';
 
 export const FLEET_POLL_MS = 20_000;
 const TIMELINE_EVENT_CAP = 600;
@@ -35,6 +36,8 @@ const defaultClock: RuntimeClock = {
 
 export interface RuntimeOptions {
   clock?: RuntimeClock;
+  initialShellState?: Partial<ShellAppState>;
+  onShellStateChanged?: (state: ShellAppState) => void;
 }
 
 type ResourceKey = keyof RuntimeResources;
@@ -51,11 +54,14 @@ function cloneDefaultState(): AppState {
   };
 }
 
-function initialModel(mode: HumanctlAdapter['mode']): RuntimeModel {
+function initialModel(
+  mode: HumanctlAdapter['mode'],
+  initialShellState: Partial<ShellAppState> = {},
+): RuntimeModel {
   return {
     mode,
     resources: {
-      appState: resource(cloneDefaultState(), 'loading'),
+      appState: resource({ ...cloneDefaultState(), ...initialShellState }, 'loading'),
       status: resource(null, 'loading'),
       sessions: resource<ReadonlyArray<SessionRow>>([], 'loading'),
       notes: resource([], 'loading'),
@@ -162,6 +168,7 @@ function capTimelineItems(items: ReadonlyArray<KeyedTimelineEvent>): {
 export class HumanctlRuntime {
   private readonly adapter: HumanctlAdapter;
   private readonly clock: RuntimeClock;
+  private readonly onShellStateChanged?: (state: ShellAppState) => void;
   private snapshot: RuntimeModel;
   private readonly listeners = new Set<() => void>();
   private readonly signatures = new Map<ResourceKey, string>();
@@ -185,7 +192,8 @@ export class HumanctlRuntime {
   constructor(adapter: HumanctlAdapter, options: RuntimeOptions = {}) {
     this.adapter = adapter;
     this.clock = options.clock || defaultClock;
-    this.snapshot = initialModel(adapter.mode);
+    this.onShellStateChanged = options.onShellStateChanged;
+    this.snapshot = initialModel(adapter.mode, options.initialShellState);
   }
 
   getSnapshot = (): RuntimeModel => this.snapshot;
@@ -324,6 +332,14 @@ export class HumanctlRuntime {
     return this.epoch === epoch;
   }
 
+  private notifyShellStateChanged(state: AppState): void {
+    try {
+      this.onShellStateChanged?.(pickShellState(state));
+    } catch {
+      // First-paint mirroring is best-effort and must not affect runtime state.
+    }
+  }
+
   private requestFleetRefresh(): Promise<void> {
     if (this.fleetInFlight) {
       this.fleetQueued = true;
@@ -446,7 +462,16 @@ export class HumanctlRuntime {
     try {
       const result = await this.adapter.getState();
       if (!this.isCurrent(epoch)) return;
-      const persisted: Partial<AppState> = result.ok && result.state ? result.state : {};
+      if (!result.ok) {
+        // A read failure cannot replace the synchronous first-paint mirror
+        // with defaults. Keep the cached shell and any user patch visible;
+        // a later successful refresh remains authoritative.
+        this.stateHydrated = true;
+        this.preHydrationPatch = {};
+        this.failResource('appState', result.error || 'app state read failed');
+        return;
+      }
+      const persisted: Partial<AppState> = result.state ?? {};
       const state: AppState = {
         ...cloneDefaultState(),
         ...persisted,
@@ -460,23 +485,25 @@ export class HumanctlRuntime {
       this.stateHydrated = true;
       this.preHydrationPatch = {};
       this.commitResource('appState', state);
-      if (!result.ok) this.failResource('appState', result.error || 'app state read failed');
+      this.notifyShellStateChanged(state);
     } catch (error) {
       if (!this.isCurrent(epoch)) return;
       this.stateHydrated = true;
-      this.commitResource('appState', this.snapshot.resources.appState.data);
+      this.preHydrationPatch = {};
       this.failResource('appState', errorText(error, 'app state read failed'));
     }
   }
 
   private applyExternalState(state: AppState): void {
     const current = this.snapshot.resources.appState.data;
-    this.commitResource('appState', {
+    const next: AppState = {
       ...current,
       ...state,
       pins: [...(state.pins || current.pins)],
       lastReadTs: { ...(current.lastReadTs || {}), ...(state.lastReadTs || {}) },
-    });
+    };
+    this.commitResource('appState', next);
+    this.notifyShellStateChanged(next);
   }
 
   private async patchAppState(patch: Partial<AppState>): Promise<DispatchOutcome<AppState>> {
@@ -489,6 +516,7 @@ export class HumanctlRuntime {
       lastReadTs: patch.lastReadTs ? { ...patch.lastReadTs } : current.lastReadTs,
     };
     this.commitResource('appState', next);
+    this.notifyShellStateChanged(next);
     try {
       const result = await this.adapter.setState(patch);
       return result.ok ? success(next) : failure(result.error || 'app state write failed');

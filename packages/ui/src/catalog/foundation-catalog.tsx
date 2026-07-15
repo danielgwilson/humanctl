@@ -102,7 +102,7 @@ function CatalogSection({
     <section className="grid grid-cols-[12rem_minmax(0,1fr)] gap-8 border-b border-border px-6 py-7 max-[760px]:grid-cols-1 max-[760px]:gap-4">
       <div>
         <h2 className="text-[14px] font-semibold text-ink">{label}</h2>
-        <p className="mt-1 max-w-48 text-[13px] leading-5 text-ink-3">{description}</p>
+        <p className="mt-1 max-w-48 text-sm leading-5 text-ink-3">{description}</p>
       </div>
       <div className="min-w-0">{children}</div>
     </section>
@@ -127,10 +127,10 @@ function FoundationCatalog() {
       <div data-slot="foundation-catalog" className="min-h-dvh bg-background text-ink">
         <header className="flex min-h-16 items-end justify-between gap-6 border-b border-border px-6 py-4">
           <div>
-            <div className="font-mono text-[11px] text-ink-3">UI foundation / executable catalog</div>
+            <div className="text-xs text-ink-3">UI foundation / executable catalog</div>
             <h1 className="mt-1 text-[20px] leading-6 font-semibold">Humanctl control surface</h1>
           </div>
-          <span className="font-mono text-[11px] text-ink-3">Registry foundation / dense viewport</span>
+          <span className="text-xs text-ink-3">Registry foundation / dense viewport</span>
         </header>
 
         <CatalogSection label="Controls" description="28 and 32 pixel actions. Primary color is reserved for the next action.">
@@ -305,6 +305,25 @@ function FoundationCatalog() {
           </div>
         </CatalogSection>
 
+        <CatalogSection label="Typeset" description="Registry prose owns heading, paragraph, list, quote, and inline-code rhythm. Chat uses the compact preset.">
+          <div className="grid max-w-3xl grid-cols-2 gap-8 max-[760px]:grid-cols-1">
+            <article className="typeset">
+              <h2>Resume with current context</h2>
+              <p>Humanctl should restore the last viewport immediately, then reconcile it with durable state.</p>
+              <ul>
+                <li>Keep the shell visible while resources load.</li>
+                <li>Use <code>app.state</code> as the durable authority.</li>
+              </ul>
+              <blockquote>Recheck the workspace before continuing after a long pause.</blockquote>
+            </article>
+            <article className="typeset typeset-chat border-l border-border pl-6 max-[760px]:border-l-0 max-[760px]:border-t max-[760px]:pt-6 max-[760px]:pl-0">
+              <h3>Compact transcript prose</h3>
+              <p>The same semantic anatomy fits a dense task transcript without switching the application to a monospace face.</p>
+              <p><strong>Code and identifiers</strong> may still use <code>monospace</code> where meaning requires it.</p>
+            </article>
+          </div>
+        </CatalogSection>
+
         <CatalogSection label="Resource states" description="Alert, Empty, Badge, and Spinner keep loading and failure anatomy consistent.">
           <div className="flex max-w-3xl flex-col gap-4">
             <Alert>
@@ -313,7 +332,7 @@ function FoundationCatalog() {
               <AlertDescription>The last successful refresh was 18 minutes ago.</AlertDescription>
               <AlertAction><Button size="sm" variant="ghost">Retry</Button></AlertAction>
             </Alert>
-            <div className="flex items-center gap-2 border-y border-border px-4 py-3 text-[12px] text-ink-3">
+            <div className="flex items-center gap-2 border-y border-border px-4 py-3 text-xs text-ink-3">
               <Spinner /> Refreshing fleet
               <Badge variant="secondary" className="ml-auto">Local</Badge>
               <Badge variant="destructive">1 blocked</Badge>
@@ -375,10 +394,10 @@ function FoundationCatalog() {
                 />
               }
             >
-              <div className="flex flex-col gap-4 text-[13px] leading-5 text-ink-2">
+              <div className="flex flex-col gap-4 text-sm leading-5 text-ink-2">
                 <p>The shell rendered immediately. Sessions, quota, and activity filled independently.</p>
                 <p>Only the runtime adapter reads the desktop bridge. This surface receives serializable state and emits intents.</p>
-                <div className="border-y border-border py-3 font-mono text-[11px] text-ink-3">OFFLINE 18M · RERAMP REQUIRED</div>
+                <div className="border-y border-border py-3 text-xs font-medium text-ink-3">Offline 18m · reramp required</div>
                 <p>The worker should re-read current files and process state before continuing.</p>
               </div>
             </DetailPane>

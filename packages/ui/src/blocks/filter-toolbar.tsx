@@ -33,7 +33,7 @@ function FilterToolbar({
       {search ? <div className="w-full max-w-72 min-w-40 max-[680px]:max-w-none">{search}</div> : null}
       {filters ? <div className="flex min-w-0 items-center gap-1.5">{filters}</div> : null}
       {resultCount != null ? (
-        <span className="ml-1 whitespace-nowrap font-mono text-[11px] tabular-nums text-ink-3" aria-live="polite">
+        <span className="ml-1 whitespace-nowrap text-xs tabular-nums text-ink-3" aria-live="polite">
           {resultCount} {resultCount === 1 && resultLabel.endsWith("s") ? resultLabel.slice(0, -1) : resultLabel}
         </span>
       ) : null}

@@ -88,7 +88,7 @@ function DialogDescription({
   className,
   ...props
 }: DialogPrimitive.Description.Props) {
-  return <DialogPrimitive.Description className={cn("text-[13px] text-ink-3", className)} {...props} />
+  return <DialogPrimitive.Description className={cn("text-sm text-ink-3", className)} {...props} />
 }
 
 export {

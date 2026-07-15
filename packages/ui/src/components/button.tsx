@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@humanctl/ui/lib/cn"
 
 const buttonVariants = cva(
-  "group/button relative inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap font-sans text-[13px] font-medium outline-none transition-[color,background-color,box-shadow,transform] duration-[var(--duration-color)] ease-[var(--ease-enter)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 active:not-aria-[haspopup]:translate-y-px [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
+  "group/button relative inline-flex shrink-0 select-none items-center justify-center gap-1.5 whitespace-nowrap font-sans text-sm font-medium outline-none transition-[color,background-color,box-shadow,transform] duration-[var(--duration-color)] ease-[var(--ease-enter)] focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 active:not-aria-[haspopup]:translate-y-px [&_svg]:pointer-events-none [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {

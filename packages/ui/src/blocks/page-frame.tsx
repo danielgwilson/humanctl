@@ -31,7 +31,7 @@ function PageTitle({ className, ...props }: ComponentProps<"h1">) {
 }
 
 function PageDescription({ className, ...props }: ComponentProps<"p">) {
-  return <p className={cn("mt-0.5 truncate text-[13px] leading-5 text-ink-3", className)} {...props} />
+  return <p className={cn("mt-0.5 truncate text-sm leading-5 text-ink-3", className)} {...props} />
 }
 
 function PageActions({ className, ...props }: ComponentProps<"div">) {

@@ -1,82 +1,128 @@
-import type { ComponentProps, ReactNode } from "react"
+import type { CSSProperties, ComponentProps, ReactNode } from "react"
 
+import {
+  Sidebar,
+  SidebarInset,
+  SidebarProvider,
+  SidebarRail,
+  useSidebar,
+} from "@humanctl/ui/components/sidebar"
 import { cn } from "@humanctl/ui/lib/cn"
 
-type AppShellProps = ComponentProps<"div"> & {
-  navigation?: ReactNode
+type AppShellProps = Omit<ComponentProps<"div">, "onChange"> & {
+  navigation: ReactNode
+  navigationOpen: boolean
+  onNavigationOpenChange: (open: boolean) => void
+  mobileNavigationOpen?: boolean
+  onMobileNavigationOpenChange?: (open: boolean) => void
+  navigationBreakpoint?: number
   topbar?: ReactNode
   detail?: ReactNode
+  assistant?: ReactNode
   statusbar?: ReactNode
+  overlays?: ReactNode
+}
+
+type AppStageProps = Pick<AppShellProps, "topbar" | "detail" | "statusbar" | "children">
+
+function AppStage({ topbar, detail, statusbar, children }: AppStageProps) {
+  const { isMobile, open } = useSidebar()
+
+  return (
+    <SidebarInset
+      data-slot="app-stage"
+      aria-label="Humanctl workspace"
+      className="h-dvh min-h-0 min-w-0 overflow-hidden"
+    >
+      <div data-slot="app-upper" className="flex min-h-0 min-w-0 flex-1">
+        <div data-slot="app-workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
+          {topbar ? (
+            <header
+              data-slot="app-topbar"
+              className={cn(
+                "flex h-[var(--chrome)] shrink-0 items-center border-b border-border bg-background px-3",
+                (isMobile || !open) && "pl-[var(--traffic-light-inset)]",
+              )}
+            >
+              {topbar}
+            </header>
+          ) : null}
+          <div data-slot="app-main" className="min-h-0 min-w-0 flex-1 overflow-hidden">
+            {children}
+          </div>
+        </div>
+        {detail ? (
+          <aside
+            data-slot="app-detail"
+            aria-label="Selected task detail"
+            className="min-h-0 w-[var(--detail)] shrink-0 border-l border-border bg-background"
+          >
+            {detail}
+          </aside>
+        ) : null}
+      </div>
+      {statusbar ? (
+        <footer
+          data-slot="app-statusbar"
+          aria-label="Fleet status"
+          className="flex h-[var(--status-band)] shrink-0 items-center border-t border-border bg-sidebar px-3"
+        >
+          {statusbar}
+        </footer>
+      ) : null}
+    </SidebarInset>
+  )
 }
 
 function AppShell({
   className,
   navigation,
+  navigationOpen,
+  onNavigationOpenChange,
+  mobileNavigationOpen,
+  onMobileNavigationOpenChange,
+  navigationBreakpoint = 864,
   topbar,
   detail,
+  assistant,
   statusbar,
+  overlays,
   children,
+  style,
   ...props
 }: AppShellProps) {
   return (
-    <div
-      data-slot="app-shell"
-      className={cn(
-        "grid h-dvh min-h-0 w-full overflow-hidden bg-background text-ink max-[960px]:grid-cols-[minmax(0,1fr)]",
-        navigation
-          ? "grid-cols-[var(--rail)_minmax(0,1fr)]"
-          : "grid-cols-[minmax(0,1fr)]",
-        className,
-      )}
+    <SidebarProvider
+      open={navigationOpen}
+      onOpenChange={onNavigationOpenChange}
+      mobileOpen={mobileNavigationOpen}
+      onMobileOpenChange={onMobileNavigationOpenChange}
+      mobileBreakpoint={navigationBreakpoint}
+      className={cn("h-dvh min-h-0 overflow-hidden bg-background text-ink", className)}
+      style={style}
       {...props}
     >
-      {navigation ? (
-        <nav
-          data-slot="app-navigation"
-          aria-label="Primary"
-          className="min-h-0 border-r border-border bg-surface pt-[var(--chrome)] max-[960px]:hidden"
+      <Sidebar side="left" collapsible="offcanvas">
+        {navigation}
+        <SidebarRail />
+      </Sidebar>
+      <AppStage topbar={topbar} detail={detail} statusbar={statusbar}>
+        {children}
+      </AppStage>
+      {assistant ? (
+        <Sidebar
+          side="right"
+          collapsible="none"
+          data-slot="app-assistant"
+          aria-label="Chief of staff"
+          className="border-l border-sidebar-border"
+          style={{ "--sidebar-width": "var(--assistant-rail)" } as CSSProperties}
         >
-          {navigation}
-        </nav>
+          {assistant}
+        </Sidebar>
       ) : null}
-      <div data-slot="app-stage" className="flex min-h-0 min-w-0 flex-col">
-        <div data-slot="app-upper" className="flex min-h-0 min-w-0 flex-1">
-          <div data-slot="app-workspace" className="flex min-h-0 min-w-0 flex-1 flex-col">
-            {topbar ? (
-              <header
-                data-slot="app-topbar"
-                className={cn(
-                  "flex h-[var(--chrome)] shrink-0 items-center border-b border-border bg-background px-3 max-[960px]:pl-[var(--traffic-light-inset)]",
-                  !navigation && "pl-[var(--traffic-light-inset)]",
-                )}
-              >
-                {topbar}
-              </header>
-            ) : null}
-            <main data-slot="app-main" className="min-h-0 min-w-0 flex-1 overflow-hidden">
-              {children}
-            </main>
-          </div>
-          {detail ? (
-            <aside
-              data-slot="app-detail"
-              className="min-h-0 w-[var(--detail)] shrink-0 border-l border-border bg-background max-[1040px]:hidden"
-            >
-              {detail}
-            </aside>
-          ) : null}
-        </div>
-        {statusbar ? (
-          <footer
-            data-slot="app-statusbar"
-            aria-label="Fleet status"
-            className="flex h-[var(--status-band)] shrink-0 items-center border-t border-border bg-surface px-3"
-          >
-            {statusbar}
-          </footer>
-        ) : null}
-      </div>
-    </div>
+      {overlays}
+    </SidebarProvider>
   )
 }
 

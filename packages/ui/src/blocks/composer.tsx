@@ -67,7 +67,7 @@ function Composer({
         />
         <InputGroupAddon align="block-end" className="min-h-[var(--control-sm)] justify-start gap-1 px-2 pt-1 pb-1.5">
           {actions}
-          {hint ? <span className="ml-1 truncate font-mono text-[11px] text-ink-3 max-[560px]:hidden">{hint}</span> : null}
+          {hint ? <span className="ml-1 truncate text-xs text-ink-3 max-[560px]:hidden">{hint}</span> : null}
           <Button type="submit" variant="primary" size="sm" disabled={!canSubmit} className="ml-auto">
             {submitting ? <Spinner data-icon="inline-start" /> : <ArrowUpIcon data-icon="inline-start" />}
             {submitLabel}

@@ -51,20 +51,19 @@ modify it.
 
 ## Typography
 
-Space Grotesk is the primary face. It covers navigation, titles, controls, list rows,
-messages, detail content, empty states, and toasts.
+Geist Variable is the primary face. It covers navigation, titles, controls,
+list rows, messages, detail content, empty states, and toasts.
 
-JetBrains Mono is limited to:
+The system mono stack is limited to:
 
 - paths and repository identifiers
 - session IDs
 - timestamps and durations
-- token, cost, quota, and context numbers
-- keyboard hints
-- compact machine metadata
+- raw payloads and code-like machine metadata
 
-The default interface text is 14px at weight 500. Compact labels and metadata
-may use 11px or 12px. Titles may use weight 600. Weight 700 and italic are not
+Numeric telemetry and keyboard hints use tabular figures without becoming mono
+by default. The default interface text is 14px at weight 400. Controls and
+labels use weight 500. Titles may use weight 600. Weight 700 and italic are not
 part of the product system.
 
 Both fonts are bundled through the UI package. The desktop renderer makes no
@@ -78,14 +77,15 @@ The system uses a 4px spacing grid.
 |---|---:|---|
 | `--control-sm` | 28px | compact buttons, filters, nav actions |
 | `--control` | 32px | inputs and primary actions |
-| `--chrome` | 44px | top chrome and native traffic-light band |
+| `--chrome` | 48px | top chrome and native traffic-light band |
 | `--toolbar` | 40px | page toolbar band |
 | `--column-header` | 32px | list and table headers |
 | `--status-band` | 32px | global status band |
 | `--row` | 36px | single-line operator row |
 | `--row-decision` | 56px | row requiring a second content line |
-| `--row-task` | 80px | three-line Inbox and Sessions row |
-| `--rail` | 256px | desktop navigation rail |
+| `--row-task` | 52px | compact Inbox and Sessions row |
+| `--rail` | 275px | desktop navigation rail |
+| `--assistant-rail` | 360px | desktop chief-of-staff rail |
 | `--split-list` | 340px | list pane in a split view |
 | `--detail` | 320px | detail side rail |
 | `--palette` | 672px | command palette maximum width |

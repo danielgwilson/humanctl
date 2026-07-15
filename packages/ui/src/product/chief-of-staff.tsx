@@ -1,7 +1,9 @@
 import { useState } from "react"
+import { XIcon } from "lucide-react"
 
 import { Composer } from "@humanctl/ui/blocks/composer"
 import { ConversationMarker, ConversationMessage } from "@humanctl/ui/blocks/conversation"
+import { Button } from "@humanctl/ui/components/button"
 import {
   MessageScroller,
   MessageScrollerButton,
@@ -10,13 +12,16 @@ import {
   MessageScrollerProvider,
   MessageScrollerViewport,
 } from "@humanctl/ui/components/message-scroller"
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@humanctl/ui/components/sheet"
 import { Spinner } from "@humanctl/ui/components/spinner"
 
 import type { HumanctlApplicationProps } from "./contracts"
 import { formatTime, operationPending } from "./helpers"
 
-function ChiefOfStaff({ model, dispatch }: Pick<HumanctlApplicationProps, "model" | "dispatch">) {
+function ChiefOfStaff({
+  model,
+  dispatch,
+  showCloseButton = true,
+}: Pick<HumanctlApplicationProps, "model" | "dispatch"> & { showCloseButton?: boolean }) {
   const appState = model.resources.appState.data
   const history = model.resources.atlas.data
   const [question, setQuestion] = useState("")
@@ -37,19 +42,30 @@ function ChiefOfStaff({ model, dispatch }: Pick<HumanctlApplicationProps, "model
   }
 
   return (
-    <Sheet open={appState.rightRailOpen} onOpenChange={(open) => { void dispatch({ type: "app.patch", patch: { rightRailOpen: open } }) }}>
-      <SheetContent className="w-[min(26rem,92vw)]" side="right">
-        <SheetHeader>
-          <SheetTitle>Chief of staff</SheetTitle>
-          <SheetDescription>Ask about current fleet state, blockers, and what needs your attention.</SheetDescription>
-        </SheetHeader>
-        <SheetBody className="flex min-h-0 flex-col gap-0 p-0">
+    <section className="flex h-full min-h-0 flex-col bg-sidebar" aria-label="Chief of staff">
+      <header className="flex h-[var(--chrome)] shrink-0 items-center gap-2 border-b border-sidebar-border px-3">
+        <div className="min-w-0 flex-1">
+          <h2 className="m-0 truncate text-sm font-semibold text-sidebar-foreground">Chief of staff</h2>
+          <p className="sr-only">Ask about current fleet state, blockers, and what needs your attention.</p>
+        </div>
+        {showCloseButton ? (
+          <Button
+            aria-label="Close chief of staff"
+            size="icon-sm"
+            variant="ghost"
+            onClick={() => { void dispatch({ type: "app.patch", patch: { rightRailOpen: false } }) }}
+          >
+            <XIcon />
+          </Button>
+        ) : null}
+      </header>
+      <div className="flex min-h-0 flex-1 flex-col gap-0">
           <MessageScrollerProvider autoScroll defaultScrollPosition="last-anchor">
             <MessageScroller className="min-h-0 flex-1">
               <MessageScrollerViewport aria-label="Chief of staff conversation">
                 <MessageScrollerContent className="gap-0">
                   {history.length === 0 && !asking ? (
-                    <MessageScrollerItem messageId="chief-of-staff-empty" className="border-b border-border px-4 py-6 text-[13px] leading-5 text-ink-3">
+                    <MessageScrollerItem messageId="chief-of-staff-empty" className="typeset typeset-chat border-b border-border px-4 py-6 text-ink-3">
                       Try “what needs me right now?” or “which task is most likely to be stale?” Answers are advisory and grounded in the current local fleet snapshot.
                     </MessageScrollerItem>
                   ) : null}
@@ -69,11 +85,10 @@ function ChiefOfStaff({ model, dispatch }: Pick<HumanctlApplicationProps, "model
           </MessageScrollerProvider>
           <div className="shrink-0 border-t border-border p-3">
             <Composer value={question} onValueChange={setQuestion} onSubmit={() => { void ask() }} placeholder="Ask your chief of staff" submitLabel="Ask" submitting={asking} disabled={asking} />
-            {askFailure || operationError ? <p className="mt-2 text-[12px] leading-5 text-block">{askFailure || operationError}</p> : null}
+            {askFailure || operationError ? <p className="mt-2 text-sm leading-5 text-block">{askFailure || operationError}</p> : null}
           </div>
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
+      </div>
+    </section>
   )
 }
 

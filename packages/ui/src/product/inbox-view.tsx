@@ -82,13 +82,13 @@ function InboxVirtualRow({
       title={threadTitle(thread, session)}
       summary={threadPreview(thread)}
       metadata={session ? sessionMeta(session) : `${harnessLabel(thread.harness)} · ${formatTime(thread.lastTs)}`}
-      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft font-mono text-[11px]">?</span>}
+      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft text-xs">?</span>}
       status={session ? <SessionStatus state={session.state} /> : undefined}
       trailing={
         <span className="flex items-center gap-2">
           {pinned ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
           {unread ? <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" /> : null}
-          <span className="font-mono text-[11px] text-ink-3">{formatTime(thread.lastTs)}</span>
+          <span className="text-xs tabular-nums text-ink-3">{formatTime(thread.lastTs)}</span>
         </span>
       }
       onClick={() => context.onSelect(thread)}

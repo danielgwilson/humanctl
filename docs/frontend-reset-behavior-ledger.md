@@ -68,9 +68,9 @@ active refresh without replacing the resource data.
 
 | ID | Required behavior | Acceptance proof |
 |---|---|---|
-| STATE-01 | Default state is Inbox, dark theme, navigation closed, chief-of-staff overlay closed, no pins, and no read markers. | Cold-state fixture. |
+| STATE-01 | Default state is Inbox, dark theme, navigation open, chief-of-staff rail closed, no pins, and no read markers. | Cold-state fixture. |
 | STATE-02 | Theme supports light, dark, and system. System follows the OS while selected. | Theme fixture plus media-query test. |
-| STATE-03 | View, navigation state, overlay state, pins, theme, summarizer, selected session, budget, and read markers hydrate from `app.state`. | Hydration test with a full state fixture. |
+| STATE-03 | View, navigation state, right-rail state, pins, theme, summarizer, selected session, budget, and read markers hydrate from `app.state`. A versioned shell-only cache mirrors view, theme, and rail state for synchronous first paint; durable `app.state` remains authoritative and reconciles it. | Hydration and first-paint tests with a full state fixture. |
 | STATE-04 | A state intent updates optimistically, persists through `app.set-state`, and merges later `state:changed` events without dropping unrelated keys. | Runtime-adapter round-trip test. |
 | STATE-05 | Search, filters, sort, focus, hover, draft text, selection within a list, and scroll position are renderer ephemera. They do not become commands. | Command-registry audit. |
 
@@ -79,10 +79,10 @@ active refresh without replacing the resource data.
 | ID | Required behavior | Acceptance proof |
 |---|---|---|
 | NAV-01 | Inbox, Metrics, Fleet, and Sessions remain routes 1, 2, 3, and 4. Settings remains routable from the settings entry and command palette. | Keyboard and route tests. |
-| NAV-02 | Bare route keys and `A` do nothing while an input, textarea, or editable region has focus. | Keyboard test in every composer and search field. |
+| NAV-02 | Bare route keys do nothing while an input, textarea, or editable region has focus. | Keyboard test in every composer and search field. |
 | NAV-03 | Command or Control plus K opens the command palette from anywhere, including a focused input. Escape closes it and returns focus. | Keyboard and focus-return test. |
-| NAV-04 | Command or Control plus backslash toggles navigation. The explicit navigation control provides the same action. | Keyboard and pointer test. |
-| NAV-05 | `A` toggles the chief-of-staff overlay when focus is not in an editor. | Keyboard and focus-trap test. |
+| NAV-04 | Command or Control plus B toggles the left navigation rail. The explicit Sidebar trigger provides the same action. | Exact-modifier keyboard and pointer test. |
+| NAV-05 | Command or Control plus Option or Alt plus B toggles the chief-of-staff right rail. At compact widths the same state controls a Sheet. | Exact-modifier keyboard, docked-rail, and Sheet focus-return tests. |
 | NAV-06 | Opening a session from any route produces one detail interface. Back returns to the originating route. | Route-origin matrix. |
 | NAV-07 | The command palette searches views, bounded recent sessions, and actions without starting a second fetch or timer. | Palette fixture with more than 150 sessions. |
 | NAV-08 | Palette actions include navigate, open session, mark all read, cycle theme, toggle navigation, and toggle chief-of-staff. | Palette action test. |

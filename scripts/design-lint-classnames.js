@@ -24,11 +24,6 @@ const RULES = [
     example: 'bg-accent',
   },
   {
-    label: 'retired sidebar namespace',
-    pattern: /\b(?:bg|text|border|ring)-sidebar(?:-[a-z0-9-]+)?\b/,
-    example: 'text-sidebar-foreground',
-  },
-  {
     label: 'retired named shadow utility',
     pattern: /\bshadow-(?:xs|sm|md|lg|xl|2xl)\b/,
     example: 'shadow-lg',

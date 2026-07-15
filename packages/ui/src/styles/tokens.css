@@ -49,8 +49,9 @@
     0 8px 24px -8px var(--shade-2),
     0 20px 64px -12px var(--shade-3);
 
-  --font-sans-stack: "Space Grotesk", sans-serif;
-  --font-mono-stack: "JetBrains Mono", ui-monospace, Menlo, monospace;
+  --font-sans-stack: "Geist Variable", sans-serif;
+  --font-mono-stack: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  --font-heading: var(--font-sans-stack);
 
   --radius-1: 6px;
   --radius-2: 8px;
@@ -59,14 +60,15 @@
   --radius: var(--radius-2);
   --control-sm: 28px;
   --control: 32px;
-  --chrome: 44px;
+  --chrome: 48px;
   --toolbar: 40px;
   --column-header: 32px;
   --status-band: 32px;
   --row: 36px;
   --row-decision: 56px;
-  --row-task: 80px;
-  --rail: 256px;
+  --row-task: 52px;
+  --rail: 275px;
+  --assistant-rail: 360px;
   --split-list: 340px;
   --detail: 320px;
   --palette: 672px;
@@ -74,6 +76,7 @@
   --traffic-light-inset: 76px;
 
   --duration-color: 120ms;
+  --duration-sidebar: 140ms;
   --duration-overlay-enter: 180ms;
   --duration-overlay-exit: 120ms;
   --ease-enter: cubic-bezier(0.2, 0, 0, 1);
@@ -98,6 +101,14 @@
   --destructive: var(--block-solid);
   --border: var(--hairline);
   --input: var(--hairline);
+  --sidebar: var(--surface-1);
+  --sidebar-foreground: var(--ink);
+  --sidebar-primary: var(--accent-solid);
+  --sidebar-primary-foreground: var(--on-solid);
+  --sidebar-accent: var(--overlay-hover);
+  --sidebar-accent-foreground: var(--ink);
+  --sidebar-border: var(--hairline);
+  --sidebar-ring: var(--ring);
 }
 
 .light {
@@ -171,6 +182,14 @@
   --color-destructive-foreground: var(--on-solid);
   --color-border: var(--hairline);
   --color-ring: var(--accent-contrast);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
   --color-work: var(--work-contrast);
   --color-need: var(--need-contrast);
   --color-block: var(--block-contrast);

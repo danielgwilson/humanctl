@@ -23,7 +23,7 @@
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
 // Its compatibility surface remains setTheme, openDetail, setChiefOfStaff,
 // and setKitchenSink.
-// The setKitchenSink key now opens the product catalog. 16 PNGs
+// The setKitchenSink key now opens the product catalog. 22 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -262,6 +262,115 @@ async function settle(cdp) {
   await new Promise((r) => setTimeout(r, SETTLE_EXTRA_MS));
 }
 
+function assert(condition, message) {
+  if (!condition) throw new Error(`foundation assertion failed: ${message}`);
+}
+
+async function dispatchKeyChord(cdp, { code, key, modifiers }) {
+  const keyCode = key.toUpperCase().charCodeAt(0);
+  const base = {
+    code,
+    key,
+    modifiers,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  };
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+
+async function shellGeometry(cdp) {
+  return evalJS(cdp, `(() => {
+    const rect = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const value = node.getBoundingClientRect();
+      return { x: value.x, y: value.y, width: value.width, height: value.height };
+    };
+    return {
+      activeTag: document.activeElement?.tagName || null,
+      focusVisible: document.querySelector(':focus-visible')?.tagName || null,
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      geistLoaded: document.fonts.check('400 14px "Geist Variable"'),
+      leftGap: rect('[data-slot="sidebar-gap"]'),
+      rightRail: rect('[data-slot="app-assistant"]'),
+      row: rect('[data-slot="list-row"]'),
+      mobileSidebar: rect('[data-sidebar="sidebar"][data-mobile="true"]'),
+      chief: rect('section[aria-label="Chief of staff"]'),
+      fit: {
+        width: innerWidth,
+        height: innerHeight,
+        scrollX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        scrollY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      },
+    };
+  })()`);
+}
+
+async function assertFoundationBehavior(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('inbox'); window.__humanctlPerf.setChiefOfStaff(false); true`);
+  await settle(cdp);
+  const initial = await shellGeometry(cdp);
+  assert(initial.activeTag === 'BODY', `launch focus owner should be BODY, received ${initial.activeTag}`);
+  assert(initial.focusVisible === null, `launch should have no :focus-visible artifact, received ${initial.focusVisible}`);
+  assert(initial.bodyFont.includes('Geist Variable'), `body should use Geist Variable, received ${initial.bodyFont}`);
+  assert(initial.geistLoaded, 'Geist Variable should be loaded before capture');
+  assert(Math.abs((initial.leftGap?.width || 0) - 275) < 1, `left rail should be 275px, received ${initial.leftGap?.width}`);
+  assert(Math.abs((initial.row?.height || 0) - 52) < 1, `task rows should be 52px, received ${initial.row?.height}`);
+  assert(!initial.fit.scrollX && !initial.fit.scrollY, 'desktop shell should not scroll at the document root');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const leftClosed = await shellGeometry(cdp);
+  assert((leftClosed.leftGap?.width || 0) < 1, `Command+B should close only the left rail, received ${leftClosed.leftGap?.width}`);
+  assert(leftClosed.rightRail === null, 'Command+B must not open the right rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const leftReopened = await shellGeometry(cdp);
+  assert(Math.abs((leftReopened.leftGap?.width || 0) - 275) < 1, 'second Command+B should restore the left rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  const rightOpen = await shellGeometry(cdp);
+  assert(Math.abs((rightOpen.rightRail?.width || 0) - 360) < 1, `Command+Option+B should open a 360px right rail, received ${rightOpen.rightRail?.width}`);
+  assert(Math.abs((rightOpen.leftGap?.width || 0) - 275) < 1, 'Command+Option+B must not toggle the left rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  assert((await shellGeometry(cdp)).rightRail === null, 'second Command+Option+B should close the right rail');
+
+  await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, width: 760, height: 500 });
+  await settle(cdp);
+  const compact = await shellGeometry(cdp);
+  assert(!compact.fit.scrollX && !compact.fit.scrollY, 'minimum desktop viewport should not scroll at the document root');
+  assert((compact.leftGap?.width || 0) < 1, 'left rail should use compact Sheet behavior at 760px');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const compactLeftOpen = await shellGeometry(cdp);
+  assert(
+    Math.abs((compactLeftOpen.mobileSidebar?.width || 0) - 275) < 1,
+    `Command+B should open a 275px left Sheet at compact width, received ${compactLeftOpen.mobileSidebar?.width}`,
+  );
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  const compactRightOpen = await shellGeometry(cdp);
+  assert(
+    Math.abs((compactRightOpen.chief?.width || 0) - 360) < 1,
+    `Command+Option+B should open a 360px right Sheet at compact width, received ${compactRightOpen.chief?.width}`,
+  );
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+
+  await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+  await settle(cdp);
+  log('foundation assertions passed: font, focus, 52px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
+}
+
 async function capture(cdp, outDir, filename) {
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const outPath = path.join(outDir, filename);
@@ -324,6 +433,7 @@ async function main() {
     if (!booted) throw new Error('renderer never exposed the required screenshot hooks; did the product perf hook change shape?');
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+    await assertFoundationBehavior(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);
@@ -347,6 +457,31 @@ async function main() {
       await evalJS(cdp, `window.__humanctlPerf.setChiefOfStaff(false); true`);
       await settle(cdp);
 
+      // Reset to the neutral list state before capturing shell geometry so the
+      // proof images isolate the rail behavior from the prior detail fixture.
+      await evalJS(cdp, `window.__humanctlPerf.setView('inbox'); true`);
+      await settle(cdp);
+
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await capture(cdp, outDir, `sidebar-collapsed-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+
+      await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, width: 760, height: 840 });
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await capture(cdp, outDir, `sidebar-sheet-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+      await settle(cdp);
+      await capture(cdp, outDir, `chief-of-staff-sheet-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+      await settle(cdp);
+      await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+      await settle(cdp);
+
       // setKitchenSink is the stable perf-hook key for the package-owned
       // product catalog. Keep the stable screenshot filename for downstream
       // comparisons while the captured surface is the new catalog.
@@ -356,7 +491,7 @@ async function main() {
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(false); true`);
     }
 
-    log(`done: 16 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: 22 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

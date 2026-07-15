@@ -26,7 +26,7 @@ export function HarnessMark({ harness }: Pick<HumanctlSession, "harness">) {
       aria-label={codex ? "Codex" : "Claude Code"}
       title={codex ? "Codex" : "Claude Code"}
       className={cn(
-        "grid size-6 shrink-0 place-items-center rounded-[var(--radius-1)] font-mono text-[10px] font-medium",
+        "grid size-6 shrink-0 place-items-center rounded-[var(--radius-1)] text-xs font-medium",
         codex ? "bg-accent-soft text-primary" : "bg-idle-soft text-ink-2",
       )}
     >
@@ -69,7 +69,7 @@ export function EmptyState({
       <EmptyHeader>
         <EmptyMedia variant="icon"><InboxIcon /></EmptyMedia>
         <EmptyTitle>{title}</EmptyTitle>
-        <EmptyDescription className="text-[13px] leading-5 text-ink-3">{description}</EmptyDescription>
+        <EmptyDescription className="text-sm leading-5 text-ink-3">{description}</EmptyDescription>
       </EmptyHeader>
       {action ? <EmptyContent>{action}</EmptyContent> : null}
     </Empty>
@@ -80,7 +80,7 @@ export function RowSkeletons({ count = 6 }: { count?: number }) {
   return (
     <div aria-label="Loading" role="status" className="border-t border-border">
       {Array.from({ length: count }, (_, index) => (
-        <div key={index} className="grid min-h-[var(--row-task)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-4 py-2.5">
+        <div key={index} className="grid h-[var(--row-task)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 border-b border-border px-3 py-1.5">
           <Skeleton className="size-6" />
           <div className="flex flex-col gap-2">
             <Skeleton className="h-3.5 w-44 max-w-full" />
@@ -109,9 +109,9 @@ export function PaneHeading({
       <div className="min-w-0 flex-1">
         <div className="flex items-center gap-2">
           <h1 className="truncate text-[16px] leading-5 font-semibold text-ink">{title}</h1>
-          {count != null ? <span className="font-mono text-[11px] tabular-nums text-ink-3">{count}</span> : null}
+          {count != null ? <span className="text-xs tabular-nums text-ink-3">{count}</span> : null}
         </div>
-        {description ? <p className="mt-0.5 truncate text-[13px] text-ink-3">{description}</p> : null}
+        {description ? <p className="mt-0.5 truncate text-sm text-ink-3">{description}</p> : null}
       </div>
       {actions ? <div className="flex shrink-0 items-center gap-1.5">{actions}</div> : null}
     </div>
@@ -130,7 +130,7 @@ export function DefinitionRow({
   className?: string
 }) {
   return (
-    <div className={cn("grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-[13px]", className)}>
+    <div className={cn("grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-sm", className)}>
       <div className="text-ink-3">{label}</div>
       <div className="min-w-0 text-ink">{children || value}</div>
     </div>
@@ -140,7 +140,7 @@ export function DefinitionRow({
 export function SectionHeading({ children, trailing }: { children: ReactNode; trailing?: ReactNode }) {
   return (
     <div className="flex h-9 items-center gap-3 border-b border-border bg-sunken px-4">
-      <h2 className="font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3">{children}</h2>
+      <h2 className="text-xs font-medium text-ink-3">{children}</h2>
       {trailing ? <div className="ml-auto">{trailing}</div> : null}
     </div>
   )
@@ -149,7 +149,7 @@ export function SectionHeading({ children, trailing }: { children: ReactNode; tr
 export function KeyboardKey({ className, ...props }: ComponentProps<"kbd">) {
   return (
     <kbd
-      className={cn("inline-flex min-w-5 items-center justify-center rounded-[4px] bg-sunken px-1.5 font-mono text-[10px] leading-5 text-ink-3 shadow-[var(--elev-ring)]", className)}
+      className={cn("inline-flex min-w-5 items-center justify-center rounded-[4px] bg-sunken px-1.5 font-mono text-xs leading-5 text-ink-3 shadow-[var(--elev-ring)]", className)}
       {...props}
     />
   )

@@ -20,17 +20,22 @@ not recreate controls, geometry, loading states, or product blocks.
 
 ## Geometry
 
-Controls are 28 or 32 pixels high. Single-line rows are 36 pixels high and
-decision rows are 56 pixels high. Top chrome is 44 pixels high; toolbars are
-40 pixels and the bottom status band is 32 pixels. The navigation rail is 256
-pixels wide and the detail rail is 320 pixels wide. Radius grows sublinearly
+Controls are 28 or 32 pixels high. Single-line rows are 36 pixels high,
+decision rows are 56 pixels high, and compact task rows are 52 pixels high.
+Top chrome is 48 pixels high; toolbars are 40 pixels and the bottom status band
+is 32 pixels. The navigation rail is 275 pixels wide, the chief-of-staff rail
+is 360 pixels wide, and the detail rail is 320 pixels wide. Radius grows sublinearly
 with object size.
 
 ## Registry workflow
 
 `registry.json` is the source manifest. Add a component only when a real
 viewport needs it. Every item must include its dependencies and source files.
-Run `npm run verify` after changing the manifest or package exports.
+`npm run registry:build` emits portable consumer aliases; `npm run verify`
+rejects package-local imports in generated items. A consumer imports
+`@/styles/app.css` once from its root stylesheet after installing the
+foundation. Publish every absolute Registry dependency URL before advertising
+a remote install command.
 
 The repo-local shadcn skill is installed under `.agents/skills/shadcn`. The
 project uses only public open-source Registry items and preserves their notices

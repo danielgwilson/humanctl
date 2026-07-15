@@ -36,9 +36,10 @@ The normative contracts are [DESIGN.md](../DESIGN.md),
 ledger is the acceptance checklist for behavior that survives renderer
 replacement.
 
-The package shell uses Space Grotesk, neutral structure, and blue for selection, focus,
+The package shell uses Geist Variable, neutral structure, and blue for focus,
 links, and the primary action. Controls are 28px or 32px high, top chrome is
-44px, and the navigation rail is 256px. Repeated content is a continuous field
+48px, the navigation rail is 275px, and the chief-of-staff rail is 360px.
+Repeated content is a continuous field
 of rows separated by hairline rules. There are no cards or in-flow shadows.
 Only floating overlays may cast a shadow.
 
@@ -56,7 +57,8 @@ Routes keep one visible owner per signal:
 - Settings is routable from the settings entry and command palette.
 - Session detail owns one session's conversation, pending asks, and actions.
 - The bottom status band owns the compact fleet and quota digest.
-- The chief-of-staff overlay owns its advisory conversation.
+- The chief-of-staff right rail owns its advisory conversation. It becomes a
+  Sheet only at compact widths.
 
 ## Inbox and Sessions
 

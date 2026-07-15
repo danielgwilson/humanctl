@@ -44,7 +44,7 @@ function MenuLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
   return (
     <MenuPrimitive.GroupLabel
       data-slot="menu-label"
-      className={cn("px-2 py-1 font-mono text-[11px] text-ink-3", className)}
+      className={cn("px-2 py-1 text-xs font-medium text-ink-3", className)}
       {...props}
     />
   )
@@ -59,7 +59,7 @@ function MenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
     <MenuPrimitive.Item
       data-slot="menu-item"
       className={cn(
-        "flex h-[var(--control-sm)] cursor-default select-none items-center gap-2 rounded-[var(--radius-1)] px-2 text-[13px] text-ink outline-none focus:bg-[var(--overlay-hover)] focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-overlay data-disabled:pointer-events-none data-disabled:opacity-45 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
+        "flex h-[var(--control-sm)] cursor-default select-none items-center gap-2 rounded-[var(--radius-1)] px-2 text-sm text-ink outline-none focus:bg-[var(--overlay-hover)] focus:ring-2 focus:ring-ring focus:ring-offset-2 focus:ring-offset-overlay data-disabled:pointer-events-none data-disabled:opacity-45 [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
         className,
       )}
       {...props}
@@ -81,7 +81,7 @@ function MenuShortcut({ className, ...props }: ComponentProps<"span">) {
   return (
     <span
       data-slot="menu-shortcut"
-      className={cn("ml-auto font-mono text-[11px] text-ink-3", className)}
+      className={cn("ml-auto text-xs text-ink-3", className)}
       {...props}
     />
   )

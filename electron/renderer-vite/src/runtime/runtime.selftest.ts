@@ -17,6 +17,12 @@ import type {
 } from './contracts';
 import { createFixtureAdapter } from './fixture-adapter';
 import { createHumanctlRuntime, FLEET_POLL_MS, type RuntimeClock } from './runtime';
+import {
+  readShellStateCache,
+  SHELL_STATE_CACHE_KEY,
+  writeShellStateCache,
+  type ShellStateStorage,
+} from './shell-state-cache';
 
 function assert(condition: unknown, message: string): asserts condition {
   if (!condition) throw new Error(message);
@@ -60,6 +66,22 @@ class FakeClock implements RuntimeClock {
     const id = handle as number;
     this.cleared.push(id);
     this.intervals.delete(id);
+  }
+}
+
+class MemoryStorage implements ShellStateStorage {
+  values = new Map<string, string>();
+  failReads = false;
+  failWrites = false;
+
+  getItem(key: string): string | null {
+    if (this.failReads) throw new Error('storage read blocked');
+    return this.values.get(key) ?? null;
+  }
+
+  setItem(key: string, value: string): void {
+    if (this.failWrites) throw new Error('storage write blocked');
+    this.values.set(key, value);
   }
 }
 
@@ -150,8 +172,11 @@ class FakeAdapter implements HumanctlAdapter {
     this.quotaDeferred.resolve(clone(result));
   }
   resolveState(state = DEFAULT_STATE): void {
+    this.resolveStateResult({ ok: true, state: clone(state) });
+  }
+  resolveStateResult(result: StateResult): void {
     this.initial.state = false;
-    this.stateDeferred.resolve({ ok: true, state: clone(state) });
+    this.stateDeferred.resolve(clone(result));
   }
 
   getStatus(): Promise<StatusResult> {
@@ -231,10 +256,14 @@ class FakeAdapter implements HumanctlAdapter {
   onSessionAppend(cb: (payload: SessionAppendPayload) => void): () => void { this.appendListeners.add(cb); return () => this.appendListeners.delete(cb); }
 
   emitSessionsChanged(): void { this.sessionListeners.forEach((listener) => listener()); }
+  emitState(state: AppState): void { this.stateListeners.forEach((listener) => listener(clone(state))); }
   emitAppend(payload: SessionAppendPayload): void { this.appendListeners.forEach((listener) => listener(payload)); }
 }
 
 async function run(): Promise<void> {
+  testShellStateCache();
+  await testShellStateFirstPaint();
+
   const adapter = new FakeAdapter();
   const clock = new FakeClock();
   const runtime = createHumanctlRuntime(adapter, { clock });
@@ -339,6 +368,151 @@ async function run(): Promise<void> {
   await testTimelineCap();
 
   console.log('runtime.selftest: ok');
+}
+
+function testShellStateCache(): void {
+  const storage = new MemoryStorage();
+  writeShellStateCache(storage, {
+    theme: 'light',
+    view: 'sessions',
+    navPinned: false,
+    rightRailOpen: true,
+  });
+  const serialized = storage.values.get(SHELL_STATE_CACHE_KEY);
+  assert(serialized, 'shell cache writes the versioned entry synchronously');
+  const parsed = JSON.parse(serialized) as { version?: number; state?: Record<string, unknown> };
+  equal(parsed.version, 1, 'shell cache schema version');
+  equal(
+    Object.keys(parsed.state || {}).sort().join(','),
+    'navPinned,rightRailOpen,theme,view',
+    'shell cache contains only first-paint shell fields',
+  );
+
+  const cached = readShellStateCache(storage);
+  equal(cached?.theme, 'light', 'valid cached theme restores');
+  equal(cached?.view, 'sessions', 'valid cached view restores');
+  equal(cached?.navPinned, false, 'valid cached left rail state restores');
+  equal(cached?.rightRailOpen, true, 'valid cached right rail state restores');
+
+  storage.values.set(SHELL_STATE_CACHE_KEY, '{malformed');
+  equal(readShellStateCache(storage), undefined, 'malformed shell cache is ignored');
+  storage.values.set(SHELL_STATE_CACHE_KEY, JSON.stringify({
+    version: 0,
+    state: { theme: 'light', view: 'sessions', navPinned: false, rightRailOpen: true },
+  }));
+  equal(readShellStateCache(storage), undefined, 'stale shell cache version is ignored');
+  storage.values.set(SHELL_STATE_CACHE_KEY, JSON.stringify({
+    version: 1,
+    state: {
+      theme: 'blue',
+      view: 'fleet',
+      navPinned: 'yes',
+      rightRailOpen: true,
+      pins: ['must-not-restore'],
+    },
+  }));
+  const sanitized = readShellStateCache(storage);
+  equal(sanitized?.theme, undefined, 'invalid cached theme is ignored');
+  equal(sanitized?.view, 'fleet', 'valid fields survive a partially malformed cache');
+  equal(sanitized?.navPinned, undefined, 'invalid cached rail state is ignored');
+  equal(sanitized?.rightRailOpen, true, 'valid cached right rail state survives');
+  assert(!('pins' in (sanitized || {})), 'non-shell cached fields never restore');
+
+  storage.failReads = true;
+  equal(readShellStateCache(storage), undefined, 'blocked storage read is ignored');
+  storage.failReads = false;
+  storage.failWrites = true;
+  writeShellStateCache(storage, {
+    theme: 'dark', view: 'inbox', navPinned: true, rightRailOpen: false,
+  });
+}
+
+async function testShellStateFirstPaint(): Promise<void> {
+  const adapter = new FakeAdapter();
+  const changes: Array<Pick<AppState, 'theme' | 'view' | 'navPinned' | 'rightRailOpen'>> = [];
+  const runtime = createHumanctlRuntime(adapter, {
+    clock: new FakeClock(),
+    initialShellState: {
+      theme: 'light',
+      view: 'settings',
+      navPinned: false,
+      rightRailOpen: true,
+    },
+    onShellStateChanged: (state) => changes.push(clone(state)),
+  });
+  const cold = runtime.getSnapshot().resources.appState;
+  equal(cold.status, 'loading', 'cached first-paint state still awaits durable hydration');
+  equal(cold.data.theme, 'light', 'cached theme is present before runtime start');
+  equal(cold.data.view, 'settings', 'cached view is present before runtime start');
+  equal(cold.data.navPinned, false, 'cached left rail is present before runtime start');
+  equal(cold.data.rightRailOpen, true, 'cached right rail is present before runtime start');
+  equal(cold.data.pins.length, 0, 'cache cannot populate durable non-shell state');
+
+  const release = runtime.start();
+  const patch = runtime.dispatch({ type: 'app.patch', patch: { rightRailOpen: false } });
+  equal(changes.at(-1)?.rightRailOpen, false, 'app.patch mirrors shell state before persistence settles');
+
+  adapter.resolveState(DEFAULT_STATE);
+  adapter.resolveSessions();
+  adapter.resolveCore();
+  adapter.resolveQuota();
+  await patch;
+  await settle();
+  const hydrated = runtime.getSnapshot().resources.appState;
+  equal(hydrated.status, 'ready', 'durable state hydration settles');
+  equal(hydrated.data.theme, 'dark', 'durable theme replaces cached first-paint theme');
+  equal(hydrated.data.view, 'metrics', 'durable view replaces cached first-paint view');
+  equal(hydrated.data.navPinned, true, 'durable left rail replaces cached first-paint state');
+  equal(hydrated.data.rightRailOpen, false, 'pre-hydration user patch survives reconciliation');
+  equal(changes.at(-1)?.theme, 'dark', 'durable reconciliation refreshes the shell mirror');
+
+  adapter.emitState({
+    ...DEFAULT_STATE,
+    theme: 'system',
+    view: 'sessions',
+    navPinned: false,
+    rightRailOpen: true,
+  });
+  equal(runtime.getSnapshot().resources.appState.data.theme, 'system', 'external durable state applies');
+  equal(changes.at(-1)?.view, 'sessions', 'external durable state refreshes the shell mirror');
+  equal(changes.at(-1)?.navPinned, false, 'external left rail state mirrors synchronously');
+  equal(changes.at(-1)?.rightRailOpen, true, 'external right rail state mirrors synchronously');
+  release();
+
+  const failedAdapter = new FakeAdapter();
+  const failedRuntime = createHumanctlRuntime(failedAdapter, {
+    clock: new FakeClock(),
+    initialShellState: {
+      theme: 'light',
+      view: 'settings',
+      navPinned: false,
+      rightRailOpen: true,
+    },
+  });
+  const releaseFailed = failedRuntime.start();
+  await settle();
+  equal(failedAdapter.calls.state, 1, 'failed durable hydration test has a pending state read');
+  failedAdapter.resolveStateResult({ ok: false, error: 'durable state unavailable' });
+  failedAdapter.resolveSessions();
+  failedAdapter.resolveCore();
+  failedAdapter.resolveQuota();
+  await settle();
+  const failedHydration = failedRuntime.getSnapshot().resources.appState;
+  equal(failedHydration.status, 'error', 'failed durable hydration reports an error');
+  equal(failedHydration.data.theme, 'light', 'failed durable hydration preserves cached theme');
+  equal(failedHydration.data.view, 'settings', 'failed durable hydration preserves cached view');
+  equal(failedHydration.data.navPinned, false, 'failed durable hydration preserves cached left rail');
+  equal(failedHydration.data.rightRailOpen, true, 'failed durable hydration preserves cached right rail');
+  releaseFailed();
+
+  const throwingCallbackRuntime = createHumanctlRuntime(new FakeAdapter(), {
+    onShellStateChanged: () => { throw new Error('cache unavailable'); },
+  });
+  const outcome = await throwingCallbackRuntime.dispatch({
+    type: 'app.patch',
+    patch: { navPinned: false },
+  });
+  assert(outcome.ok, 'a failed shell mirror cannot fail durable runtime dispatch');
 }
 
 async function testQuotaCoalescing(): Promise<void> {

@@ -65,7 +65,7 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
         <ScrollArea className="h-full">
           <div className="mx-auto max-w-4xl border-x border-border max-[900px]:border-x-0">
             <SectionHeading>Appearance</SectionHeading>
-            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-[13px]">
+            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-sm">
               <FieldTitle id="theme-setting">Theme</FieldTitle>
               <ToggleGroup
                 aria-labelledby="theme-setting"
@@ -80,10 +80,10 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
                 ))}
               </ToggleGroup>
             </Field>
-            <div className="px-4 py-3 text-[12px] leading-5 text-ink-3">System follows the operating system appearance and updates while Humanctl is open.</div>
+            <div className="px-4 py-3 text-sm leading-5 text-ink-3">System follows the operating system appearance and updates while Humanctl is open.</div>
 
             <SectionHeading>AI summary</SectionHeading>
-            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-[13px]">
+            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-sm">
               <FieldTitle id="summary-engine-setting">Engine</FieldTitle>
               <ToggleGroup
                 aria-labelledby="summary-engine-setting"
@@ -97,14 +97,14 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
                 <ToggleGroupItem value="codex">Codex</ToggleGroupItem>
               </ToggleGroup>
             </Field>
-            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-[13px]">
+            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-sm">
               <FieldLabel htmlFor="summary-budget">Daily budget</FieldLabel>
               <InputGroup className="max-w-60">
                 <InputGroupAddon><InputGroupText>$</InputGroupText></InputGroupAddon>
                 <InputGroupInput
                   id="summary-budget"
                   aria-label="Always-on summary daily budget in US dollars"
-                  className="font-mono tabular-nums"
+                  className="tabular-nums"
                   type="number"
                   min="0.1"
                   step="0.1"
@@ -116,22 +116,22 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
                 <InputGroupAddon align="inline-end"><Button size="sm" variant="ghost" onClick={() => { void commitBudget() }}>Apply</Button></InputGroupAddon>
               </InputGroup>
             </Field>
-            {budgetResource.status === "loading" && !budgetResource.data ? <div className="px-4 py-3 font-mono text-[11px] text-ink-3">Reading today&apos;s spend...</div> : null}
+            {budgetResource.status === "loading" && !budgetResource.data ? <div className="px-4 py-3 text-xs text-ink-3">Reading today&apos;s spend...</div> : null}
             {budgetResource.data ? (
               <div className="grid grid-cols-4 border-b border-border max-[700px]:grid-cols-2">
-                <div className="border-r border-border px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Spent today</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.spentUSD)}</div></div>
-                <div className="border-r border-border px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Limit</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.dailyBudgetUSD)}</div></div>
-                <div className="border-r border-border px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Remaining</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.remainingUSD)}</div></div>
-                <div className="px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Background summaries</div><div className={cn("mt-1 text-[13px] font-medium", budgetResource.data.paused ? "text-need" : "text-work")}>{budgetResource.data.paused ? "Paused" : "Running"}</div></div>
+                <div className="border-r border-border px-4 py-4"><div className="text-xs font-medium text-ink-3">Spent today</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.spentUSD)}</div></div>
+                <div className="border-r border-border px-4 py-4"><div className="text-xs font-medium text-ink-3">Limit</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.dailyBudgetUSD)}</div></div>
+                <div className="border-r border-border px-4 py-4"><div className="text-xs font-medium text-ink-3">Remaining</div><div className="mt-1 text-[18px] font-semibold tabular-nums">{formatMoney(budgetResource.data.remainingUSD)}</div></div>
+                <div className="px-4 py-4"><div className="text-xs font-medium text-ink-3">Background summaries</div><div className={cn("mt-1 text-sm font-medium", budgetResource.data.paused ? "text-need" : "text-work")}>{budgetResource.data.paused ? "Paused" : "Running"}</div></div>
               </div>
             ) : null}
-            <div className="px-4 py-3 text-[12px] leading-5 text-ink-3">The budget applies to background summaries. Manual summaries and session questions still require an explicit action.</div>
+            <div className="px-4 py-3 text-sm leading-5 text-ink-3">The budget applies to background summaries. Manual summaries and session questions still require an explicit action.</div>
 
             <SectionHeading>Data handling</SectionHeading>
             <DefinitionRow label="Fleet reads" value="Local files and local desktop bridge" />
             <DefinitionRow label="Session actions" value="Your installed harness and its existing authentication" />
             <DefinitionRow label="Preferences" value="Persisted locally" />
-            <div className="px-4 py-3 text-[12px] leading-5 text-ink-3">Reading tasks, inbox updates, transcripts, and quota does not send session content to a new service. Actions that ask or summarize a session run through the selected local harness.</div>
+            <div className="px-4 py-3 text-sm leading-5 text-ink-3">Reading tasks, inbox updates, transcripts, and quota does not send session content to a new service. Actions that ask or summarize a session run through the selected local harness.</div>
           </div>
         </ScrollArea>
       </PageBody>

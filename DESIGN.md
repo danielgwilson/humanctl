@@ -38,7 +38,7 @@ detailed owner, but it must not reproduce the detail.
 | Session conversation and pending asks | Session detail |
 | Global fleet and quota digest | Bottom status band |
 | Persisted preferences | Settings view |
-| Chief-of-staff conversation | Chief-of-staff overlay |
+| Chief-of-staff conversation | Chief-of-staff right rail |
 
 A new count, digest, status, or action requires naming its owner in the PR. If
 the same signal already exists on that screen, delete one of them.
@@ -57,10 +57,11 @@ assigning a harness its own interface color.
 
 - Neutral surfaces carry structure. Blue owns selection, focus, links, and the
   primary action.
-- Space Grotesk is the primary face. JetBrains Mono is limited to paths, IDs,
-  timestamps, numeric telemetry, and keyboard hints.
-- Controls are 28px or 32px high. Top chrome is 44px. The navigation rail is
-  256px.
+- Geist Variable is the interface face. The system mono stack is limited to
+  paths, IDs, raw payloads, and other machine-readable text. Numeric telemetry
+  uses tabular figures without becoming mono by default.
+- Controls are 28px or 32px high. Top chrome is 48px. The navigation rail is
+  275px and the chief-of-staff rail is 360px.
 - Lists are continuous flat fields separated by hairline rules. No cards.
 - In-flow content has no shadow. Only floating overlays may cast a shadow.
 - Each visible region has at most one filled primary action.
@@ -88,6 +89,8 @@ width; the detail block itself stays aligned to its pane.
   name, and at least a 28px pointer target.
 - Menus, popovers, sheets, dialogs, and the command palette handle focus entry,
   Escape, outside interaction, and focus return.
+- Command or Control plus B toggles the left rail. Command or Control plus
+  Option or Alt plus B toggles the right rail.
 - Hover-only disclosure is forbidden.
 - Live updates preserve focus, selection, draft text, and scroll position.
 - Normal text meets 4.5:1 contrast. Large text and essential UI marks meet

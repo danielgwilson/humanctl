@@ -4,7 +4,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@humanctl/ui/lib/cn"
 
 const toggleVariants = cva(
-  "inline-flex select-none items-center justify-center gap-1.5 rounded-[var(--radius-2)] font-sans text-[13px] text-ink-2 outline-none transition-[color,background-color,box-shadow] duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] hover:text-ink focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 data-[pressed]:bg-[var(--overlay-selected)] data-[pressed]:text-ink [&_svg]:size-3.5 [&_svg]:shrink-0",
+  "inline-flex select-none items-center justify-center gap-1.5 rounded-[var(--radius-2)] font-sans text-sm text-ink-2 outline-none transition-[color,background-color,box-shadow] duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] hover:text-ink focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:pointer-events-none disabled:opacity-45 data-[pressed]:bg-[var(--overlay-selected)] data-[pressed]:text-ink [&_svg]:size-3.5 [&_svg]:shrink-0",
   {
     variants: {
       variant: {

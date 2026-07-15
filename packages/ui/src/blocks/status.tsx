@@ -31,7 +31,7 @@ function StatusChip({ state, label = statusLabels[state], className, ...props }:
       data-slot="status-chip"
       data-state={state}
       className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-[var(--radius-1)] px-1.5 font-sans text-[11px] leading-none font-medium before:size-1.5 before:shrink-0 before:rounded-full",
+        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-[var(--radius-1)] px-1.5 font-sans text-xs leading-none font-medium before:size-1.5 before:shrink-0 before:rounded-full",
         statusClasses[state],
         className,
       )}

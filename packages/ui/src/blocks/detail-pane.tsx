@@ -44,9 +44,9 @@ function DetailPane({
     >
       <header className="flex min-h-[var(--row-decision)] shrink-0 items-center gap-2 border-b border-border px-4 py-2">
         <div className="flex min-w-0 flex-1 self-stretch flex-col justify-center">
-          {eyebrow ? <div className="truncate font-mono text-[11px] text-ink-3">{eyebrow}</div> : null}
+          {eyebrow ? <div className="truncate text-xs text-ink-3">{eyebrow}</div> : null}
           <h2 className="line-clamp-2 text-[15px] leading-5 font-semibold text-ink">{title}</h2>
-          {meta ? <div className="mt-0.5 truncate font-mono text-[11px] text-ink-3">{meta}</div> : null}
+          {meta ? <div className="mt-0.5 truncate text-xs text-ink-3">{meta}</div> : null}
         </div>
         {actions ? <div className="flex shrink-0 items-center gap-1">{actions}</div> : null}
         {onClose ? (

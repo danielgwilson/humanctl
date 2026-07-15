@@ -50,7 +50,7 @@ function CommandInput({ className, ...props }: ComponentProps<typeof CommandPrim
       <SearchIcon className="size-3.5 shrink-0 text-ink-3" />
       <CommandPrimitive.Input
         data-slot="command-input"
-        className={cn("h-full min-w-0 flex-1 bg-transparent text-[13px] text-ink outline-none placeholder:text-ink-3", className)}
+        className={cn("h-full min-w-0 flex-1 bg-transparent text-sm text-ink outline-none placeholder:text-ink-3", className)}
         {...props}
       />
     </div>
@@ -62,14 +62,14 @@ function CommandList({ className, ...props }: ComponentProps<typeof CommandPrimi
 }
 
 function CommandEmpty({ className, ...props }: ComponentProps<typeof CommandPrimitive.Empty>) {
-  return <CommandPrimitive.Empty className={cn("py-10 text-center text-[13px] text-ink-3", className)} {...props} />
+  return <CommandPrimitive.Empty className={cn("py-10 text-center text-sm text-ink-3", className)} {...props} />
 }
 
 function CommandGroup({ className, ...props }: ComponentProps<typeof CommandPrimitive.Group>) {
   return (
     <CommandPrimitive.Group
       className={cn(
-        "py-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1 **:[[cmdk-group-heading]]:font-mono **:[[cmdk-group-heading]]:text-[11px] **:[[cmdk-group-heading]]:text-ink-3",
+        "py-1 **:[[cmdk-group-heading]]:px-2 **:[[cmdk-group-heading]]:py-1 **:[[cmdk-group-heading]]:text-xs **:[[cmdk-group-heading]]:font-medium **:[[cmdk-group-heading]]:text-ink-3",
         className,
       )}
       {...props}
@@ -82,7 +82,7 @@ function CommandItem({ className, ...props }: ComponentProps<typeof CommandPrimi
     <CommandPrimitive.Item
       data-slot="command-item"
       className={cn(
-        "flex h-8 cursor-default select-none items-center gap-2 rounded-[var(--radius-1)] px-2 text-[13px] text-ink outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45 data-[selected=true]:bg-[var(--overlay-hover)] data-[selected=true]:ring-2 data-[selected=true]:ring-ring data-[selected=true]:ring-offset-2 data-[selected=true]:ring-offset-overlay [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
+        "flex h-8 cursor-default select-none items-center gap-2 rounded-[var(--radius-1)] px-2 text-sm text-ink outline-none data-[disabled=true]:pointer-events-none data-[disabled=true]:opacity-45 data-[selected=true]:bg-[var(--overlay-hover)] data-[selected=true]:ring-2 data-[selected=true]:ring-ring data-[selected=true]:ring-offset-2 data-[selected=true]:ring-offset-overlay [&_svg]:size-3.5 [&_svg]:shrink-0 [&_svg]:text-ink-3",
         className,
       )}
       {...props}
@@ -95,7 +95,7 @@ function CommandSeparator({ className, ...props }: ComponentProps<typeof Command
 }
 
 function CommandShortcut({ className, ...props }: ComponentProps<"span">) {
-  return <span className={cn("ml-auto font-mono text-[11px] text-ink-3", className)} {...props} />
+  return <span className={cn("ml-auto text-xs text-ink-3", className)} {...props} />
 }
 
 export {

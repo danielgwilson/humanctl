@@ -119,13 +119,15 @@ requirements.
 
 ### 3.2 Typography
 
-- Space Grotesk is the sans face for navigation, labels, titles,
-  controls, rows, messages, and long-form text.
-- JetBrains Mono is limited to paths, IDs, timestamps, quota numbers, token
-  counts, keyboard hints, and other machine metadata.
-- Body and control text starts at 13px. Reading text is 14px with a 20px line
-  height. Metadata may use 11px with a 16px line height.
-- Weight 500 is normal. Weight 600 is reserved for titles and compact labels.
+- Geist Variable is the sans face for navigation, labels, titles, controls,
+  rows, messages, and Typeset long-form text.
+- The system mono stack is limited to paths, IDs, raw payloads, and other text
+  whose machine-readable shape matters. Numeric telemetry uses tabular figures
+  without becoming mono by default.
+- Body and control text starts at 14px. Compact labels and metadata start at
+  12px with a 16px line height.
+- Weight 400 is normal. Weight 500 is used for controls and labels. Weight 600
+  is reserved for titles.
   Weight 700 and italic are not part of the system.
 - Hierarchy comes from placement, size, and ink contrast, not repeated bold
   text.
@@ -138,11 +140,12 @@ All dimensions derive from a 4px grid.
 |---|---:|---|
 | Window default | 1240 x 840px | Electron shell |
 | Window minimum | 760 x 500px | Electron shell |
-| Top chrome | 44px | application shell |
+| Top chrome | 48px | application shell |
 | Toolbar band | 40px | page frame |
 | Column header | 32px | list or table block |
 | Bottom status band | 32px | application shell |
-| Navigation rail | 256px | application shell |
+| Navigation rail | 275px | Registry Sidebar |
+| Chief-of-staff rail | 360px | Registry Sidebar, right side |
 | Split list pane | 340px | inbox or sessions block |
 | Detail side rail | 320px | detail block |
 | Page gutter | 16px | page frame |
@@ -150,7 +153,7 @@ All dimensions derive from a 4px grid.
 | Large input or action | 32px, radius 10px | primitive |
 | Single-line row | 36px | list block |
 | Decision row | 56px minimum | compact two-line decision block |
-| Task row | 80px | three-line Inbox and Sessions list row |
+| Task row | 52px | compact Inbox and Sessions list row |
 | Floating panel | radius 12px | overlay primitive |
 | Command palette | 672px max width | command block |
 
@@ -159,8 +162,9 @@ exactly one vertical scroll owner. Nested vertical scrolling is forbidden
 unless the inner region is an editor or bounded log with an explicit keyboard
 escape path.
 
-At widths below 1040px, list-detail surfaces show one pane at a time. At widths
-below 960px, the navigation rail becomes an overlay. Manual rail state remains
+At widths below 1040px, list-detail surfaces show one pane at a time and the
+chief-of-staff rail becomes a Sheet. The left rail becomes a Sheet below 864px,
+or below 1224px while the docked right rail is open. Manual rail state remains
 persisted. Session detail is left-aligned in both split and full-width modes;
 only prose receives a reading-width cap.
 
@@ -225,7 +229,7 @@ owner, but it cannot restate the full detail.
 | Current session transcript and asks | Session detail |
 | Global fleet and quota digest | Bottom status band |
 | Persisted preferences | Settings view |
-| Chief-of-staff conversation | Chief-of-staff overlay |
+| Chief-of-staff conversation | Chief-of-staff right rail |
 
 The reset starts at zero visual debt. There is no allowlisted count to ratchet
 down later.

@@ -59,7 +59,7 @@ function SessionsVirtualRow({
       trailing={
         <span className="flex items-center gap-2">
           {context.pins.has(session.id) ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
-          <span className="font-mono text-[11px] text-ink-3">{session.age || formatTime(session.ageMs)}</span>
+          <span className="text-xs tabular-nums text-ink-3">{session.age || formatTime(session.ageMs)}</span>
         </span>
       }
       onClick={() => context.onSelect(session.id)}
