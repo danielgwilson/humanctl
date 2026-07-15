@@ -7,9 +7,7 @@ import {
   InboxIcon,
   KeyboardIcon,
   LayoutListIcon,
-  LoaderCircleIcon,
   MenuIcon,
-  MessageCircleQuestionIcon,
   PanelLeftCloseIcon,
   PanelRightIcon,
   RefreshCwIcon,
@@ -19,7 +17,6 @@ import {
 } from "lucide-react"
 
 import { AppShell } from "@humanctl/ui/blocks/app-shell"
-import { Composer } from "@humanctl/ui/blocks/composer"
 import {
   Command,
   CommandDialog,
@@ -33,8 +30,7 @@ import {
 } from "@humanctl/ui/components/command"
 import { Button } from "@humanctl/ui/components/button"
 import { IconButton } from "@humanctl/ui/components/icon-button"
-import { ScrollArea } from "@humanctl/ui/components/scroll-area"
-import { Sheet, SheetBody, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "@humanctl/ui/components/sheet"
+import { Sheet, SheetContent } from "@humanctl/ui/components/sheet"
 import { Skeleton } from "@humanctl/ui/components/skeleton"
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@humanctl/ui/components/tooltip"
 import { cn } from "@humanctl/ui/lib/cn"
@@ -46,8 +42,8 @@ import type {
   HumanctlView,
 } from "./contracts"
 import { InboxView } from "./inbox-view"
-import { formatTime, operationPending, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
-import { SessionDetail } from "./session-detail"
+import { formatTime, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
+import { LazySessionDetail } from "./lazy-session-detail"
 import { KeyboardKey } from "./shared"
 
 declare global {
@@ -57,6 +53,7 @@ declare global {
       refresh: () => void
       setTheme: (theme: "dark" | "light") => void
       openDetail: (id?: string) => void
+      setChiefOfStaff: (open: boolean) => void
       setKitchenSink: (open: boolean) => void
     }
   }
@@ -79,6 +76,7 @@ const MetricsView = lazy(async () => ({ default: (await import("./metrics-view")
 const FleetView = lazy(async () => ({ default: (await import("./fleet-view")).FleetView }))
 const SessionsView = lazy(async () => ({ default: (await import("./sessions-view")).SessionsView }))
 const SettingsView = lazy(async () => ({ default: (await import("./settings-view")).SettingsView }))
+const ChiefOfStaff = lazy(async () => ({ default: (await import("./chief-of-staff")).ChiefOfStaff }))
 
 const VIEW_FOR_KEY: Record<string, HumanctlView> = { "1": "inbox", "2": "metrics", "3": "fleet", "4": "sessions" }
 const THEME_ORDER: HumanctlTheme[] = ["dark", "light", "system"]
@@ -137,12 +135,12 @@ function ProductNavigation({
   return (
     <div className={cn("flex min-h-0 flex-col", overlay ? "h-full" : "-mt-[var(--chrome)] h-[calc(100%+var(--chrome))]")}>
       <div className="flex h-[var(--chrome)] shrink-0 items-center gap-2 border-b border-border pl-[var(--traffic-light-inset)] pr-2">
-        <div className="grid size-5 place-items-center rounded-[5px] bg-primary text-[10px] font-semibold text-primary-foreground">H</div>
+        <div className="grid size-5 place-items-center rounded-[5px] bg-primary text-[11px] font-semibold text-primary-foreground">H</div>
         <span className="text-[13px] font-semibold tracking-[-0.01em] text-ink">Humanctl</span>
         <IconButton aria-label="Close navigation" size="sm" variant="ghost" className="ml-auto" onClick={onClose}><PanelLeftCloseIcon /></IconButton>
       </div>
       <div className="px-2 py-3">
-        <div className="px-2 pb-1.5 font-mono text-[10px] font-medium uppercase tracking-[0.06em] text-ink-4">Control</div>
+        <div className="px-2 pb-1.5 font-mono text-[11px] font-medium uppercase tracking-[0.06em] text-ink-3">Control</div>
         {NAVIGATION.map((item) => {
           const Icon = item.icon
           const active = item.view === view
@@ -160,8 +158,8 @@ function ProductNavigation({
             >
               <Icon className={cn("size-3.5 shrink-0", active ? "text-primary" : "text-ink-3")} />
               <span className="min-w-0 flex-1 truncate">{item.label}</span>
-              {count > 0 ? <span className="rounded-full bg-primary px-1.5 font-mono text-[10px] leading-4 tabular-nums text-primary-foreground">{count}</span> : null}
-              {item.key ? <span className="font-mono text-[10px] text-ink-4">{item.key}</span> : null}
+              {count > 0 ? <span className="rounded-full bg-primary px-1.5 font-mono text-[11px] leading-4 tabular-nums text-primary-foreground">{count}</span> : null}
+              {item.key ? <span className="font-mono text-[11px] text-ink-3">{item.key}</span> : null}
             </button>
           )
         })}
@@ -203,7 +201,7 @@ function ProductTopbar({
         <TooltipContent>{navigationOpen ? "Close navigation" : "Open navigation"} <span className="ml-1 opacity-70">⌘\</span></TooltipContent>
       </Tooltip>
       <span className="truncate text-[13px] font-semibold text-ink">{navigationOpen ? label : `Humanctl / ${label}`}</span>
-      <span className="font-mono text-[10px] text-ink-4">v{version.replace(/^v/, "")}</span>
+      <span className="font-mono text-[11px] text-ink-3">v{version.replace(/^v/, "")}</span>
       <button
         type="button"
         className="mx-auto flex h-[var(--control-sm)] w-full max-w-sm items-center gap-2 rounded-[var(--radius-2)] bg-sunken px-2.5 text-left text-[12px] text-ink-3 shadow-[var(--elev-ring)] outline-none hover:text-ink-2 focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background max-[760px]:hidden"
@@ -237,64 +235,13 @@ function ProductStatusbar({
     [model.operations],
   )
   return (
-    <div className="flex w-full min-w-0 items-center gap-4 font-mono text-[10px] text-ink-3" aria-live="polite">
+    <div className="flex w-full min-w-0 items-center gap-4 font-mono text-[11px] text-ink-3" aria-live="polite">
       <span className="flex items-center gap-1.5"><span className={cn("size-1.5 rounded-full", statusResource.error || coldStatusFailure ? "bg-need" : "bg-work")} />{statusResource.error || coldStatusFailure ? "Degraded" : "Local"}</span>
       {status ? <><span><strong className="font-medium text-need">{status.needsYou}</strong> need you</span><span><strong className="font-medium text-work">{status.working}</strong> working</span></> : coldStatusFailure ? <span className="text-block">Fleet status unavailable</span> : <><Skeleton className="h-3 w-16" /><Skeleton className="h-3 w-16" /></>}
       {codex ? <span className="max-[720px]:hidden">Codex <strong className="font-medium tabular-nums text-ink-2">{Math.round(codex.used_percent)}%</strong>{quotaReset(codex) ? ` · ${quotaReset(codex)}` : ""}</span> : null}
       {claude ? <span className="max-[980px]:hidden">Claude <strong className="font-medium tabular-nums text-ink-2">{Math.round(claude.used_percent)}%</strong>{quotaReset(claude, true) ? ` · ${quotaReset(claude, true)}` : ""}</span> : quotaResource.status === "loading" ? <Skeleton className="h-3 w-24 max-[980px]:hidden" /> : <span className="max-[980px]:hidden">Claude unavailable</span>}
       {latestFailure ? <span className="ml-auto max-w-72 truncate text-block">{latestFailure[0]}: {latestFailure[1].error}</span> : statusResource.error ? <span className="ml-auto max-w-72 truncate text-block" title={statusResource.error}>{statusResource.error}</span> : <span className="ml-auto">{status?.generatedAt ? `Updated ${formatTime(status.generatedAt)}` : "Starting"}</span>}
     </div>
-  )
-}
-
-function ChiefOfStaff({ model, dispatch }: Pick<HumanctlApplicationProps, "model" | "dispatch">) {
-  const appState = model.resources.appState.data
-  const history = model.resources.atlas.data
-  const [question, setQuestion] = useState("")
-  const [askFailure, setAskFailure] = useState<string | null>(null)
-  const asking = operationPending(model.operations, "atlas.ask")
-  const operationError = model.operations["atlas.ask"]?.error
-
-  async function ask() {
-    const value = question.trim()
-    if (!value || asking) return
-    setAskFailure(null)
-    const outcome = await dispatch({ type: "atlas.ask", question: value, engine: appState.summarizer })
-    if (!outcome.ok) {
-      setAskFailure(outcome.error)
-      return
-    }
-    setQuestion("")
-  }
-
-  return (
-    <Sheet open={appState.rightRailOpen} onOpenChange={(open) => { void dispatch({ type: "app.patch", patch: { rightRailOpen: open } }) }}>
-      <SheetContent className="w-[min(26rem,92vw)]" side="right">
-        <SheetHeader>
-          <SheetTitle>Chief of staff</SheetTitle>
-          <SheetDescription>Ask about current fleet state, blockers, and what needs your attention.</SheetDescription>
-        </SheetHeader>
-        <SheetBody className="flex flex-col gap-3 p-0">
-          <ScrollArea className="min-h-0 flex-1">
-            {history.length === 0 && !asking ? (
-              <div className="px-4 py-6 text-[13px] leading-5 text-ink-3">Try “what needs me right now?” or “which task is most likely to be stale?” Answers are advisory and grounded in the current local fleet snapshot.</div>
-            ) : null}
-            {history.map((exchange) => (
-              <div key={exchange.id} className="border-b border-border px-4 py-3">
-                <div className="flex items-start gap-2"><MessageCircleQuestionIcon className="mt-0.5 size-3.5 shrink-0 text-ink-4" /><p className="text-[13px] leading-5 text-ink-2">{exchange.question}</p></div>
-                <div className="mt-2 border-l-2 border-primary pl-3 text-[13px] leading-5 whitespace-pre-wrap text-ink">{exchange.answer}</div>
-                <div className="mt-1.5 font-mono text-[10px] text-ink-4">{exchange.engine || "local harness"} · {formatTime(exchange.at)}</div>
-              </div>
-            ))}
-            {asking ? <div className="flex items-center gap-2 px-4 py-4 text-[12px] text-ink-3"><LoaderCircleIcon className="size-3.5 animate-spin motion-reduce:animate-none" />Reading the fleet...</div> : null}
-          </ScrollArea>
-          <div className="shrink-0 border-t border-border p-3">
-            <Composer value={question} onValueChange={setQuestion} onSubmit={() => { void ask() }} placeholder="Ask your chief of staff" submitLabel="Ask" submitting={asking} disabled={asking} />
-            {askFailure || operationError ? <p className="mt-2 text-[12px] leading-5 text-block">{askFailure || operationError}</p> : null}
-          </div>
-        </SheetBody>
-      </SheetContent>
-    </Sheet>
   )
 }
 
@@ -336,7 +283,7 @@ function ProductCommandPalette({
               <CommandItem key={session.id} value={`${sessionTitle(session)} ${sessionRepo(session)} ${session.id}`} onSelect={() => { onOpenSession(session); close() }}>
                 <span className={cn("size-1.5 shrink-0 rounded-full", session.state === "need" ? "bg-need" : session.state === "block" ? "bg-block" : session.state === "work" ? "bg-work" : "bg-idle")} />
                 <span className="min-w-0 flex-1 truncate">{sessionTitle(session)}</span>
-                <span className="max-w-28 truncate font-mono text-[10px] text-ink-4">{sessionRepo(session)}</span>
+                <span className="max-w-28 truncate font-mono text-[11px] text-ink-3">{sessionRepo(session)}</span>
               </CommandItem>
             ))}
           </CommandGroup>
@@ -455,6 +402,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
         const session = sessions.find((item) => item.id === id) || sessions[0]
         if (session) openSession(session)
       },
+      setChiefOfStaff: (open) => { void dispatch({ type: "app.patch", patch: { rightRailOpen: open } }) },
       setKitchenSink,
     }
     return () => { delete window.__humanctlPerf }
@@ -488,7 +436,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       <div className="flex h-[var(--chrome)] shrink-0 items-center border-b border-border px-3">
         <Button size="sm" variant="ghost" onClick={closeSession}>Back to {NAVIGATION.find((item) => item.view === state.view)?.label || "view"}</Button>
       </div>
-      <div className="min-h-0 flex-1"><SessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} /></div>
+      <div className="min-h-0 flex-1"><LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} /></div>
     </div>
   ) : content
 
@@ -504,7 +452,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
             onClose={() => { void dispatch({ type: "app.patch", patch: { navPinned: false } }) }}
           />
         ) : undefined}
-        detail={externalDetail && !compactDetail ? <SessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} /> : undefined}
+        detail={externalDetail && !compactDetail ? <LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} /> : undefined}
         topbar={
           <ProductTopbar
             view={state.view}
@@ -533,7 +481,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
           />
         </SheetContent>
       </Sheet>
-      <ChiefOfStaff model={model} dispatch={dispatch} />
+      {state.rightRailOpen ? <Suspense fallback={null}><ChiefOfStaff model={model} dispatch={dispatch} /></Suspense> : null}
       <ProductCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} model={model} dispatch={dispatch} onNavigate={navigate} onOpenSession={openSession} onToggleNavigation={toggleNavigation} />
     </TooltipProvider>
   )

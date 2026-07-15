@@ -79,7 +79,7 @@ const DEFAULT_STATE: AppState = {
   pins: [],
   theme: 'dark',
   view: 'metrics',
-  navPinned: false,
+  navPinned: true,
   rightRailOpen: false,
   lastReadTs: {},
   summarizer: 'claude',

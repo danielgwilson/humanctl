@@ -6,6 +6,7 @@ import { QuotaRow } from "@humanctl/ui/blocks/quota"
 import { Button } from "@humanctl/ui/components/button"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Skeleton } from "@humanctl/ui/components/skeleton"
+import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@humanctl/ui/components/table"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { compactNumber, formatMoney, quotaReset } from "./helpers"
@@ -57,38 +58,47 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
                 <>
                   <div className="grid grid-cols-5 border-b border-border max-[1200px]:grid-cols-3">
                     <div className="border-r border-border px-4 py-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Sessions</div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Sessions</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{status.sessions}</div>
                     </div>
                     <div className="border-r border-border px-4 py-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Tokens</div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Tokens</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{compactNumber(totalTokens)}</div>
                     </div>
                     <div className="px-4 py-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Est. cost</div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Est. cost</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{formatMoney(totalCost)}</div>
                     </div>
                     <div className="border-r border-border px-4 py-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Avg. context</div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Avg. context</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{averageContext == null ? "N/A" : `${Math.round(averageContext)}%`}</div>
                     </div>
                     <div className="px-4 py-4">
-                      <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Near compaction</div>
+                      <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Near compaction</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{status.nearCompaction}</div>
                     </div>
                   </div>
-                  <div className="grid min-h-9 grid-cols-[minmax(8rem,1.2fr)_5rem_6rem_6rem] items-center gap-3 border-b border-border bg-sunken px-4 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">
-                    <span>Harness</span><span className="text-right">Sessions</span><span className="text-right">Tokens</span><span className="text-right">Est. cost</span>
-                  </div>
-                  {totals.map((item) => (
-                    <div key={item.harness} className="grid min-h-[var(--row)] grid-cols-[minmax(8rem,1.2fr)_5rem_6rem_6rem] items-center gap-3 border-b border-border px-4 text-[12px]">
-                      <span className="truncate text-ink-2">{item.harness === "codex" ? "Codex" : "Claude Code"}</span>
-                      <span className="text-right font-mono tabular-nums text-ink">{item.sessions}</span>
-                      <span className="text-right font-mono tabular-nums text-ink">{compactNumber(item.totalTokens)}</span>
-                      <span className="text-right font-mono tabular-nums text-ink">{formatMoney(item.costUSD || item.apiEquivUSD)}</span>
-                    </div>
-                  ))}
-                  {status.pricingAsOf ? <div className="px-4 py-2 font-mono text-[10px] text-ink-4">Pricing snapshot {status.pricingAsOf}</div> : null}
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow className="bg-sunken hover:bg-sunken">
+                        <TableHead className="h-9 w-[40%] px-4 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Harness</TableHead>
+                        <TableHead className="h-9 px-2 text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Sessions</TableHead>
+                        <TableHead className="h-9 px-2 text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Tokens</TableHead>
+                        <TableHead className="h-9 px-4 text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Est. cost</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {totals.map((item) => (
+                        <TableRow key={item.harness} className="h-[var(--row)] hover:bg-[var(--overlay-hover)]">
+                          <TableCell className="truncate px-4 py-0 text-[12px] text-ink-2">{item.harness === "codex" ? "Codex" : "Claude Code"}</TableCell>
+                          <TableCell className="px-2 py-0 text-right font-mono text-[12px] tabular-nums text-ink">{item.sessions}</TableCell>
+                          <TableCell className="px-2 py-0 text-right font-mono text-[12px] tabular-nums text-ink">{compactNumber(item.totalTokens)}</TableCell>
+                          <TableCell className="px-4 py-0 text-right font-mono text-[12px] tabular-nums text-ink">{formatMoney(item.costUSD || item.apiEquivUSD)}</TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                    {status.pricingAsOf ? <TableCaption className="m-0 px-4 py-2 text-left font-mono text-[11px] text-ink-3">Pricing snapshot {status.pricingAsOf}</TableCaption> : null}
+                  </Table>
                 </>
               ) : (
                 <EmptyState title="No usage data" description="Run a fleet refresh to read the current session totals." />
@@ -123,21 +133,32 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
               ) : skillsResource.data ? (
                 <>
                   <div className="grid grid-cols-2 border-b border-border">
-                    <div className="border-r border-border px-4 py-4"><div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Invocations</div><div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums">{skillsResource.data.totalInvocations}</div></div>
-                    <div className="px-4 py-4"><div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">Sessions using skills</div><div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums">{skillsResource.data.sessionsWithSkills}</div></div>
+                    <div className="border-r border-border px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Invocations</div><div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums">{skillsResource.data.totalInvocations}</div></div>
+                    <div className="px-4 py-4"><div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Sessions using skills</div><div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums">{skillsResource.data.sessionsWithSkills}</div></div>
                   </div>
-                  <div className="grid min-h-9 grid-cols-[minmax(0,1fr)_4rem] items-center border-b border-border bg-sunken px-4 font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4"><span>Skill</span><span className="text-right">Uses</span></div>
-                  {skills.map(([skill, count], index) => {
-                    const width = skills[0]?.[1] ? Math.max(4, Math.round((count / skills[0][1]) * 100)) : 0
-                    return (
-                      <div key={skill} className="relative grid min-h-[var(--row)] grid-cols-[minmax(0,1fr)_4rem] items-center border-b border-border px-4 text-[12px]">
-                        <span className="absolute inset-y-0 left-0 bg-accent-soft" style={{ width: `${width}%`, opacity: 0.45 }} aria-hidden="true" />
-                        <span className="relative truncate text-ink-2"><span className="mr-2 font-mono text-[10px] text-ink-4">{String(index + 1).padStart(2, "0")}</span>{skill}</span>
-                        <span className="relative text-right font-mono tabular-nums text-ink">{count}</span>
-                      </div>
-                    )
-                  })}
-                  {skills.length === 0 ? <div className="px-4 py-5 text-[13px] text-ink-3">No skill invocations were found in the current window.</div> : null}
+                  <Table className="table-fixed">
+                    <TableHeader>
+                      <TableRow className="bg-sunken hover:bg-sunken">
+                        <TableHead className="h-9 px-4 font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Skill</TableHead>
+                        <TableHead className="h-9 w-16 px-4 text-right font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">Uses</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {skills.map(([skill, count], index) => {
+                        const width = skills[0]?.[1] ? Math.max(4, Math.round((count / skills[0][1]) * 100)) : 0
+                        return (
+                          <TableRow key={skill} className="relative h-[var(--row)] hover:bg-[var(--overlay-hover)]">
+                            <TableCell className="relative overflow-hidden px-4 py-0 text-[12px]">
+                              <span className="absolute inset-y-0 left-0 bg-accent-soft" style={{ width: `${width}%`, opacity: 0.45 }} aria-hidden="true" />
+                              <span className="relative block truncate text-ink-2"><span className="mr-2 font-mono text-[11px] text-ink-3">{String(index + 1).padStart(2, "0")}</span>{skill}</span>
+                            </TableCell>
+                            <TableCell className="relative px-4 py-0 text-right font-mono text-[12px] tabular-nums text-ink">{count}</TableCell>
+                          </TableRow>
+                        )
+                      })}
+                      {skills.length === 0 ? <TableRow><TableCell colSpan={2} className="px-4 py-5 text-[13px] text-ink-3">No skill invocations were found in the current window.</TableCell></TableRow> : null}
+                    </TableBody>
+                  </Table>
                 </>
               ) : (
                 <EmptyState title="Load skill usage" description="Skill aggregation runs only when this view is opened." action={<Button onClick={() => { void dispatch({ type: "metrics.loadSkills" }) }}>Load skills</Button>} />

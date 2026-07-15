@@ -2,7 +2,9 @@ import type { ComponentProps, ReactNode } from "react"
 import { AlertCircleIcon, InboxIcon } from "lucide-react"
 
 import { StatusChip } from "@humanctl/ui/blocks/status"
+import { Alert, AlertAction, AlertDescription, AlertTitle } from "@humanctl/ui/components/alert"
 import { Button } from "@humanctl/ui/components/button"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@humanctl/ui/components/empty"
 import { Skeleton } from "@humanctl/ui/components/skeleton"
 import { cn } from "@humanctl/ui/lib/cn"
 
@@ -44,11 +46,12 @@ export function ResourceNotice({
 }) {
   if (!resource.error) return null
   return (
-    <div role="status" className="flex min-h-9 items-center gap-2 border-b border-block/30 bg-block-soft px-4 text-[12px] text-block">
-      <AlertCircleIcon className="size-3.5 shrink-0" />
-      <span className="truncate">{label}: {resource.error}</span>
-      {onRetry ? <Button size="sm" variant="ghost" className="ml-auto" onClick={onRetry}>Retry</Button> : null}
-    </div>
+    <Alert variant="destructive" className="border-t-0">
+      <AlertCircleIcon />
+      <AlertTitle className="sr-only">{label}</AlertTitle>
+      <AlertDescription className="truncate">{label}: {resource.error}</AlertDescription>
+      {onRetry ? <AlertAction><Button size="sm" variant="ghost" onClick={onRetry}>Retry</Button></AlertAction> : null}
+    </Alert>
   )
 }
 
@@ -62,16 +65,14 @@ export function EmptyState({
   action?: ReactNode
 }) {
   return (
-    <div className="grid h-full min-h-48 place-items-center px-6 py-12 text-center">
-      <div className="max-w-sm">
-        <span className="mx-auto mb-3 grid size-8 place-items-center rounded-[var(--radius-2)] bg-sunken text-ink-3">
-          <InboxIcon className="size-4" />
-        </span>
-        <h3 className="text-[14px] font-semibold text-ink">{title}</h3>
-        <p className="mt-1 text-[13px] leading-5 text-ink-3">{description}</p>
-        {action ? <div className="mt-4 flex justify-center">{action}</div> : null}
-      </div>
-    </div>
+    <Empty className="h-full min-h-48 px-6 py-12">
+      <EmptyHeader>
+        <EmptyMedia variant="icon"><InboxIcon /></EmptyMedia>
+        <EmptyTitle>{title}</EmptyTitle>
+        <EmptyDescription className="text-[13px] leading-5 text-ink-3">{description}</EmptyDescription>
+      </EmptyHeader>
+      {action ? <EmptyContent>{action}</EmptyContent> : null}
+    </Empty>
   )
 }
 
@@ -81,7 +82,7 @@ export function RowSkeletons({ count = 6 }: { count?: number }) {
       {Array.from({ length: count }, (_, index) => (
         <div key={index} className="grid min-h-[var(--row-task)] grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 border-b border-border px-4 py-2.5">
           <Skeleton className="size-6" />
-          <div className="space-y-2">
+          <div className="flex flex-col gap-2">
             <Skeleton className="h-3.5 w-44 max-w-full" />
             <Skeleton className="h-3 w-64 max-w-[80%]" />
           </div>

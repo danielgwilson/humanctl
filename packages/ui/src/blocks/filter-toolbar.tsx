@@ -1,5 +1,7 @@
 import type { ComponentProps, ReactNode } from "react"
+import { SearchIcon } from "lucide-react"
 
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@humanctl/ui/components/input-group"
 import { cn } from "@humanctl/ui/lib/cn"
 
 type FilterToolbarProps = ComponentProps<"div"> & {
@@ -40,4 +42,15 @@ function FilterToolbar({
   )
 }
 
-export { FilterToolbar, type FilterToolbarProps }
+type FilterSearchProps = ComponentProps<typeof InputGroupInput>
+
+function FilterSearch({ className, ...props }: FilterSearchProps) {
+  return (
+    <InputGroup>
+      <InputGroupAddon><SearchIcon /></InputGroupAddon>
+      <InputGroupInput className={className} {...props} />
+    </InputGroup>
+  )
+}
+
+export { FilterSearch, FilterToolbar, type FilterSearchProps, type FilterToolbarProps }

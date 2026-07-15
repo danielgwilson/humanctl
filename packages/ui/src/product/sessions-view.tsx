@@ -1,18 +1,38 @@
 import { useMemo, useState } from "react"
-import { PinIcon, RefreshCwIcon, SearchIcon } from "lucide-react"
+import { PinIcon, RefreshCwIcon } from "lucide-react"
 
-import { FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
+import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
 import { ListRow } from "@humanctl/ui/blocks/list-row"
 import { Button } from "@humanctl/ui/components/button"
-import { Input } from "@humanctl/ui/components/input"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { filterSessions, formatTime, type HarnessFilter, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionMeta, sessionTitle } from "./helpers"
-import { SessionDetail } from "./session-detail"
+import { LazySessionDetail } from "./lazy-session-detail"
 import { EmptyState, HarnessMark, PaneHeading, ResourceNotice, RowSkeletons, SessionStatus } from "./shared"
 import { BoundedVirtualList, type VirtualRowComponentProps } from "./virtual-list"
+
+const STATE_ITEMS = [
+  { label: "All states", value: "all" },
+  { label: "Needs input", value: "need" },
+  { label: "Blocked", value: "block" },
+  { label: "Running", value: "work" },
+  { label: "Idle", value: "idle" },
+  { label: "Complete", value: "done" },
+]
+const HARNESS_ITEMS = [
+  { label: "All harnesses", value: "all" },
+  { label: "Claude Code", value: "claude-code" },
+  { label: "Codex", value: "codex" },
+]
+const SESSION_SORT_ITEMS = [
+  { label: "Recent", value: "recent" },
+  { label: "Needs first", value: "needs" },
+  { label: "Alphabetic", value: "alphabetic" },
+  { label: "Context", value: "context" },
+  { label: "Cost", value: "cost" },
+]
 
 type SessionsRowContext = {
   pins: ReadonlySet<string>
@@ -39,8 +59,7 @@ function SessionsVirtualRow({
       trailing={
         <span className="flex items-center gap-2">
           {context.pins.has(session.id) ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
-          {session.contextPct != null ? <span className="font-mono text-[10px] tabular-nums text-ink-3">{Math.round(session.contextPct)}%</span> : null}
-          <span className="font-mono text-[10px] text-ink-4">{session.age || formatTime(session.ageMs)}</span>
+          <span className="font-mono text-[11px] text-ink-3">{session.age || formatTime(session.ageMs)}</span>
         </span>
       }
       onClick={() => context.onSelect(session.id)}
@@ -80,51 +99,39 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
           count={resource.status === "ready" ? resource.data.length : undefined}
           actions={
             <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "fleet.refresh" }) }}>
-              <RefreshCwIcon /> Refresh
+              <RefreshCwIcon data-icon="inline-start" /> Refresh
             </Button>
           }
         />
         <FilterToolbar
           search={
-            <div className="relative">
-              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" />
-              <Input aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="pl-8" />
-            </div>
+            <FilterSearch aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
-              <Select value={state} onValueChange={(value) => setState((value || "all") as SessionStateFilter)}>
+              <Select items={STATE_ITEMS} value={state} onValueChange={(value) => setState((value || "all") as SessionStateFilter)}>
                 <SelectTrigger aria-label="Filter sessions by state" className="w-full min-w-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All states</SelectItem>
-                  <SelectItem value="need">Needs input</SelectItem>
-                  <SelectItem value="block">Blocked</SelectItem>
-                  <SelectItem value="work">Running</SelectItem>
-                  <SelectItem value="idle">Idle</SelectItem>
-                  <SelectItem value="done">Complete</SelectItem>
+                  <SelectGroup>{STATE_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
                 </SelectContent>
               </Select>
-              <Select value={harness} onValueChange={(value) => setHarness((value || "all") as HarnessFilter)}>
+              <Select items={HARNESS_ITEMS} value={harness} onValueChange={(value) => setHarness((value || "all") as HarnessFilter)}>
                 <SelectTrigger aria-label="Filter sessions by harness" className="w-full min-w-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All harnesses</SelectItem>
-                  <SelectItem value="claude-code">Claude Code</SelectItem>
-                  <SelectItem value="codex">Codex</SelectItem>
+                  <SelectGroup>{HARNESS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
                 </SelectContent>
               </Select>
-              <Select value={sort} onValueChange={(value) => setSort((value || "recent") as SessionSort)}>
-                <SelectTrigger aria-label="Sort sessions" className="w-full min-w-0"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="recent">Recent</SelectItem>
-                  <SelectItem value="needs">Needs first</SelectItem>
-                  <SelectItem value="alphabetic">Alphabetic</SelectItem>
-                  <SelectItem value="context">Context</SelectItem>
-                  <SelectItem value="cost">Cost</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="col-span-2">
+                <Select items={SESSION_SORT_ITEMS} value={sort} onValueChange={(value) => setSort((value || "recent") as SessionSort)}>
+                  <SelectTrigger aria-label="Sort sessions" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>{SESSION_SORT_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
             </>
           }
-          className="flex-col items-stretch py-2 [&>div:first-child]:max-w-none [&>div:nth-child(2)]:grid [&>div:nth-child(2)]:grid-cols-3"
+          className="flex-col items-stretch py-2 [&>div:first-child]:max-w-none [&>div:nth-child(2)]:grid [&>div:nth-child(2)]:grid-cols-2"
         />
         <ResourceNotice resource={resource} label="Session data is degraded" onRetry={() => { void dispatch({ type: "fleet.refresh" }) }} />
         {sessions.length > 0 ? (
@@ -149,7 +156,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to sessions</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><SessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} /></div>
       </section>
     </div>
   )

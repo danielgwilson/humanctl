@@ -67,7 +67,7 @@ export const DEFAULT_APP_STATE: Readonly<AppState> = Object.freeze({
   pins: [],
   theme: 'dark',
   view: 'inbox',
-  navPinned: false,
+  navPinned: true,
   rightRailOpen: false,
   lastReadTs: {},
   summarizer: 'claude',

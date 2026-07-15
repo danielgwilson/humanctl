@@ -1,8 +1,10 @@
-@import "tailwindcss";
+@import "tailwindcss" source(none);
 @import "tw-animate-css";
 @import "./tokens.css";
 
-@source "../**/*.{ts,tsx}";
+@source "../components";
+@source "../blocks";
+@source "../product";
 
 @font-face {
   font-family: "Space Grotesk";

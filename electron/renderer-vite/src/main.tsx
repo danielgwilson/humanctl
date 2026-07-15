@@ -1,6 +1,6 @@
 import { StrictMode } from 'react';
 import { createRoot } from 'react-dom/client';
-import '@humanctl/ui/styles/globals.css';
+import '@humanctl/ui/styles/app.css';
 
 import { HumanctlViewport } from './viewport';
 

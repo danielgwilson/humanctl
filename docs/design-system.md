@@ -134,15 +134,17 @@ animation and smooth scrolling.
 The initial Registry inventory includes:
 
 - Button and IconButton
-- Input and Textarea
+- Input, Textarea, InputGroup, Field, and Label
 - Select, Menu, Popover, Tooltip, Dialog, and Sheet
 - Command
-- Tabs and Toggle
-- Progress, Separator, ScrollArea, and Skeleton
+- Tabs, Toggle, and ToggleGroup
+- Item and Table
+- Message, Bubble, Marker, and MessageScroller
+- Alert, Badge, Empty, Spinner, Progress, Separator, ScrollArea, and Skeleton
 
 Product blocks include the application shell, page frame, list row, filters,
-detail pane, composer, status, and quota. A second screen with the same anatomy
-extends the existing block. It does not copy the markup.
+detail pane, composer, conversation, status, and quota. A second screen with
+the same anatomy extends the existing block. It does not copy the markup.
 
 Every consumed item needs an explicit package export, Registry manifest entry,
 catalog fixture, keyboard proof, and relevant loading, empty, error, overflow,

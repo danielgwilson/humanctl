@@ -17,13 +17,15 @@
 // process-hygiene rationale this reuses verbatim).
 //
 // What it produces: the five views (inbox, metrics, fleet, sessions,
-// settings) x both themes, plus session detail x both themes, plus
-// the package-owned product catalog x both themes, one PNG each, via
+// settings) x both themes, plus session detail x both themes, plus the
+// chief-of-staff conversation x both themes, plus the package-owned product
+// catalog x both themes, one PNG each, via
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
-// Its compatibility surface remains setTheme, openDetail, and setKitchenSink.
-// The setKitchenSink key now opens the product catalog. 14 PNGs
+// Its compatibility surface remains setTheme, openDetail, setChiefOfStaff,
+// and setKitchenSink.
+// The setKitchenSink key now opens the product catalog. 16 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
-// repo's top-level `output` entry). To produce the COMMITTED gate set under
+// repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
 // `npm run screenshots -- --out screenshots/<stage>`.
 //
@@ -315,11 +317,11 @@ async function main() {
 
     let booted = false;
     for (let i = 0; i < BOOT_POLL_ATTEMPTS; i++) {
-      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail && window.__humanctlPerf.setKitchenSink)`);
+      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail && window.__humanctlPerf.setChiefOfStaff && window.__humanctlPerf.setKitchenSink)`);
       if (ready) { booted = true; break; }
       await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
     }
-    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail/setKitchenSink; did the product perf hook change shape?');
+    if (!booted) throw new Error('renderer never exposed the required screenshot hooks; did the product perf hook change shape?');
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
 
@@ -339,6 +341,12 @@ async function main() {
       await settle(cdp);
       await capture(cdp, outDir, `session-detail-${theme}.png`);
 
+      await evalJS(cdp, `window.__humanctlPerf.setChiefOfStaff(true); true`);
+      await settle(cdp);
+      await capture(cdp, outDir, `chief-of-staff-${theme}.png`);
+      await evalJS(cdp, `window.__humanctlPerf.setChiefOfStaff(false); true`);
+      await settle(cdp);
+
       // setKitchenSink is the stable perf-hook key for the package-owned
       // product catalog. Keep the stable screenshot filename for downstream
       // comparisons while the captured surface is the new catalog.
@@ -348,7 +356,7 @@ async function main() {
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(false); true`);
     }
 
-    log(`done: 14 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: 16 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

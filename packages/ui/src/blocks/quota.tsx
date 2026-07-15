@@ -35,15 +35,17 @@ function QuotaRow({
     >
       <div className="min-w-0">
         <ProgressLabel className="block truncate text-ink">{label}</ProgressLabel>
-        {reset ? <span className="block truncate font-mono text-[11px] text-ink-3">{reset}</span> : null}
+        {detail || reset ? <span className="block truncate font-mono text-[11px] text-ink-3">{[detail, reset].filter(Boolean).join(" · ")}</span> : null}
       </div>
       {loading ? <Skeleton className="h-1 w-full max-[680px]:col-span-2" /> : <ProgressTrack className="max-[680px]:order-3 max-[680px]:col-span-2"><ProgressIndicator /></ProgressTrack>}
-      <div className="min-w-16 text-right">
+      <div className="min-w-24 text-right">
         {loading ? <Skeleton className="ml-auto h-4 w-12" /> : (
-          <>
-            <span className="font-mono text-[12px] tabular-nums text-ink">{normalized == null ? "N/A" : `${Math.round(normalized)}%`}</span>
-            {detail ? <span className="ml-2 font-mono text-[11px] text-ink-3">{detail}</span> : null}
-          </>
+          normalized == null ? <span className="font-mono text-[12px] text-ink-3">N/A</span> : (
+            <>
+              <span className="block font-mono text-[12px] tabular-nums text-ink">{Math.round(normalized)}% used</span>
+              <span className="block font-mono text-[11px] tabular-nums text-ink-3">{Math.round(100 - normalized)}% remaining</span>
+            </>
+          )
         )}
       </div>
     </Progress>

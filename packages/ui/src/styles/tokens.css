@@ -56,6 +56,7 @@
   --radius-2: 8px;
   --radius-3: 10px;
   --radius-4: 12px;
+  --radius: var(--radius-2);
   --control-sm: 28px;
   --control: 32px;
   --chrome: 44px;
@@ -78,6 +79,25 @@
   --ease-enter: cubic-bezier(0.2, 0, 0, 1);
   --ease-exit: cubic-bezier(0.4, 0, 1, 1);
   --ease-shape: cubic-bezier(0.42, 0, 0.58, 1);
+
+  /* shadcn semantic aliases. The Humanctl palette remains authoritative. */
+  --background: var(--surface-0);
+  --foreground: var(--ink);
+  --card: var(--surface-1);
+  --card-foreground: var(--ink);
+  --popover: var(--surface-2);
+  --popover-foreground: var(--ink);
+  --primary: var(--accent-solid);
+  --primary-foreground: var(--on-solid);
+  --secondary: var(--surface-1);
+  --secondary-foreground: var(--ink);
+  --muted: var(--surface-sunken);
+  --muted-foreground: var(--ink-3);
+  --accent: var(--surface-2);
+  --accent-foreground: var(--ink);
+  --destructive: var(--block-solid);
+  --border: var(--hairline);
+  --input: var(--hairline);
 }
 
 .light {
@@ -125,6 +145,17 @@
   --font-mono: var(--font-mono-stack);
   --color-background: var(--surface-0);
   --color-foreground: var(--ink);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-input: var(--input);
   --color-surface: var(--surface-1);
   --color-overlay: var(--surface-2);
   --color-sunken: var(--surface-sunken);

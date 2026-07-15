@@ -18,6 +18,7 @@
       ],
       "files": [
         { "path": "src/styles/globals.css", "type": "registry:style", "target": "src/styles/globals.css" },
+        { "path": "src/styles/app.css", "type": "registry:style", "target": "src/styles/app.css" },
         { "path": "src/styles/tokens.css", "type": "registry:style", "target": "src/styles/tokens.css" },
         { "path": "src/lib/cn.ts", "type": "registry:lib", "target": "src/lib/cn.ts" }
       ]
@@ -26,7 +27,7 @@
       "name": "humanctl-controls",
       "type": "registry:ui",
       "title": "Humanctl controls",
-      "description": "Curated Base UI controls for the desktop viewport.",
+      "description": "Curated Registry controls for the desktop viewport.",
       "registryDependencies": ["humanctl-foundation"],
       "dependencies": [
         "@base-ui/react@1.6.0",
@@ -51,7 +52,41 @@
         { "path": "src/components/progress.tsx", "type": "registry:ui" },
         { "path": "src/components/separator.tsx", "type": "registry:ui" },
         { "path": "src/components/scroll-area.tsx", "type": "registry:ui" },
-        { "path": "src/components/skeleton.tsx", "type": "registry:ui" }
+        { "path": "src/components/skeleton.tsx", "type": "registry:ui" },
+        { "path": "src/components/alert.tsx", "type": "registry:ui" },
+        { "path": "src/components/badge.tsx", "type": "registry:ui" },
+        { "path": "src/components/empty.tsx", "type": "registry:ui" },
+        { "path": "src/components/field.tsx", "type": "registry:ui" },
+        { "path": "src/components/input-group.tsx", "type": "registry:ui" },
+        { "path": "src/components/item.tsx", "type": "registry:ui" },
+        { "path": "src/components/label.tsx", "type": "registry:ui" },
+        { "path": "src/components/spinner.tsx", "type": "registry:ui" },
+        { "path": "src/components/table.tsx", "type": "registry:ui" },
+        { "path": "src/components/toggle-group.tsx", "type": "registry:ui" }
+      ]
+    },
+    {
+      "name": "humanctl-messaging",
+      "type": "registry:ui",
+      "title": "Humanctl messaging",
+      "description": "Message, bubble, marker, and scroll behavior for task conversations.",
+      "registryDependencies": ["humanctl-controls"],
+      "dependencies": ["@shadcn/react@0.2.1"],
+      "files": [
+        { "path": "src/components/bubble.tsx", "type": "registry:ui" },
+        { "path": "src/components/marker.tsx", "type": "registry:ui" },
+        { "path": "src/components/message.tsx", "type": "registry:ui" },
+        { "path": "src/components/message-scroller.tsx", "type": "registry:ui" }
+      ]
+    },
+    {
+      "name": "humanctl-conversation",
+      "type": "registry:block",
+      "title": "Humanctl conversation",
+      "description": "Role-aware task messages and compact event markers.",
+      "registryDependencies": ["humanctl-messaging"],
+      "files": [
+        { "path": "src/blocks/conversation.tsx", "type": "registry:block" }
       ]
     },
     {
@@ -83,7 +118,7 @@
       "type": "registry:block",
       "title": "Humanctl detail and composer",
       "description": "Scrollable detail pane and bounded reply composer.",
-      "registryDependencies": ["humanctl-controls"],
+      "registryDependencies": ["humanctl-controls", "humanctl-messaging"],
       "files": [
         { "path": "src/blocks/detail-pane.tsx", "type": "registry:block" },
         { "path": "src/blocks/composer.tsx", "type": "registry:block" }
@@ -98,10 +133,12 @@
         "humanctl-controls",
         "humanctl-shell",
         "humanctl-data-rows",
-        "humanctl-detail-composer"
+        "humanctl-detail-composer",
+        "humanctl-conversation"
       ],
       "files": [
-        { "path": "src/catalog/foundation-catalog.tsx", "type": "registry:block" }
+        { "path": "src/catalog/foundation-catalog.tsx", "type": "registry:block" },
+        { "path": "src/styles/catalog.css", "type": "registry:style", "target": "src/styles/catalog.css" }
       ]
     }
   ]

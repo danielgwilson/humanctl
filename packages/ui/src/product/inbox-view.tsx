@@ -1,12 +1,11 @@
 import { useCallback, useMemo, useState } from "react"
-import { CheckCheckIcon, PinIcon, SearchIcon } from "lucide-react"
+import { CheckCheckIcon, PinIcon } from "lucide-react"
 
-import { FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
+import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
 import { ListRow } from "@humanctl/ui/blocks/list-row"
 import { Button } from "@humanctl/ui/components/button"
-import { Input } from "@humanctl/ui/components/input"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
+import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
 
 import type {
   HumanctlApplicationModel,
@@ -27,7 +26,7 @@ import {
   threadTitle,
   threadUnread,
 } from "./helpers"
-import { SessionDetail } from "./session-detail"
+import { LazySessionDetail } from "./lazy-session-detail"
 import {
   EmptyState,
   HarnessMark,
@@ -37,6 +36,26 @@ import {
   SessionStatus,
 } from "./shared"
 import { BoundedVirtualList, type VirtualRowComponentProps } from "./virtual-list"
+
+const STATE_ITEMS = [
+  { label: "All states", value: "all" },
+  { label: "Needs input", value: "need" },
+  { label: "Blocked", value: "block" },
+  { label: "Running", value: "work" },
+  { label: "Idle", value: "idle" },
+  { label: "Complete", value: "done" },
+]
+const HARNESS_ITEMS = [
+  { label: "All harnesses", value: "all" },
+  { label: "Claude Code", value: "claude-code" },
+  { label: "Codex", value: "codex" },
+]
+const INBOX_SORT_ITEMS = [
+  { label: "Needs first", value: "needs" },
+  { label: "Recent", value: "recent" },
+  { label: "Alphabetic", value: "alphabetic" },
+  { label: "Unread", value: "unread" },
+]
 
 type InboxRowContext = {
   byId: ReadonlyMap<string, HumanctlSession>
@@ -63,13 +82,13 @@ function InboxVirtualRow({
       title={threadTitle(thread, session)}
       summary={threadPreview(thread)}
       metadata={session ? sessionMeta(session) : `${harnessLabel(thread.harness)} · ${formatTime(thread.lastTs)}`}
-      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft font-mono text-[10px]">?</span>}
+      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft font-mono text-[11px]">?</span>}
       status={session ? <SessionStatus state={session.state} /> : undefined}
       trailing={
         <span className="flex items-center gap-2">
           {pinned ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
           {unread ? <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" /> : null}
-          <span className="font-mono text-[10px] text-ink-4">{formatTime(thread.lastTs)}</span>
+          <span className="font-mono text-[11px] text-ink-3">{formatTime(thread.lastTs)}</span>
         </span>
       }
       onClick={() => context.onSelect(thread)}
@@ -138,50 +157,39 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
           count={resource.status === "ready" ? resource.data.length : undefined}
           actions={
             <Button size="sm" variant="ghost" disabled={resource.data.length === 0} onClick={() => { void dispatch({ type: "threads.markAllRead" }) }}>
-              <CheckCheckIcon /> Mark all read
+              <CheckCheckIcon data-icon="inline-start" /> Mark all read
             </Button>
           }
         />
         <FilterToolbar
           search={
-            <div className="relative">
-              <SearchIcon className="pointer-events-none absolute top-1/2 left-2.5 size-3.5 -translate-y-1/2 text-ink-4" />
-              <Input aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} className="pl-8" />
-            </div>
+            <FilterSearch aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
-              <Select value={state} onValueChange={(value) => setState((value || "all") as SessionStateFilter)}>
+              <Select items={STATE_ITEMS} value={state} onValueChange={(value) => setState((value || "all") as SessionStateFilter)}>
                 <SelectTrigger aria-label="Filter inbox by state" className="w-full min-w-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All states</SelectItem>
-                  <SelectItem value="need">Needs input</SelectItem>
-                  <SelectItem value="block">Blocked</SelectItem>
-                  <SelectItem value="work">Running</SelectItem>
-                  <SelectItem value="idle">Idle</SelectItem>
-                  <SelectItem value="done">Complete</SelectItem>
+                  <SelectGroup>{STATE_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
                 </SelectContent>
               </Select>
-              <Select value={harness} onValueChange={(value) => setHarness((value || "all") as HarnessFilter)}>
+              <Select items={HARNESS_ITEMS} value={harness} onValueChange={(value) => setHarness((value || "all") as HarnessFilter)}>
                 <SelectTrigger aria-label="Filter inbox by harness" className="w-full min-w-0"><SelectValue /></SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="all">All harnesses</SelectItem>
-                  <SelectItem value="claude-code">Claude Code</SelectItem>
-                  <SelectItem value="codex">Codex</SelectItem>
+                  <SelectGroup>{HARNESS_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
                 </SelectContent>
               </Select>
-              <Select value={sort} onValueChange={(value) => setSort((value || "needs") as InboxSort)}>
-                <SelectTrigger aria-label="Sort inbox" className="w-full min-w-0"><SelectValue /></SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="needs">Needs first</SelectItem>
-                  <SelectItem value="recent">Recent</SelectItem>
-                  <SelectItem value="alphabetic">Alphabetic</SelectItem>
-                  <SelectItem value="unread">Unread</SelectItem>
-                </SelectContent>
-              </Select>
+              <div className="col-span-2">
+                <Select items={INBOX_SORT_ITEMS} value={sort} onValueChange={(value) => setSort((value || "needs") as InboxSort)}>
+                  <SelectTrigger aria-label="Sort inbox" className="w-full min-w-0"><SelectValue /></SelectTrigger>
+                  <SelectContent>
+                    <SelectGroup>{INBOX_SORT_ITEMS.map((item) => <SelectItem key={item.value} value={item.value}>{item.label}</SelectItem>)}</SelectGroup>
+                  </SelectContent>
+                </Select>
+              </div>
             </>
           }
-          className="flex-col items-stretch py-2 [&>div:first-child]:max-w-none [&>div:nth-child(2)]:grid [&>div:nth-child(2)]:grid-cols-3"
+          className="flex-col items-stretch py-2 [&>div:first-child]:max-w-none [&>div:nth-child(2)]:grid [&>div:nth-child(2)]:grid-cols-2"
         />
         <ResourceNotice resource={resource} label="Inbox is degraded" onRetry={() => { void dispatch({ type: "fleet.refresh" }) }} />
         {threads.length > 0 ? (
@@ -210,7 +218,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to inbox</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><SessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} /></div>
       </section>
     </div>
   )

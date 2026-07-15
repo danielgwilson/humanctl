@@ -1,8 +1,9 @@
 import type { FormEvent, KeyboardEvent, ReactNode } from "react"
-import { ArrowUpIcon, LoaderCircleIcon } from "lucide-react"
+import { ArrowUpIcon } from "lucide-react"
 
 import { Button } from "@humanctl/ui/components/button"
-import { Textarea } from "@humanctl/ui/components/textarea"
+import { InputGroup, InputGroupAddon, InputGroupTextarea } from "@humanctl/ui/components/input-group"
+import { Spinner } from "@humanctl/ui/components/spinner"
 import { cn } from "@humanctl/ui/lib/cn"
 
 type ComposerProps = {
@@ -51,26 +52,28 @@ function Composer({
   return (
     <form
       data-slot="composer"
-      className={cn("rounded-[var(--radius-4)] bg-sunken p-1.5 shadow-[var(--elev-ring)] focus-within:ring-2 focus-within:ring-ring focus-within:ring-offset-2 focus-within:ring-offset-background", className)}
+      className={cn("w-full", className)}
       onSubmit={handleSubmit}
     >
-      <Textarea
-        aria-label={placeholder}
-        value={value}
-        onChange={(event) => onValueChange(event.currentTarget.value)}
-        onKeyDown={handleKeyDown}
-        placeholder={placeholder}
-        disabled={disabled}
-        className="min-h-20 max-h-48 bg-transparent px-2 py-1.5 shadow-none focus-visible:shadow-none"
-      />
-      <div className="flex min-h-[var(--control-sm)] items-center gap-1 px-1">
-        {actions}
-        {hint ? <span className="ml-1 truncate font-mono text-[11px] text-ink-3 max-[560px]:hidden">{hint}</span> : null}
-        <Button type="submit" variant="primary" size="sm" disabled={!canSubmit} className="ml-auto">
-          {submitting ? <LoaderCircleIcon className="animate-spin motion-reduce:animate-none" /> : <ArrowUpIcon />}
-          {submitLabel}
-        </Button>
-      </div>
+      <InputGroup className="overflow-hidden">
+        <InputGroupTextarea
+          aria-label={placeholder}
+          value={value}
+          onChange={(event) => onValueChange(event.currentTarget.value)}
+          onKeyDown={handleKeyDown}
+          placeholder={placeholder}
+          disabled={disabled}
+          className="min-h-20 max-h-48 px-2.5 pt-2 pb-1"
+        />
+        <InputGroupAddon align="block-end" className="min-h-[var(--control-sm)] justify-start gap-1 px-2 pt-1 pb-1.5">
+          {actions}
+          {hint ? <span className="ml-1 truncate font-mono text-[11px] text-ink-3 max-[560px]:hidden">{hint}</span> : null}
+          <Button type="submit" variant="primary" size="sm" disabled={!canSubmit} className="ml-auto">
+            {submitting ? <Spinner data-icon="inline-start" /> : <ArrowUpIcon data-icon="inline-start" />}
+            {submitLabel}
+          </Button>
+        </InputGroupAddon>
+      </InputGroup>
     </form>
   )
 }

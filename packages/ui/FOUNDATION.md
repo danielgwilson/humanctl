@@ -8,7 +8,8 @@ not recreate controls, geometry, loading states, or product blocks.
 
 - One owner per signal on each screen.
 - No cards. Use continuous fields, rules, rows, rails, and floating overlays.
-- Base UI owns keyboard, focus, dismissal, and overlay behavior.
+- Registry behavior primitives own keyboard, focus, dismissal, message follow,
+  and overlay behavior.
 - Every reusable visual module has one explicit leaf export.
 - Product blocks may compose primitives. Application code may compose blocks.
 - Views may own focus, selection, drafts, scroll, and open state only.
@@ -30,3 +31,7 @@ with object size.
 `registry.json` is the source manifest. Add a component only when a real
 viewport needs it. Every item must include its dependencies and source files.
 Run `npm run verify` after changing the manifest or package exports.
+
+The repo-local shadcn skill is installed under `.agents/skills/shadcn`. The
+project uses only public open-source Registry items and preserves their notices
+in `THIRD_PARTY_NOTICES.md`.

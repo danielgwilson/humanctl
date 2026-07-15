@@ -242,7 +242,7 @@ function migrateState(raw: unknown): UiState {
 }
 function readState(): UiState {
   let raw: unknown;
-  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'dark', view: 'inbox', navPinned: false, rightRailOpen: false }; }
+  try { raw = JSON.parse(fs.readFileSync(statePath(), 'utf8')); } catch { return { pins: [], theme: 'dark', view: 'inbox', navPinned: true, rightRailOpen: false }; }
   const migrated = migrateState(raw);
   if (migrated.__migrated) {
     delete migrated.__migrated;

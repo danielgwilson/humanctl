@@ -50,6 +50,10 @@ function MenuLabel({ className, ...props }: MenuPrimitive.GroupLabel.Props) {
   )
 }
 
+function MenuGroup({ className, ...props }: MenuPrimitive.Group.Props) {
+  return <MenuPrimitive.Group data-slot="menu-group" className={cn("py-0.5", className)} {...props} />
+}
+
 function MenuItem({ className, ...props }: MenuPrimitive.Item.Props) {
   return (
     <MenuPrimitive.Item
@@ -83,4 +87,4 @@ function MenuShortcut({ className, ...props }: ComponentProps<"span">) {
   )
 }
 
-export { Menu, MenuContent, MenuItem, MenuLabel, MenuSeparator, MenuShortcut, MenuTrigger }
+export { Menu, MenuContent, MenuGroup, MenuItem, MenuLabel, MenuSeparator, MenuShortcut, MenuTrigger }

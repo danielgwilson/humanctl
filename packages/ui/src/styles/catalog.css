@@ -1,0 +1,6 @@
+@reference "tailwindcss/theme.css";
+@reference "./tokens.css";
+@import "tailwindcss/utilities.css" layer(utilities) source(none);
+
+@source "../catalog";
+@source not inline("filter");

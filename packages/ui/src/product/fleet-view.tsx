@@ -69,8 +69,8 @@ export function FleetView({ model, dispatch }: { model: HumanctlApplicationModel
             <div className="grid grid-cols-5 border-b border-border max-[760px]:grid-cols-2">
               {STATE_ORDER.map((state, index) => (
                 <div key={state} className="border-r border-border px-4 py-4 last:border-r-0 max-[760px]:border-b">
-                  <div className="font-mono text-[10px] uppercase tracking-[0.06em] text-ink-4">{state === "need" ? "Needs you" : state === "block" ? "Blocked" : state === "work" ? "Working" : state === "done" ? "Complete" : "Idle"}</div>
-                  <div className="mt-1 flex items-baseline gap-2"><span className="text-[24px] leading-7 font-semibold tabular-nums text-ink">{counts[state]}</span>{index === 0 && status?.needsYou ? <span className="font-mono text-[10px] text-need">{status.needsYou === 1 ? "action" : "actions"}</span> : null}</div>
+                  <div className="font-mono text-[11px] uppercase tracking-[0.06em] text-ink-3">{state === "need" ? "Needs you" : state === "block" ? "Blocked" : state === "work" ? "Working" : state === "done" ? "Complete" : "Idle"}</div>
+                  <div className="mt-1 flex items-baseline gap-2"><span className="text-[24px] leading-7 font-semibold tabular-nums text-ink">{counts[state]}</span>{index === 0 && status?.needsYou ? <span className="font-mono text-[11px] text-need">{status.needsYou === 1 ? "action" : "actions"}</span> : null}</div>
                 </div>
               ))}
             </div>
@@ -90,7 +90,7 @@ export function FleetView({ model, dispatch }: { model: HumanctlApplicationModel
             </section>
           </div>
 
-          <div className="flex min-h-10 items-center border-b border-border px-4 font-mono text-[10px] text-ink-4">
+          <div className="flex min-h-10 items-center border-b border-border px-4 font-mono text-[11px] text-ink-3">
             {sessionsResource.status === "loading" && sessions.length === 0 ? "Loading fleet distribution" : `${sessions.length} sessions in the current inventory`}
             {status?.generatedAt ? <span className="ml-auto">Updated {formatTime(status.generatedAt)}</span> : null}
           </div>
