@@ -29,13 +29,13 @@ with object size.
 
 ## Registry workflow
 
-`registry.json` is the source manifest. Add a component only when a real
-viewport needs it. Every item must include its dependencies and source files.
-`npm run registry:build` emits portable consumer aliases; `npm run verify`
-rejects package-local imports in generated items. A consumer imports
-`@/styles/app.css` once from its root stylesheet after installing the
-foundation. Publish every absolute Registry dependency URL before advertising
-a remote install command.
+`registry.json` is a local source manifest for organizing and validating the
+foundation. It is not an install service. Add a component only when a real
+viewport needs it, and list every owned source file in exactly one coherent
+item. `npm run registry:validate` checks the shadcn source schema, while
+`npm run verify` checks unique ownership and export coverage. No Registry
+payload belongs under `public/r`, and no remote or cross-project install
+contract exists.
 
 The repo-local shadcn skill is installed under `.agents/skills/shadcn`. The
 project uses only public open-source Registry items and preserves their notices

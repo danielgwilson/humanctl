@@ -12,7 +12,7 @@
     "catalog:preview": "vite preview --config vite.config.ts",
     "typecheck": "tsc --noEmit",
     "verify": "node ./scripts/verify-foundation.mjs",
-    "registry:build": "node ./scripts/build-registry.mjs",
+    "registry:validate": "shadcn registry validate ./registry.json",
     "check": "npm run typecheck && npm run verify"
   },
   "exports": {

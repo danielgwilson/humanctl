@@ -3,10 +3,9 @@
 Date: 2026-07-15
 
 Status: foundation correction implemented and verified locally. The UI,
-Registry payload, renderer, browser, Electron startup, and packaged-app gates
-below are current. The remote Registry endpoint is not published yet, and the
-pre-existing main-process event-loop gate remains red on both this branch and
-clean `main`; neither is represented as passing.
+local Registry manifest, renderer, browser, Electron startup, and packaged-app
+gates below are current. The pre-existing main-process event-loop gate remains
+red on both this branch and clean `main`; it is not represented as passing.
 
 ## Decision
 
@@ -20,9 +19,11 @@ The repo-local shadcn skill is installed at `.agents/skills/shadcn`. The skill
 lock records the public source. No private repository or external product is a
 runtime, build, or design dependency.
 
-Registry source keeps package-local imports. `npm run registry:build` rewrites
-generated payloads to portable consumer aliases such as `@/components/ui` and
-`@/lib/cn`; verification rejects any emitted `@humanctl/ui` import.
+The Registry is an internal organization and validation surface only. Source
+keeps package-local imports. `npm run registry:validate` checks the source
+manifest against the shadcn schema; the package verifier checks unique file
+ownership and export coverage. The repo retains no install payloads, endpoint,
+namespace, or publication contract.
 
 ## Current component map
 
@@ -88,9 +89,9 @@ Every added primitive must have all of the following:
 The 2026-07-15 acceptance run verified:
 
 - 50 explicit package exports across 8 Registry items.
-- A full local shadcn 4.13 scratch install of the 8-item dependency graph,
-  followed by TypeScript and Vite production builds. Absolute dependency URLs
-  were rebased to the local test server; generated source required no edits.
+- shadcn 4.13 source-manifest validation for all 8 organizational items, plus
+  package verification for unique file ownership, export coverage, and zero
+  retained `public/r` payloads.
 - 543.40 kB initial and 689.80 kB total renderer JavaScript against 600 kB and
   700 kB limits.
 - 80.95 kB initial and 99.90 kB total renderer CSS against 84 kB and 104 kB
@@ -107,11 +108,6 @@ The 2026-07-15 acceptance run verified:
   element, and Geist loaded.
 - A fresh unsigned macOS package build and smoke boot from
   `dist/mac-arm64/humanctl.app`.
-
-The generated files depend on `https://humanctl.com/r/*.json`. Those URLs
-currently return 404 because this branch has not published the Registry. Local
-installability is proven; remote installability is not. Do not advertise a
-remote install command until every dependency URL is deployed.
 
 The heavy-corpus `perf:eventloop` release gate is also not green. This branch
 reproduced a 30.6ms stall and then 75.6ms on its required re-measure. Clean

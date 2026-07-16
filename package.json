@@ -38,7 +38,7 @@
     "ui:budget:selftest": "tsx packages/ui/src/product/budget-draft.selftest.ts",
     "ui:virtual-list:selftest": "tsx packages/ui/src/product/virtual-list.selftest.ts",
     "ui:runtime:selftest": "tsx electron/renderer-vite/src/runtime/runtime.selftest.ts",
-    "ui:registry:verify": "cd packages/ui && ([ -d node_modules ] || npm ci) && npm run registry:build && npm run catalog:build && cd ../.. && git diff --exit-code -- packages/ui/public/r",
+    "ui:registry:verify": "cd packages/ui && ([ -d node_modules ] || npm ci) && npm run verify && npm run registry:validate && npm run catalog:build",
     "ui:foundation:hygiene": "node scripts/ui-foundation-hygiene.mjs",
     "ui:foundation:ownership": "node scripts/ui-foundation-ownership.mjs",
     "ui:foundation:selftest": "node scripts/ui-foundation-hygiene.mjs --selftest && node scripts/ui-foundation-ownership.mjs --selftest",

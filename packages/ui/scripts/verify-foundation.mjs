@@ -7,6 +7,8 @@ const packageJson = JSON.parse(readFileSync(resolve(root, "package.json"), "utf8
 const registry = JSON.parse(readFileSync(resolve(root, "registry.json"), "utf8"))
 
 const failures = []
+const itemNames = new Set()
+const registryFiles = new Map()
 
 function sourceFiles(directory) {
   return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
@@ -21,29 +23,28 @@ for (const [name, target] of Object.entries(packageJson.exports)) {
   if (!existsSync(resolve(root, target))) failures.push(`Missing export target: ${name} -> ${target}`)
 }
 
-const registryNames = new Set(registry.items.map((item) => item.name))
-
 for (const item of registry.items) {
-  for (const dependency of item.registryDependencies ?? []) {
-    if (/^https:\/\//.test(dependency)) continue
-    if (!registryNames.has(dependency)) failures.push(`${item.name} has unknown registry dependency ${dependency}`)
-    else failures.push(`${item.name} uses bare registry dependency ${dependency}; use an absolute Registry item URL`)
-  }
+  if (itemNames.has(item.name)) failures.push(`Duplicate Registry item name: ${item.name}`)
+  itemNames.add(item.name)
+  if ((item.registryDependencies ?? []).length > 0) failures.push(`${item.name} declares install dependencies; this Registry is local organization only`)
   for (const file of item.files ?? []) {
     if (!existsSync(resolve(root, file.path))) failures.push(`${item.name} has missing file ${file.path}`)
+    const priorOwner = registryFiles.get(file.path)
+    if (priorOwner) failures.push(`${file.path} is owned by both ${priorOwner} and ${item.name}`)
+    else registryFiles.set(file.path, item.name)
   }
 }
 
-for (const item of registry.items) {
-  const generatedPath = resolve(root, `public/r/${item.name}.json`)
-  if (!existsSync(generatedPath)) {
-    failures.push(`Generated Registry item is missing: ${item.name}`)
-    continue
+for (const [name, target] of Object.entries(packageJson.exports)) {
+  const normalized = target.replace(/^\.\//, "")
+  if (/^src\/(components|blocks|styles|hooks|lib|catalog)\//.test(normalized) && !registryFiles.has(normalized)) {
+    failures.push(`Registry does not organize exported leaf ${name} -> ${normalized}`)
   }
-  const generated = readFileSync(generatedPath, "utf8")
-  if (generated.includes("@humanctl/ui/")) {
-    failures.push(`${item.name} exposes package-local @humanctl/ui imports to Registry consumers`)
-  }
+}
+
+const publicRegistry = resolve(root, "public/r")
+if (existsSync(publicRegistry) && readdirSync(publicRegistry).some((file) => file.endsWith(".json"))) {
+  failures.push("Built Registry payloads must not be retained or published under public/r")
 }
 
 if (existsSync(resolve(root, "src/components/card.tsx")) || packageJson.exports["./components/card"]) {

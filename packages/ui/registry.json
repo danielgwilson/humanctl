@@ -28,7 +28,6 @@
       "type": "registry:ui",
       "title": "Humanctl controls",
       "description": "Curated Registry controls for the desktop viewport.",
-      "registryDependencies": ["https://humanctl.com/r/humanctl-foundation.json"],
       "dependencies": [
         "@base-ui/react@1.6.0",
         "class-variance-authority@0.7.1",
@@ -72,7 +71,6 @@
       "type": "registry:ui",
       "title": "Humanctl messaging",
       "description": "Message, bubble, marker, and scroll behavior for task conversations.",
-      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "dependencies": ["@shadcn/react@0.2.1"],
       "files": [
         { "path": "src/components/bubble.tsx", "type": "registry:ui" },
@@ -86,7 +84,6 @@
       "type": "registry:block",
       "title": "Humanctl conversation",
       "description": "Role-aware task messages and compact event markers.",
-      "registryDependencies": ["https://humanctl.com/r/humanctl-messaging.json"],
       "files": [
         { "path": "src/blocks/conversation.tsx", "type": "registry:block" }
       ]
@@ -96,7 +93,6 @@
       "type": "registry:block",
       "title": "Humanctl shell",
       "description": "Viewport shell and page framing with fixed chrome geometry.",
-      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "files": [
         { "path": "src/blocks/app-shell.tsx", "type": "registry:block" },
         { "path": "src/blocks/page-frame.tsx", "type": "registry:block" }
@@ -107,7 +103,6 @@
       "type": "registry:block",
       "title": "Humanctl data rows",
       "description": "Flat list, status, quota, and filter anatomy.",
-      "registryDependencies": ["https://humanctl.com/r/humanctl-controls.json"],
       "files": [
         { "path": "src/blocks/list-row.tsx", "type": "registry:block" },
         { "path": "src/blocks/status.tsx", "type": "registry:block" },
@@ -120,10 +115,6 @@
       "type": "registry:block",
       "title": "Humanctl detail and composer",
       "description": "Scrollable detail pane and bounded reply composer.",
-      "registryDependencies": [
-        "https://humanctl.com/r/humanctl-controls.json",
-        "https://humanctl.com/r/humanctl-messaging.json"
-      ],
       "files": [
         { "path": "src/blocks/detail-pane.tsx", "type": "registry:block" },
         { "path": "src/blocks/composer.tsx", "type": "registry:block" }
@@ -134,13 +125,6 @@
       "type": "registry:block",
       "title": "Humanctl foundation catalog",
       "description": "Executable states for visual, keyboard, and interaction review.",
-      "registryDependencies": [
-        "https://humanctl.com/r/humanctl-controls.json",
-        "https://humanctl.com/r/humanctl-shell.json",
-        "https://humanctl.com/r/humanctl-data-rows.json",
-        "https://humanctl.com/r/humanctl-detail-composer.json",
-        "https://humanctl.com/r/humanctl-conversation.json"
-      ],
       "files": [
         { "path": "src/catalog/foundation-catalog.tsx", "type": "registry:block" },
         { "path": "src/styles/catalog.css", "type": "registry:style", "target": "src/styles/catalog.css" }
