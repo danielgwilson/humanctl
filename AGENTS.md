@@ -323,3 +323,14 @@ in `electron/renderer-vite/src/runtime/fixture-adapter.ts`, never real
 transcripts. Run the secret, package, UI ownership, and source-name hygiene
 gates before release. Do not use em dashes in any file. See
 `docs/repo-hygiene.md`.
+
+Leaks are blocked at commit time, not just at PR time: `npm install` arms the
+tracked pre-commit hook (`scripts/git-hooks/pre-commit`), which runs
+`node scripts/leak-scan.mjs --staged` against one shared denylist
+(`scripts/leak-patterns.js`: personal machine topology, owner residue,
+credential shapes). The same list backs `npm run package:check` and the CI
+secret-scan job (`leak-scan --repo`). Extend patterns ONLY in
+`scripts/leak-patterns.js`, always with split string literals so the guard
+never matches its own source, and keep `npm run leak:selftest` passing. If the
+hook blocks your commit, the content is the problem, not the hook; move
+personal material outside the repo instead of bypassing with --no-verify.
