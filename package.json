@@ -23,7 +23,7 @@
     "build": "next build && npm run build:lib",
     "build:lib": "tsup",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
-    "typecheck:renderer": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run typecheck",
+    "typecheck:renderer": "([ -d packages/ui/node_modules ] || npm ci --prefix packages/ui) && cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run typecheck",
     "start": "next start",
     "lint": "eslint .",
     "lint:renderer": "([ -d electron/renderer-vite/node_modules ] || npm ci --prefix electron/renderer-vite) && electron/renderer-vite/node_modules/.bin/eslint --config electron/renderer-vite/eslint.config.mjs electron/renderer-vite/src packages/ui/src --max-warnings 0",
