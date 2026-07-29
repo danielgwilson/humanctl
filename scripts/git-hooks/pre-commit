@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+# Commit-time leak gate for this public repository. Blocks staged content that
+# matches scripts/leak-patterns.js (personal machine topology, owner residue,
+# credential shapes) before it can enter history. Armed by "npm install" via
+# the prepare script (git config core.hooksPath scripts/git-hooks).
+exec node "$(git rev-parse --show-toplevel)/scripts/leak-scan.mjs" --staged

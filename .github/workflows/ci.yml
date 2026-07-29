@@ -18,6 +18,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: bash scripts/secret-scan.sh
+      - run: node scripts/leak-scan.mjs --selftest
+      - run: node scripts/leak-scan.mjs --repo
 
   verify:
     runs-on: ubuntu-latest
