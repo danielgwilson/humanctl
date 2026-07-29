@@ -1,226 +1,123 @@
-# DESIGN.md
+# Humanctl interface
 
-humanctl is an attention router for a scarce human running many coding-agent sessions. Every design decision serves one job: route the human to the next bounded decision with the least noise possible. When in doubt, subtract.
+Humanctl is an attention router for one human supervising many coding-agent
+sessions. The interface must answer three questions quickly:
 
-> **`docs/design-system.md` is the law for colour, type, geometry, elevation, and
-> motion:** the token layer, the primitive vocabulary built on it, and the
-> arithmetic that binds them. Read it before touching a token, a font size, a
-> radius, a shadow, or a transition.
->
-> This file remains the law for everything above the token layer: information
-> architecture, vocabulary, one owner per signal, row anatomy, no cards,
-> ScrollArea always, the bespoke-controls and accessibility hardline, the
-> performance SLOs, the public-repo hygiene rules, and the process rules. Nothing here is
-> superseded. Where the two documents once conflicted, `docs/design-system.md`
-> section 8 states the resolution, and the conflicting sentences below have been
-> corrected rather than left standing.
+1. What needs me?
+2. What changed?
+3. What can I do next?
 
-## The one rule
+When a visible element does not improve one of those answers, remove it.
 
-**One owner per signal.** Every piece of information has exactly one home per screen. Adding a second home for a signal requires deleting the first. If a review adds a count, digest, or status that already renders elsewhere on the same screen, the PR is wrong by definition.
+## Authority
 
-Signal ownership (updated in stage 2d's real-views pass, 0.17.2):
+- [UI foundation contract](./docs/ui-foundation-contract.md) defines package
+  ownership, the runtime and viewport seams, geometry, loading, accessibility,
+  debt, and acceptance gates.
+- [Frontend reset behavior ledger](./docs/frontend-reset-behavior-ledger.md)
+  defines behavior that must survive the renderer replacement.
+- [Design system](./docs/design-system.md) summarizes the active visual rules
+  implemented in `packages/ui`.
+- [Performance](./docs/perf.md) defines the measured release budgets.
 
-| Signal | Owner | Exception |
-|---|---|---|
-| Fleet digest (counts) | bottom context bar | Fleet view's headline (need-you/moving/total stat tiles) restates the same three numbers, read from the same `status` object rather than a re-derivation that could drift; presented as the view's own headline framing, not a second digest sentence. Mirrors the quota exception below. |
-| What needs the human, ranked | Inbox list order | none |
-| Session state + reason | row chip in lists; header chip in detail | none |
-| Spend, tokens, quota | Metrics view | bottom bar shows Codex + Claude quota always (not gated to >80 percent), one percentage each with the detail in its tooltip. Metrics owns every Claude window (dynamic labels, reset text verbatim). Claude quota renders "n/a" honestly whenever the CLI cannot answer (no `claude` on PATH, signed out, or an API-key/Bedrock/Vertex account); it is read from the Claude Code CLI's non-interactive `/usage` command, never from transcripts, which genuinely do expose no rate-limit data. Never a fabricated number. |
-| Complete fleet | Sessions view | none |
-| Fleet shape (session counts by state / harness / tier) | Fleet view | Metrics' harness row is fused with dollars ($ spend + session count per harness in one stat row), a distinct spend-context signal, not a bare count duplicate of Fleet's shape bars |
-| Chief-of-staff chat | right drawer (chat only) | none (resources and digest were removed from this drawer; it is chat-only) |
-| Chat with one session | session detail composer | Inbox reply is the same composer |
-| Context fill | bottom context bar (when a session is open); session detail meta | none |
-| Notes stream | Inbox | per-session slice in detail |
-| Navigation | left full-height sidebar (offcanvas: fully hidden by default, header toggle or left-edge hover reveals it, Cmd+\ toggle, persisted) | none |
-| Settings + theme | the user/settings picker at the foot of the sidebar | Settings remains a routable `app.set-view('settings')` destination; the picker is its entry point, not a second, independent home |
+`packages/ui` is the only visual owner. The Electron renderer contains a
+runtime adapter and a thin viewport adapter. It does not maintain a second
+design system.
 
-## Information architecture
+## One owner per signal
 
-Chrome (shell v4, stage 2b; header compacted and given a matching left-sidebar toggle in stage 2e; sidebar switched from a collapsible icon rail to offcanvas in 0.17.4): a full-height left sidebar (collapsible offcanvas: fully hidden by default, with a user-settings picker at its foot) / a compact inset header (a left-side sidebar-toggle icon, wordmark + version, and the right-drawer toggle icon on the far right -- both toggles share the same bespoke icon-button treatment). Whichever element occupies the window's top-left corner in the current state owns the macOS traffic-light band, and that band is deliberately rule-free so no border crosses the lights: the sidebar's own top-left header band when expanded (header is inset to its right, plain symmetric padding, normal border); the header itself when collapsed (it spans from x=0, gets left padding that clears the lights instead, and drops its own border). The active view / a toggled right chief-of-staff drawer / a persistent bottom context bar sit within the inset, full width of the content column.
+Every signal has one visible owner per screen. A compact digest may link to a
+detailed owner, but it must not reproduce the detail.
 
-Nav (a full-height sidebar, offcanvas: fully hidden by default, NOT an icon rail -- collapsed means zero rail and full-width content): Inbox (default, unread badge), Metrics, Fleet, Sessions; keys 1/2/3/4 switch between them. The header's PanelLeft toggle or Cmd+backslash reveals/hides it (state persists); hovering the very left edge of the window also peeks it open (see "Deliberate deviations" below). Labels are always shown as text next to each icon whenever the sidebar is visible at all (there is no partially-visible icon-only state left to tooltip over). Settings is reached through the user/settings picker's "All settings," not a sidebar icon. Opening any session from any view shows the full-width session detail with a back breadcrumb; Esc returns. The chief-of-staff drawer is a summonable right-side overlay (key: a, or the header's sidebar-toggle icon), chat only, default closed, state persisted.
+| Signal | Owner |
+|---|---|
+| Ranked work requiring the human | Inbox list |
+| Complete recent session inventory | Sessions view |
+| Spend, tokens, and quota detail | Metrics view |
+| Fleet distribution | Fleet view |
+| Session conversation and pending asks | Session detail |
+| Global fleet and quota digest | Bottom status band |
+| Persisted preferences | Settings view |
+| Chief-of-staff conversation | Chief-of-staff right rail |
 
-## Vocabulary (one, everywhere)
+A new count, digest, status, or action requires naming its owner in the PR. If
+the same signal already exists on that screen, delete one of them.
 
-Session states: `running`, `needs input`, `needs approval`, `blocked`, `stalled`, `stale`, `finished`, `archived`. The needs-* and blocked states carry a reason string rendered on hover or in detail ("asks a question", "interrupted", "note: blocked"). Note levels (`fyi`, `review`, `blocked`, `done`) appear only as chips on note items, never as session states. No other status words may be introduced.
+## Product vocabulary
 
-Colors are semantic and fixed per axis: needs-* amber family, blocked/stalled red family, running green family, finished blue family, stale/archived neutral. Harness identity is conveyed by icon, never by color; a vendor name never enters the token layer. The hues themselves are defined in `docs/design-system.md` section 1.6.
+Session states are `running`, `needs input`, `blocked`, `idle`, and `complete`.
+Freshness tiers are `hot`, `drifting`, and `archived`. Note levels are `fyi`,
+`review`, `blocked`, and `done`. Note levels never become session states.
 
-## Row anatomy (session rows, inbox threads)
+State is never color alone. A state treatment includes a text label and a
+semantic mark. Harness identity is conveyed by text and a neutral mark, not by
+assigning a harness its own interface color.
 
-Line 1: harness icon + custom session title + relative time.
-Line 2: state chip + the message to the human (the detected ask or newest note, first sentence).
-Line 3: working-directory basename + PR chip (merged/total, colored by state) when PRs exist.
-No avatars. No context bars. No raw last-message snippets when an ask or note exists.
+## Visual direction
 
-Time ladder: `now`, `Nm`, `Nh`, weekday for this week, `M/D` beyond. Absolute timestamps only inside detail views.
+- Neutral surfaces carry structure. Blue owns selection, focus, links, and the
+  primary action.
+- Geist Variable is the interface face. The system mono stack is limited to
+  paths, IDs, raw payloads, and other machine-readable text. Numeric telemetry
+  uses tabular figures without becoming mono by default.
+- Controls are 28px or 32px high. Top chrome is 48px. The navigation rail is
+  275px and the chief-of-staff rail is 360px.
+- Lists are continuous flat fields separated by hairline rules. No cards.
+- In-flow content has no shadow. Only floating overlays may cast a shadow.
+- Each visible region has at most one filled primary action.
+- Light and dark themes are first-class and independently checked.
+- The shell and resource-specific skeletons paint immediately. Sessions,
+  inbox, status, quota, skills, budget, and timeline load independently.
+- A desktop launch shows the compiled application version immediately. It
+  never shows fixture labeling while status is loading.
 
-## Type, surface, density
+## Rows and detail
 
-Type, surfaces, and the palette are defined in `docs/design-system.md`, which is law. The one sentence to carry in your head: **mono is the chrome, sans is language.** Space Grotesk appears only in the view title and in prose addressed to a human (the message to the human, note bodies, chat, the composer, empty states, toasts); everything else, including session titles, nav labels, and button labels, is JetBrains Mono.
+Session and Inbox rows prioritize title, state, the message to the human,
+recency, and compact metadata. Rows remain keyboard-operable and virtualized at
+real fleet size. Complete content belongs in detail, not in taller list rows.
 
-Flat surfaces, no cards, no shadows-as-hierarchy. Calm density: fewer, larger, complete rows beat many truncated ones. Every count renders with a noun. Empty states are quiet and instructive, never celebratory.
+Session detail uses one package-owned block in split and full-width contexts.
+It has one vertical body scroll owner. Notes, summary, conversation, pending
+ask, and composer do not create nested scroll traps. Prose may have a reading
+width; the detail block itself stays aligned to its pane.
 
-## Performance SLOs (enforced by perf:selftest, a LOCAL gate; CI runs only perf:logic-selftest)
+## Interaction and accessibility
 
-The five SLOs below are checked by `npm run perf:selftest`, which drives a real Electron window over CDP and therefore needs a display server. Today's CI runner has none, so perf:selftest is deliberately LOCAL-only: it is a required pre-release gate, wired into `npm run app:install`, and is NOT part of any CI workflow. CI runs `npm run perf:logic-selftest` instead, which proves only the supporting pure logic (the watcher filter, the summary-budget math, harness-icon path resolution, the PR-chip cache contract) and nothing about actual render performance. See `docs/perf.md` for the full split and a point-in-time table of measured numbers.
+- Commodity interaction behavior comes from the Base UI Registry foundation.
+- Every interactive item has a keyboard path, visible focus, an accessible
+  name, and at least a 28px pointer target.
+- Menus, popovers, sheets, dialogs, and the command palette handle focus entry,
+  Escape, outside interaction, and focus return.
+- Command or Control plus B toggles the left rail. Command or Control plus
+  Option or Alt plus B toggles the right rail.
+- Hover-only disclosure is forbidden.
+- Live updates preserve focus, selection, draft text, and scroll position.
+- Normal text meets 4.5:1 contrast. Large text and essential UI marks meet
+  3:1.
+- One global reduced-motion rule removes nonessential animation.
 
-- Cold open to interactive: under 1500 ms on fixture data.
-- Click to paint (row select, view switch): under 100 ms.
-- Idle: zero self-triggered refresh; only the declared poll cadence may cause work. Files the system writes must never live under directories the system watches. lib/commands.ts isInboxRelevantChange is the current enforcement point; extend it whenever a new system-written file is introduced.
-- DOM rebuilds are signature-gated: unchanged data must not rebuild.
-- Heap: steady state after 20 refresh cycles must not grow monotonically.
+## Performance
 
-Renderer bundle size is a separate, cheap budget that CI *can* check, because it needs only a browser build and no display server: `npm run bundle:check` (see `docs/perf.md`).
+- Cold open to interactive: under 1500ms on fixture data.
+- Click to paint: under 100ms.
+- Worst steady-state Electron main-process stall: under 16.7ms.
+- Idle work: only the declared 20-second fleet poll and real external events.
+- Unchanged resources do not replace state or rebuild their subtree.
+- Heap reaches steady state across 20 refresh cycles.
+- Quota and route-specific heavy reads never block fleet first paint.
 
-## Public-repo hygiene rules
+## UI change gate
 
-- No third-party brand assets (Claude, Codex, or any vendor icons) are ever committed. Harness icons are extracted at runtime from locally installed apps, with neutral built-in glyph fallbacks used in fixture mode and screenshots.
-- All committed screenshots use synthetic fixture data only.
-- Do not add real session titles, paths, transcripts, or personal data to code, fixtures, docs, screenshots, or release artifacts.
+Every visible PR must include:
 
-## Bespoke controls and accessibility (hardline, 0.16.1)
+1. Full application screenshots for every affected route and detail state in
+   both themes, using synthetic fixtures.
+2. A one-owner statement for every new visible signal.
+3. Keyboard and focus verification for every changed interaction.
+4. Registry ownership and source-name hygiene gates.
+5. Renderer typecheck, package catalog checks, bundle check, packaged smoke,
+   and the local performance gates.
 
-No native or OS-default interactive control ships in this app. Every
-interactive element is bespoke, tokenized, keyboard-navigable, ARIA-labeled,
-carries a visible focus ring, and meets an adequate hit target. Specifically:
-
-- No bare `<select>`. Filter and sort dropdowns are shadcn's `Select` (Radix
-  Select underneath), restyled onto the humanctl tokens: a button trigger plus
-  a popover listbox styled in the same panel language as the context menu and
-  the user picker (panel2 background, radius, rule, hover), never the OS's
-  own control chrome.
-- No native context menu and no native tooltip where a bespoke one already
-  exists (shadcn's `ContextMenu` and `Tooltip`, both Radix primitives restyled
-  onto the humanctl tokens, replacing the old pure-CSS `[data-tip]` tooltip
-  and the hand-rolled context menu).
-- Every interactive control is keyboard-operable: buttons and the bespoke
-  select use native `<button>` semantics; anything else that is clickable
-  (session/inbox rows, custom dropdowns) carries `role`, `tabindex="0"`, and
-  Enter/Space activation, plus an `aria-label` that summarizes what a sighted
-  user reads visually (state, title, the message to the human).
-- Every focusable element shows a visible `:focus-visible` ring (one shared
-  rule in `electron/renderer-vite/src/styles/globals.css`); no interactive
-  element relies on hover alone to reveal itself to a keyboard user (a control
-  that is `opacity:0` until hover must also reveal on `:focus-visible`).
-- Every overlay (the chief-of-staff drawer, the user/settings picker, the
-  context menu) moves focus in on open, closes and returns focus to its
-  trigger on Esc or an outside interaction, and the drawer keeps a basic focus
-  trap (Tab/Shift+Tab cycle within it while open).
-- Hit targets are at least ~28px in the smaller dimension for anything a
-  pointer or touch is expected to activate, even where the visible glyph is
-  smaller (padding-box sizing, not a visual resize).
-- Text and essential UI meet WCAG AA contrast against every surface it can
-  render on in this app (4.5:1 body text, 3:1 large text/essential UI
-  elements); the muted `--ink3`/`--ink4` tokens are calibrated against the
-  darkest/lightest surface in each theme, not just the page background.
-- Transitions and animations are gated behind `prefers-reduced-motion:
-  reduce` (one rule, `a11y-base`), never per-component.
-
-UI PRs that touch any interactive control must keyboard-test it (Tab to it,
-operate it without a mouse) and state the contrast ratio for any new or
-changed text/background pairing.
-
-## Component contract (renderer-vite, stage 2a)
-
-Commodity controls use the shadcn primitive, restyled onto the humanctl
-tokens above, never a bespoke reimplementation and never stock shadcn
-zinc/new-york look:
-
-- **A small labeled pill is `Chip`** (`components/ui/chip.tsx`, built on
-  shadcn Badge), covering session-state chips, note-level chips
-  (fyi/review/blocked/done), and mono section/stream-tag labels. One
-  component, one cva variant set, one hue-per-axis map -- never a raw
-  `font-mono text-[9px] uppercase ...` span and never a second chip dialect.
-- **A button is a `Button` cva variant** (`components/ui/button.tsx`), never
-  an inline `className` restyle and never a raw `<button>`. `iris` is the
-  primary accent action; `done` and `accent-outline` are the accent-outline
-  "ask" actions. The same conceptual button must render identically wherever
-  it appears.
-- **A scroll region is `ScrollArea`** (`components/ui/scroll-area.tsx`),
-  never a raw `overflow-y-auto` div. No native or OS-default scrollbar ships
-  in this app (this is the bespoke-controls hardline above, applied to
-  scrolling specifically).
-- **A divider is `Separator`** (`components/ui/separator.tsx`), never a
-  bespoke `h-Npx w-px bg-<token>` span.
-- Select, Sheet, ContextMenu, and Tooltip follow the same rule already
-  (adopted in the shell v3 pass): use the shadcn primitive, restyled onto the
-  humanctl palette via the `--color-*` token bridge in `globals.css`, not a
-  hand-rolled popover/overlay.
-- **A segmented control is `ToggleGroup`** (`components/ui/toggle-group.tsx`,
-  built on shadcn's Toggle/ToggleGroup), never a hand-rolled `role="group"`
-  div of raw `<button>`s tracking `aria-pressed` itself. Mono labels, an iris
-  fill on the active option (settings-view's Theme and AI-summary-engine
-  pickers are the current call sites).
-- **A proportional bar is `Progress`** (`components/ui/progress.tsx`, built
-  on shadcn's Progress), never an inline `style={{ width: ... }}` fill over a
-  hand-rolled track div. The hue is a cva variant on the indicator (`iris`,
-  `need`/`block`/`work`/`idle`/`done`, `claude`/`codex`, `ink3`/`rule2`),
-  never a one-off className (Metrics' top-skills bars, Fleet's by-state/
-  by-harness/by-tier bars are the current call sites).
-- **An empty state is `Empty`/`EmptyTitle`/`EmptyDescription`**
-  (`components/ui/empty.tsx`, hand-ported in the house style rather than
-  shadcn's stock dashed-border/icon-medallion card, which reads as a card),
-  never a bespoke one-off `<div className="p-... text-ink3">` placeholder.
-  Quiet, understated -- never celebratory (session-detail, Sessions,
-  Fleet, and Inbox's empty states are the current call sites). Both grades
-  are outline-free: no dashed border, no box, ever. A dashed box cannot be
-  drawn with an inset box-shadow, so it would need the one `border` property
-  the design system forbids, in order to reintroduce the exact card this rule
-  already rejects. Body copy is prose, and prose is never mono.
-- **Action feedback is `Sonner`** (`components/ui/sonner.tsx`, a single
-  `<Toaster/>` mounted once in `App.tsx`), the one transient-feedback surface
-  for a mutation that has no other visible confirmation (theme/engine/budget
-  changes, mark-all-read, session resume). Flat panel2 surface, mono type,
-  never sonner's stock colored success/error iconography or shadow card.
-
-Every new view built on renderer-vite inherits this vocabulary rather than
-deriving a new one-off dialect. Extend the shared primitive (add a cva
-variant, a Chip variant) before reaching for an inline `className` override.
-
-## Deliberate deviations
-
-- **Nav: whole-rail hover-expand (shell v3) -> shadcn Sidebar, tooltip-on-hover
-  (stage 2b).** Shell v3 mandated a nav strip that hover-expands as a whole
-  after >=150ms and pins via Cmd+backslash. Stage 2b replaces this with the
-  shadcn `Sidebar` primitive (`collapsible="icon"`) in a full-height layout:
-  the rail stays an icon strip and shows a per-item tooltip on hover instead
-  of expanding the whole rail; Cmd+backslash still toggles a widened rail,
-  but the state is a persisted boolean (`AppState.navPinned`) rather than a
-  hover-then-pin gesture. This deletes the bespoke fixed-position/hover-timer/
-  pin code entirely and gets keyboard navigation, focus management, and
-  ARIA wiring for the rail from Radix for free. It also moves the rail from
-  a fixed-position overlay spanning header-to-context-bar to a genuine
-  full-height column, with the header and context bar
-  now insets to its right rather than full-width bars the rail floats over.
-- **Nav: icon rail (stage 2b) -> offcanvas + hover-peek (0.17.4).**
-  The collapsed icon rail was 48px (`SIDEBAR_WIDTH_ICON`), but
-  the macOS `hiddenInset` traffic-light cluster's own footprint is ~80-90px
-  including its left inset, so the lights always spilled past the rail's
-  right edge -- no amount of border-tweaking fixed a rail narrower than the
-  lights it had to clear. `collapsible="icon"` is replaced with
-  `collapsible="offcanvas"`: collapsed (default) now means the sidebar is
-  fully hidden and content is full width, removing the too-narrow-rail
-  problem by construction. Traffic-light ownership becomes state-aware
-  instead of sidebar-only: whichever element occupies the window's top-left
-  corner in the current state (the sidebar's own header when expanded, the
-  compact Header when collapsed, since `SidebarInset` now spans from x=0)
-  clears the lights and stays borderless there; never both, never a rule
-  crossing the lights. A new pointer-only affordance, a thin fixed strip at
-  the window's true left edge (below the traffic-light band, rendered only
-  while collapsed), opens the sidebar on a ~120ms debounced hover -- the
-  "move to the edge to reveal" gesture -- layered on top of, not instead of,
-  the accessible paths (the header's `PanelLeft` toggle, Cmd+backslash). This
-  also retires the per-item tooltip-on-hover pattern from stage 2b: there is
-  no longer a partially-visible icon-only rail to hover over, so labels are
-  simply always shown as text whenever the sidebar is visible at all.
-
-## Process rules for UI changes
-
-1. Register commands before wiring UI (see AGENTS.md CommandRegistry invariant).
-2. Every UI PR attaches full-app screenshots of all views in both themes (fixture mode).
-3. Every UI PR states, per new visible element: what signal it shows and why it owns it here (one-owner audit).
-4. perf:selftest must pass; new timers, watchers, or pollers require a line in the PR body declaring their cadence and lifecycle.
-5. UI PRs touching interactive controls must keyboard-test and check contrast (see "Bespoke controls and accessibility" above).
+Real transcripts, local paths, secrets, and third-party brand assets never
+enter fixtures, screenshots, or tracked interface source.

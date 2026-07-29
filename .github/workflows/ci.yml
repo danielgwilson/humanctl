@@ -41,6 +41,18 @@ jobs:
       # root eslint config still ignores electron/** on purpose.
       - run: npm run lint:renderer
       - run: npm run typecheck:renderer
+      # Registry owner package and thin-runtime verification. The package
+      # install is locked independently so its catalog and registry checks do
+      # not depend on renderer node_modules layout.
+      - run: npm run ui:check
+      - run: npm run ui:registry:verify
+      - run: npm run ui:derivations:selftest
+      - run: npm run ui:budget:selftest
+      - run: npm run ui:virtual-list:selftest
+      - run: npm run ui:runtime:selftest
+      - run: npm run ui:foundation:selftest
+      - run: npm run ui:foundation:hygiene
+      - run: npm run ui:foundation:ownership
       - run: npm run build:lib
       # Proves the npm artifact is CLI-only and scans both the repository and
       # package contents for personal home paths and credential shapes.
@@ -70,19 +82,13 @@ jobs:
       # Renderer bundle budget. This one DOES run in CI: it needs only a browser
       # `vite build`, no Electron window and no display server. See docs/perf.md.
       - run: npm run bundle:check
-      # docs/design-system.md section 10, gate 1: parses globals.css, converts
-      # every authored oklch to sRGB, asserts gamut, composites alpha
-      # source-over in sRGB, and asserts the full section 1.8 colour contract
-      # (ink ladder, hue contrast/soft pairs, solid-fill hover/press, the
-      # hairline, the focus ring, and the selected-beats-hover orderings).
+      # Parses the Registry-owned tokens.css, checks every authored oklch value
+      # for sRGB gamut, then proves the ink, semantic state, solid action,
+      # focus, and selected-state contrast contracts in both themes.
       # Pure Node + tsx, no browser, no display server.
       - run: npm run tokens:check
-      # docs/design-system.md section 10, gate 3: a plain-text grep over a
-      # denylist of retired class names (bg-accent, text-muted-foreground,
-      # border-border, bg-sidebar-*, shadow-(xs|md|lg|2xl)). Tailwind drops
-      # an unknown class silently rather than erroring, so this is the only
-      # thing that would catch a magenta-canary-retired class name (#68)
-      # sneaking back into a diff as a no-op. See scripts/design-lint-classnames.js's
-      # header for why rounded-(sm|md|lg) is deliberately not in this pass yet.
+      # Plain-text debt gate over Registry source. It rejects retired semantic
+      # namespaces, theme-specific variants, and legacy shadow utilities while
+      # preserving current token-backed Registry utilities.
       - run: npm run lint:classnames
       - run: npm run build

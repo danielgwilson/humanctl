@@ -2,9 +2,9 @@
 
 // Headless full-app screenshot capture over CDP (AGENTS.md "UI PRs" gate).
 //
-// Why headless Chrome and not Electron: the renderer's fixture fallback
-// (electron/renderer-vite/src/lib/use-humanctl.ts) means the whole app --
-// every view, both themes, session detail -- renders and is fully driveable
+// Why headless Chrome and not Electron: the renderer's fixture adapter
+// (electron/renderer-vite/src/runtime/fixture-adapter.ts) means the whole app,
+// including every view, both themes, and session detail, is fully driveable
 // in a plain browser tab with window.humanctl absent, no Electron preload
 // bridge and no real session data required (see AGENTS.md's "Local
 // development and testing" section). Electron itself has no headless mode,
@@ -17,13 +17,15 @@
 // process-hygiene rationale this reuses verbatim).
 //
 // What it produces: the five views (inbox, metrics, fleet, sessions,
-// settings) x both themes, plus session detail x both themes, plus
-// /kitchen-sink (design-system stage 5, #71's own verification demand) x
-// both themes, one PNG each, via window.__humanctlPerf (electron/renderer-
-// vite/src/App.tsx) -- the same renderer-only test hook the perf gate uses,
-// extended here with setTheme, openDetail, and setKitchenSink. 14 PNGs
+// settings) x both themes, plus session detail x both themes, plus the
+// chief-of-staff conversation x both themes, plus the package-owned product
+// catalog x both themes, one PNG each, via
+// window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
+// Its compatibility surface remains setTheme, openDetail, setChiefOfStaff,
+// and setKitchenSink.
+// The setKitchenSink key now opens the product catalog. 22 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
-// repo's top-level `output` entry). To produce the COMMITTED gate set under
+// repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
 // `npm run screenshots -- --out screenshots/<stage>`.
 //
@@ -47,9 +49,8 @@ const DEFAULT_OUT = path.join('output', 'screenshots');
 const VIEWS = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'];
 const THEMES = ['dark', 'light'];
 const VIEWPORT = { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false };
-// Extra settle time past rAF x2 + document.fonts.ready, covering the
-// slowest CSS transition in the renderer (duration-500 utility classes --
-// theme swap, sidebar, drawer) so a capture never lands mid-animation.
+// Extra settle time past rAF x2 + document.fonts.ready, covering the longest
+// token-declared overlay transition plus process scheduling variance.
 const SETTLE_EXTRA_MS = 400;
 const LAUNCH_TIMEOUT_MS = 15000;
 const BOOT_POLL_ATTEMPTS = 30;
@@ -261,6 +262,115 @@ async function settle(cdp) {
   await new Promise((r) => setTimeout(r, SETTLE_EXTRA_MS));
 }
 
+function assert(condition, message) {
+  if (!condition) throw new Error(`foundation assertion failed: ${message}`);
+}
+
+async function dispatchKeyChord(cdp, { code, key, modifiers }) {
+  const keyCode = key.toUpperCase().charCodeAt(0);
+  const base = {
+    code,
+    key,
+    modifiers,
+    windowsVirtualKeyCode: keyCode,
+    nativeVirtualKeyCode: keyCode,
+  };
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyDown', ...base });
+  await cdp.send('Input.dispatchKeyEvent', { type: 'keyUp', ...base });
+}
+
+async function shellGeometry(cdp) {
+  return evalJS(cdp, `(() => {
+    const rect = (selector) => {
+      const node = document.querySelector(selector);
+      if (!node) return null;
+      const value = node.getBoundingClientRect();
+      return { x: value.x, y: value.y, width: value.width, height: value.height };
+    };
+    return {
+      activeTag: document.activeElement?.tagName || null,
+      focusVisible: document.querySelector(':focus-visible')?.tagName || null,
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      geistLoaded: document.fonts.check('400 14px "Geist Variable"'),
+      leftGap: rect('[data-slot="sidebar-gap"]'),
+      rightRail: rect('[data-slot="app-assistant"]'),
+      row: rect('[data-slot="list-row"]'),
+      mobileSidebar: rect('[data-sidebar="sidebar"][data-mobile="true"]'),
+      chief: rect('section[aria-label="Chief of staff"]'),
+      fit: {
+        width: innerWidth,
+        height: innerHeight,
+        scrollX: document.documentElement.scrollWidth > document.documentElement.clientWidth,
+        scrollY: document.documentElement.scrollHeight > document.documentElement.clientHeight,
+      },
+    };
+  })()`);
+}
+
+async function assertFoundationBehavior(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('inbox'); window.__humanctlPerf.setChiefOfStaff(false); true`);
+  await settle(cdp);
+  const initial = await shellGeometry(cdp);
+  assert(initial.activeTag === 'BODY', `launch focus owner should be BODY, received ${initial.activeTag}`);
+  assert(initial.focusVisible === null, `launch should have no :focus-visible artifact, received ${initial.focusVisible}`);
+  assert(initial.bodyFont.includes('Geist Variable'), `body should use Geist Variable, received ${initial.bodyFont}`);
+  assert(initial.geistLoaded, 'Geist Variable should be loaded before capture');
+  assert(Math.abs((initial.leftGap?.width || 0) - 275) < 1, `left rail should be 275px, received ${initial.leftGap?.width}`);
+  assert(Math.abs((initial.row?.height || 0) - 52) < 1, `task rows should be 52px, received ${initial.row?.height}`);
+  assert(!initial.fit.scrollX && !initial.fit.scrollY, 'desktop shell should not scroll at the document root');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const leftClosed = await shellGeometry(cdp);
+  assert((leftClosed.leftGap?.width || 0) < 1, `Command+B should close only the left rail, received ${leftClosed.leftGap?.width}`);
+  assert(leftClosed.rightRail === null, 'Command+B must not open the right rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const leftReopened = await shellGeometry(cdp);
+  assert(Math.abs((leftReopened.leftGap?.width || 0) - 275) < 1, 'second Command+B should restore the left rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  const rightOpen = await shellGeometry(cdp);
+  assert(Math.abs((rightOpen.rightRail?.width || 0) - 360) < 1, `Command+Option+B should open a 360px right rail, received ${rightOpen.rightRail?.width}`);
+  assert(Math.abs((rightOpen.leftGap?.width || 0) - 275) < 1, 'Command+Option+B must not toggle the left rail');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  assert((await shellGeometry(cdp)).rightRail === null, 'second Command+Option+B should close the right rail');
+
+  await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, width: 760, height: 500 });
+  await settle(cdp);
+  const compact = await shellGeometry(cdp);
+  assert(!compact.fit.scrollX && !compact.fit.scrollY, 'minimum desktop viewport should not scroll at the document root');
+  assert((compact.leftGap?.width || 0) < 1, 'left rail should use compact Sheet behavior at 760px');
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+  const compactLeftOpen = await shellGeometry(cdp);
+  assert(
+    Math.abs((compactLeftOpen.mobileSidebar?.width || 0) - 275) < 1,
+    `Command+B should open a 275px left Sheet at compact width, received ${compactLeftOpen.mobileSidebar?.width}`,
+  );
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+  await settle(cdp);
+
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+  const compactRightOpen = await shellGeometry(cdp);
+  assert(
+    Math.abs((compactRightOpen.chief?.width || 0) - 360) < 1,
+    `Command+Option+B should open a 360px right Sheet at compact width, received ${compactRightOpen.chief?.width}`,
+  );
+  await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+  await settle(cdp);
+
+  await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+  await settle(cdp);
+  log('foundation assertions passed: font, focus, 52px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
+}
+
 async function capture(cdp, outDir, filename) {
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const outPath = path.join(outDir, filename);
@@ -269,30 +379,15 @@ async function capture(cdp, outDir, filename) {
   log(`wrote ${path.relative(REPO_ROOT, outPath)} (${size} bytes)`);
 }
 
-// /kitchen-sink is one long page (every primitive in every variant, issue
-// #71's own verification demand) scrolled inside its own ScrollArea, which
-// is a real `overflow` clip, not a document-level scroll -- so
-// Page.captureScreenshot's captureBeyondViewport can't see past it the way
-// it can for ordinary page overflow (that flag extends the SHOT past the
-// window's viewport, it does not un-clip an element's own overflow:hidden/
-// scroll). Several of this route's sections also force a Radix Dialog/
-// DropdownMenu/Tooltip open simultaneously, each of which moves focus into
-// itself on mount and can auto-scroll the ScrollArea to bring itself into
-// view, which makes a plain fixed-viewport screenshot's scroll position
-// non-deterministic on top of that (observed: it landed mid-page, skipping
-// every primitive above Progress, on one run).
-//
-// Fixed by growing the BROWSER'S viewport to fit the content instead of
-// fighting the clip: every ancestor between the window and the kitchen-sink
-// ScrollArea sizes itself off the viewport (h-screen / h-full / flex-1), so
-// making the viewport tall enough that the ScrollArea's own "h-full" never
-// needs to scroll renders the whole page in one normal screenshot. Measures
-// the ScrollArea viewport's real scrollHeight, resizes to it (plus a little
-// headroom for the app's own header/context-bar chrome), settles once more,
-// captures, then restores the standard VIEWPORT for the next iteration.
-async function captureKitchenSink(cdp, outDir, filename) {
+// The package-owned product catalog is taller than the standard viewport.
+// Grow the browser viewport to the catalog root's measured height before the
+// capture. The Base UI ScrollArea selector remains the fallback for catalog
+// variants that use a clipped root viewport. Then restore the standard size.
+async function captureProductCatalog(cdp, outDir, filename) {
   const contentHeight = await evalJS(cdp, `
-    document.querySelector('[data-radix-scroll-area-viewport]')?.scrollHeight || document.body.scrollHeight
+    document.querySelector('[data-slot="foundation-catalog"]')?.scrollHeight ||
+      document.querySelector('[data-slot="scroll-area-viewport"]')?.scrollHeight ||
+      document.body.scrollHeight
   `);
   const tallViewport = { ...VIEWPORT, height: Math.ceil(contentHeight) + 120 };
   await cdp.send('Emulation.setDeviceMetricsOverride', tallViewport);
@@ -331,13 +426,14 @@ async function main() {
 
     let booted = false;
     for (let i = 0; i < BOOT_POLL_ATTEMPTS; i++) {
-      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail && window.__humanctlPerf.setKitchenSink)`);
+      const ready = await evalJS(cdp, `!!(window.__humanctlPerf && window.__humanctlPerf.setTheme && window.__humanctlPerf.openDetail && window.__humanctlPerf.setChiefOfStaff && window.__humanctlPerf.setKitchenSink)`);
       if (ready) { booted = true; break; }
       await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
     }
-    if (!booted) throw new Error('renderer never exposed window.__humanctlPerf.setTheme/openDetail/setKitchenSink -- did the App.tsx perf hook change shape?');
+    if (!booted) throw new Error('renderer never exposed the required screenshot hooks; did the product perf hook change shape?');
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+    await assertFoundationBehavior(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);
@@ -350,24 +446,52 @@ async function main() {
       }
 
       // Session detail: no id given, so the hook opens the first known
-      // fixture session (App.tsx's openDetail default).
+      // fixture session (the product hook's openDetail default).
       await evalJS(cdp, `window.__humanctlPerf.openDetail(); true`);
       await settle(cdp);
       await capture(cdp, outDir, `session-detail-${theme}.png`);
 
-      // /kitchen-sink (design-system stage 5, #71): App.tsx's render order
-      // checks kitchenSink BEFORE selectedThread, so it overrides the open
-      // session detail from the capture just above with no separate
-      // "close" step needed. Toggle the fixture-only route on, capture, and
-      // toggle it back off before the next theme iteration's own view loop
-      // runs.
+      await evalJS(cdp, `window.__humanctlPerf.setChiefOfStaff(true); true`);
+      await settle(cdp);
+      await capture(cdp, outDir, `chief-of-staff-${theme}.png`);
+      await evalJS(cdp, `window.__humanctlPerf.setChiefOfStaff(false); true`);
+      await settle(cdp);
+
+      // Reset to the neutral list state before capturing shell geometry so the
+      // proof images isolate the rail behavior from the prior detail fixture.
+      await evalJS(cdp, `window.__humanctlPerf.setView('inbox'); true`);
+      await settle(cdp);
+
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await capture(cdp, outDir, `sidebar-collapsed-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+
+      await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, width: 760, height: 840 });
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await capture(cdp, outDir, `sidebar-sheet-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
+      await settle(cdp);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+      await settle(cdp);
+      await capture(cdp, outDir, `chief-of-staff-sheet-${theme}.png`);
+      await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 5 });
+      await settle(cdp);
+      await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+      await settle(cdp);
+
+      // setKitchenSink is the stable perf-hook key for the package-owned
+      // product catalog. Keep the stable screenshot filename for downstream
+      // comparisons while the captured surface is the new catalog.
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(true); true`);
       await settle(cdp);
-      await captureKitchenSink(cdp, outDir, `kitchen-sink-${theme}.png`);
+      await captureProductCatalog(cdp, outDir, `kitchen-sink-${theme}.png`);
       await evalJS(cdp, `window.__humanctlPerf.setKitchenSink(false); true`);
     }
 
-    log(`done: 14 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: 22 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

@@ -342,6 +342,24 @@ async function main() {
     if (coldOpenTotalMs < BUDGETS.coldOpenMs) log(`cold open: ${coldOpenTotalMs}ms (budget ${BUDGETS.coldOpenMs}ms) -- PASS`);
     else fail(`cold open: ${coldOpenTotalMs}ms exceeds budget ${BUDGETS.coldOpenMs}ms`);
 
+    const launchState = await evalJS(cdp, `(() => ({
+      activeTag: document.activeElement?.tagName || null,
+      focusVisible: document.querySelector(':focus-visible')?.tagName || null,
+      bodyFont: getComputedStyle(document.body).fontFamily,
+      geistLoaded: document.fonts.check('400 14px "Geist Variable"'),
+    }))()`);
+    results.launchState = launchState;
+    if (
+      launchState.activeTag === 'BODY'
+      && launchState.focusVisible === null
+      && launchState.bodyFont.includes('Geist Variable')
+      && launchState.geistLoaded
+    ) {
+      log('launch frame: BODY owns focus, no :focus-visible artifact, Geist loaded -- PASS');
+    } else {
+      fail(`launch frame mismatch: ${JSON.stringify(launchState)}`);
+    }
+
     await cdp.send('Runtime.evaluate', { expression: injectInstrumentation });
 
     // ---- click-to-paint: switch views via the app's own view-switch path, x10 ----

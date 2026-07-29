@@ -1,0 +1,63 @@
+@import "tailwindcss" source(none);
+@import "tw-animate-css";
+@import "./tokens.css";
+@import "@fontsource-variable/geist";
+
+@source "../components";
+@source "../blocks";
+@source "../product";
+
+@layer base {
+  * {
+    border-color: var(--hairline);
+  }
+
+  html,
+  body,
+  #root {
+    min-height: 100%;
+  }
+
+  body {
+    margin: 0;
+    background: var(--surface-0);
+    color: var(--ink);
+    font-family: var(--font-sans-stack);
+    font-size: 14px;
+    font-weight: 400;
+    line-height: 1.45;
+    text-rendering: optimizeLegibility;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  button,
+  input,
+  textarea,
+  select {
+    font: inherit;
+  }
+
+  button:not(:disabled),
+  [role="button"]:not([aria-disabled="true"]) {
+    cursor: default;
+  }
+
+  ::selection {
+    background: var(--overlay-selected);
+  }
+
+  html {
+    @apply font-sans;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
