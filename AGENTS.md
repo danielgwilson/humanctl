@@ -177,11 +177,12 @@ rules exist to keep that class of bug from recurring as the app grows.
 in item 1 below mechanically: `scripts/capture-screenshots.js` builds and
 serves the renderer's browser bundle, drives it headless over CDP (system
 Chrome, not Electron -- see the script's header), and captures all five
-views in both themes plus session detail in both themes and both catalog
-themes, 14 PNGs, on fixture
+views in both themes, session detail in both themes, and the chief-of-staff
+and sidebar collapsed and sheet states in both themes, 20 PNGs, on fixture
 data only. It never touches real session data or `~/.humanctl`. One command,
 one-shot: every timeout inside it bounds a single script run and nothing it
-starts survives the process exiting.
+starts survives the process exiting. The component catalog is not part of the
+app; review it standalone with `cd packages/ui && npm run catalog`.
 
 Every UI-visible change, in every PR:
 

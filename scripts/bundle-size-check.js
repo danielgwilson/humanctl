@@ -13,17 +13,16 @@ const path = require('path');
 
 const KB = 1000;
 
-// Measured 2026-07-30 after the component catalog became a full reference
-// viewer (a nav-plus-detail page for all 41 component and block leaves, each
-// with live previews): 544.79 kB initial JS, 739.39 kB total JS, 80.95 kB
-// initial CSS, 95.62 kB total CSS, and 76.42 kB of Geist Variable WOFF2 files.
-// The catalog is development-only and lazy-loaded, so its growth (+49.6 kB vs
-// the prior 689.80 kB) lands in TOTAL JS, not the cold-open INITIAL JS budget,
-// which is essentially unchanged (was 543.40 kB). The total-JS ceiling is
-// raised to hold the richer catalog with headroom; see docs/perf.md.
+// Measured 2026-07-30 after the component catalog was removed from the app
+// bundle (it is now standalone-only, reviewed via `npm run catalog`, and never
+// imported by the renderer): 541.33 kB initial JS, 650.84 kB total JS across 12
+// files, 80.95 kB initial CSS, 95.62 kB total CSS, and 76.42 kB of Geist
+// Variable WOFF2 files. Total JS is back under the long-standing 700 kB ceiling
+// now that the catalog chunk no longer ships in the app. Typeset stays isolated
+// to the lazy conversation chunk. Initial and total CSS have distinct ceilings.
 const BUDGETS = {
   initialJs: 600 * KB,
-  totalJs: 780 * KB,
+  totalJs: 700 * KB,
   initialCss: 84 * KB,
   totalCss: 104 * KB,
   fonts: 120 * KB,

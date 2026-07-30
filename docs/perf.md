@@ -65,7 +65,7 @@ constants:
 | Signature-gate mutation batches | 0 |
 | Heap growth over 20 cycles | reaches steady state |
 | Renderer initial JS (`bundle:check`, runs in CI) | < 600.00 kB |
-| Renderer total emitted JS (`bundle:check`, runs in CI) | < 780.00 kB |
+| Renderer total emitted JS (`bundle:check`, runs in CI) | < 700.00 kB |
 | Renderer initial CSS (`bundle:check`, runs in CI) | < 84.00 kB |
 | Renderer total emitted CSS (`bundle:check`, runs in CI) | < 104.00 kB |
 
@@ -155,22 +155,19 @@ JS, initial CSS, or total emitted CSS exceeds its budget, printing actual vs
 budget for each.
 
 Budgets (`scripts/bundle-size-check.js`, restated in the SLO table above):
-**600.00 kB initial JS**, **780.00 kB total emitted JS**, **84.00 kB initial
+**600.00 kB initial JS**, **700.00 kB total emitted JS**, **84.00 kB initial
 CSS**, and **104.00 kB total emitted CSS**.
 Initial JS is the entry chunk plus its module-preload dependencies. Total JS
-also includes lazy routes such as the component catalog. A heavy new
-dependency should trip the gate. Every KB of initial JS adds parse and compile
-work directly to the cold-open critical path. The budget is not raised to
-accommodate a renderer reset; a change must prove why the larger payload is
-necessary.
+also includes lazy routes. A heavy new dependency should trip the gate. Every
+KB of initial JS adds parse and compile work directly to the cold-open
+critical path. The budget is not raised to accommodate a renderer reset; a
+change must prove why the larger payload is necessary.
 
-The 2026-07-30 total-JS ceiling was raised from 700 to 780 kB when the
-component catalog became a full reference viewer covering all 41 component and
-block leaves with live previews. That growth (689.80 to 739.39 kB total JS) is
-a lazy, development-only route; initial (cold-open) JS was essentially
-unchanged at 544.79 kB, well under its 600 kB budget. The justification is the
-richer reference surface, not a renderer reset, and initial-JS discipline is
-unchanged.
+The component catalog is not bundled in the app. It is a standalone
+development reference (`cd packages/ui && npm run catalog`), built separately
+and never imported by the renderer, so it does not count against these
+budgets. Removing it from the app on 2026-07-30 returned total JS to 650.84 kB
+(from 739.39 kB), comfortably under the 700 kB ceiling.
 
 The 2026-07-15 foundation correction split the prior single CSS ceiling into
 initial and total ceilings. The measured build was 80.95 kB initial CSS and
