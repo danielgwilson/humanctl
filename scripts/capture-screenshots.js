@@ -385,7 +385,7 @@ async function capture(cdp, outDir, filename) {
 // variants that use a clipped root viewport. Then restore the standard size.
 async function captureProductCatalog(cdp, outDir, filename) {
   const contentHeight = await evalJS(cdp, `
-    document.querySelector('[data-slot="foundation-catalog"]')?.scrollHeight ||
+    document.querySelector('[data-slot="catalog-app"]')?.scrollHeight ||
       document.querySelector('[data-slot="scroll-area-viewport"]')?.scrollHeight ||
       document.body.scrollHeight
   `);
