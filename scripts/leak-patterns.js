@@ -43,6 +43,27 @@ const DENIED_TEXT_PATTERNS = [
     regex: new RegExp('legion' + '\\.' + 'health', 'gi'),
   },
   {
+    // The two-word employer display name, not just the dotted domain, which
+    // would otherwise slip past the domain pattern above.
+    label: 'owner employer name',
+    regex: new RegExp('legion' + '\\s+health', 'gi'),
+  },
+  {
+    label: 'owner personal domain',
+    regex: new RegExp('danielgwilson' + '\\.' + 'com', 'gi'),
+  },
+  {
+    // Owner's non-public product and vendor codenames that must never surface
+    // in this public repo. Word-boundary anchored; none appear in the tree
+    // today, so a match is a genuine leak, not English prose. Each name is
+    // split so this pattern file never contains a full codename.
+    label: 'owner product or vendor name',
+    regex: new RegExp(
+      '\\b(?:' + 'north' + 'star|te' + 'los|heal' + 'thie|dose' + 'spot|fresh' + 'paint|at' + 'tio' + ')\\b',
+      'gi',
+    ),
+  },
+  {
     label: 'recorder vendor name',
     regex: new RegExp('\\bpla' + 'ud\\b', 'gi'),
   },
@@ -79,6 +100,18 @@ const DENIED_TEXT_PATTERNS = [
   {
     label: 'npm token shape',
     regex: new RegExp('npm_' + '[A-Za-z0-9]{36,}', 'g'),
+    exclude: 'scripts/secret-scan.sh',
+  },
+  {
+    // Stripe live secret and restricted keys use an underscore, so the generic
+    // sk-[A-Za-z0-9]{32,} pattern above (a hyphen) never catches them.
+    label: 'Stripe live key shape',
+    regex: new RegExp('(?:sk|rk)_' + 'live_[A-Za-z0-9]{16,}', 'g'),
+    exclude: 'scripts/secret-scan.sh',
+  },
+  {
+    label: 'Google API key shape',
+    regex: new RegExp('AIza' + '[0-9A-Za-z_-]{35}', 'g'),
     exclude: 'scripts/secret-scan.sh',
   },
 ];
