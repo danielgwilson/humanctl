@@ -129,9 +129,14 @@ function selftest() {
     ['cd ~/' + 'local_git' + ' && npm test', 'repository-local home shortcut'],
     ['~/' + 'codex' + '/brain', 'repository-local home shortcut'],
     ['legion' + '.' + 'health', 'owner employer domain'],
+    ['Legion' + ' Health', 'owner employer name'],
+    ['daniel@' + 'danielgwilson' + '.com', 'owner personal domain'],
+    ['the ' + 'north' + 'star' + ' repo', 'owner product or vendor name'],
     ['from the Pla' + 'ud recorder', 'recorder vendor name'],
     ['gh' + 'p_' + 'a'.repeat(36), 'GitHub token shape'],
     ['sk-' + 'ant-' + 'a'.repeat(24), 'Anthropic key shape'],
+    ['sk_' + 'live_' + 'a'.repeat(20), 'Stripe live key shape'],
+    ['AIza' + 'a'.repeat(35), 'Google API key shape'],
     ['npm' + '_' + 'a'.repeat(36), 'npm token shape'],
   ];
   const negatives = [
@@ -141,6 +146,11 @@ function selftest() {
     'plaudits were given',
     'Users of the app can resume sessions',
     'a normal line of code',
+    // The new name patterns must not fire on ordinary English or the bare
+    // employer word without its second token.
+    'a legion of agents finished the run',
+    'the north star metric guides the roadmap',
+    'a telco vendor integration',
   ];
   let failures = 0;
   for (const [text, expected] of positives) {
