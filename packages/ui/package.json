@@ -13,7 +13,8 @@
     "typecheck": "tsc --noEmit",
     "verify": "node ./scripts/verify-foundation.mjs",
     "registry:validate": "shadcn registry validate ./registry.json",
-    "check": "npm run typecheck && npm run verify"
+    "check": "npm run typecheck && npm run verify && npm run verify:catalog",
+    "verify:catalog": "node ./scripts/verify-catalog.mjs"
   },
   "exports": {
     "./styles/globals.css": "./src/styles/globals.css",
@@ -65,7 +66,7 @@
     "./blocks/composer": "./src/blocks/composer.tsx",
     "./blocks/conversation": "./src/blocks/conversation.tsx",
     "./product": "./src/product/index.ts",
-    "./catalog": "./src/catalog/foundation-catalog.tsx"
+    "./catalog": "./src/catalog/catalog-app.tsx"
   },
   "dependencies": {
     "@base-ui/react": "1.6.0",

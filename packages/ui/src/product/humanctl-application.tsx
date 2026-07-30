@@ -86,7 +86,7 @@ const NAVIGATION: Array<{ view: HumanctlView; label: string; icon: LucideIcon; k
 
 const FoundationCatalog = lazy(async () => {
   const catalog = await import("@humanctl/ui/catalog")
-  return { default: catalog.FoundationCatalog }
+  return { default: catalog.CatalogApp }
 })
 
 const MetricsView = lazy(async () => ({ default: (await import("./metrics-view")).MetricsView }))
