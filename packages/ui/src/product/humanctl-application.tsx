@@ -71,7 +71,6 @@ declare global {
       setTheme: (theme: "dark" | "light") => void
       openDetail: (id?: string) => void
       setChiefOfStaff: (open: boolean) => void
-      setKitchenSink: (open: boolean) => void
     }
   }
 }
@@ -83,11 +82,6 @@ const NAVIGATION: Array<{ view: HumanctlView; label: string; icon: LucideIcon; k
   { view: "sessions", label: "Sessions", icon: LayoutListIcon, key: "4" },
   { view: "settings", label: "Settings", icon: SettingsIcon },
 ]
-
-const FoundationCatalog = lazy(async () => {
-  const catalog = await import("@humanctl/ui/catalog")
-  return { default: catalog.CatalogApp }
-})
 
 const MetricsView = lazy(async () => ({ default: (await import("./metrics-view")).MetricsView }))
 const FleetView = lazy(async () => ({ default: (await import("./fleet-view")).FleetView }))
@@ -330,7 +324,6 @@ function ProductCommandPalette({
 
 export function HumanctlApplication({ model, dispatch, version }: HumanctlApplicationProps) {
   const [paletteOpen, setPaletteOpen] = useState(false)
-  const [kitchenSink, setKitchenSink] = useState(false)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const state = model.resources.appState.data
   const compactAssistant = useMediaQuery("(max-width: 1040px)")
@@ -404,27 +397,17 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
 
   useEffect(() => {
     window.__humanctlPerf = {
-      setView: (view) => { setKitchenSink(false); void dispatch({ type: "app.patch", patch: { view, selectedId: undefined } }) },
+      setView: (view) => { void dispatch({ type: "app.patch", patch: { view, selectedId: undefined } }) },
       refresh: () => { void dispatch({ type: "fleet.refresh" }) },
       setTheme: (theme) => { void dispatch({ type: "app.patch", patch: { theme } }) },
       openDetail: (id) => {
-        setKitchenSink(false)
         const session = sessions.find((item) => item.id === id) || sessions[0]
         if (session) openSession(session)
       },
       setChiefOfStaff: (open) => { void dispatch({ type: "app.patch", patch: { rightRailOpen: open } }) },
-      setKitchenSink,
     }
     return () => { delete window.__humanctlPerf }
   }, [dispatch, openSession, sessions])
-
-  if (kitchenSink) {
-    return (
-      <Suspense fallback={<div className="h-dvh bg-background" aria-label="Loading component catalog" />}>
-        <FoundationCatalog />
-      </Suspense>
-    )
-  }
 
   const routeContent = state.view === "inbox"
     ? <InboxView model={model} dispatch={dispatch} />
