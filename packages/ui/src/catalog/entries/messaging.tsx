@@ -1,4 +1,4 @@
-import { BotIcon, UserIcon } from "lucide-react"
+import { BotIcon } from "lucide-react"
 
 import { ConversationMarker, ConversationMessage } from "@humanctl/ui/blocks/conversation"
 import { Bubble, BubbleContent } from "@humanctl/ui/components/bubble"
@@ -36,7 +36,7 @@ export const messagingEntries: CatalogEntry[] = [
               </MessageAvatar>
               <MessageContent>
                 <MessageHeader className="gap-2 text-xs text-ink-3">Agent · 09:41</MessageHeader>
-                <Bubble align="start">
+                <Bubble align="start" variant="ghost">
                   <BubbleContent className="typeset typeset-chat text-ink-2">
                     I checked the current branch and found one pending review.
                   </BubbleContent>
@@ -44,9 +44,6 @@ export const messagingEntries: CatalogEntry[] = [
               </MessageContent>
             </Message>
             <Message align="end">
-              <MessageAvatar aria-hidden="true">
-                <UserIcon />
-              </MessageAvatar>
               <MessageContent>
                 <MessageHeader className="justify-end gap-2 text-xs text-ink-3">You · 09:43</MessageHeader>
                 <Bubble align="end" variant="tinted">
@@ -76,15 +73,15 @@ export const messagingEntries: CatalogEntry[] = [
     category: "Messaging",
     importPath: "components/bubble",
     exports: ["Bubble", "BubbleContent"],
-    blurb: "The message container inside a turn. A tinted variant marks the human side without relying on color alone.",
+    blurb: "The message container inside a turn. The soft tinted variant marks the human's own turn on the right; the agent reads as bare prose (ghost) on the left.",
     tags: ["chat", "container"],
     states: [
       {
-        name: "Default and tinted",
-        description: "agent vs human tone",
+        name: "Agent and human",
+        description: "bare left, soft tint right",
         render: () => (
           <div className="flex w-full max-w-md flex-col gap-3">
-            <Bubble align="start">
+            <Bubble align="start" variant="ghost">
               <BubbleContent className="typeset typeset-chat text-ink-2">
                 Both theme screenshots pass.
               </BubbleContent>
@@ -99,8 +96,8 @@ export const messagingEntries: CatalogEntry[] = [
       },
     ],
     props: [
-      { name: "align", type: '"start" | "end"', note: "Author side; end is the human by convention." },
-      { name: "variant", type: '"default" | "tinted"', note: "Tinted marks the human turn." },
+      { name: "align", type: '"start" | "end"', note: "Author side; end (right) is the human's own turn by convention." },
+      { name: "variant", type: '"ghost" | "tinted" | "outline" | "default" | ...', note: "ghost = bare agent prose; tinted = soft accent for the human turn. default is a loud filled accent, reserved for rare emphasis." },
     ],
     usage: `<Bubble align="end" variant="tinted">
   <BubbleContent>Ship it once CI is green.</BubbleContent>
@@ -179,7 +176,7 @@ export const messagingEntries: CatalogEntry[] = [
         name: "Turns and a marker",
         description: "agent, human, and a tool-call marker",
         render: () => (
-          <div className="w-full max-w-md border-y border-border">
+          <div className="w-full max-w-md">
             <MessageScrollerProvider>
               <MessageScroller>
                 <MessageScrollerViewport aria-label="Conversation turns">
