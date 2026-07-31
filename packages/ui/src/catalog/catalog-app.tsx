@@ -1,5 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react"
+import { MoonIcon, SunIcon } from "lucide-react"
 
+import { IconButton } from "@humanctl/ui/components/icon-button"
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@humanctl/ui/components/tabs"
 import { TooltipProvider } from "@humanctl/ui/components/tooltip"
 
 import {
@@ -42,13 +45,14 @@ function ThemeToggle() {
     })
   }, [])
   return (
-    <button
-      type="button"
+    <IconButton
+      variant="ghost"
+      size="sm"
       onClick={toggle}
-      className="rounded-[6px] border border-border px-2.5 py-1 font-mono text-[11px] tracking-wide text-ink-2 transition-colors hover:bg-overlay hover:text-ink"
+      aria-label={light ? "Switch to dark theme" : "Switch to light theme"}
     >
-      {light ? "Light" : "Dark"}
-    </button>
+      {light ? <SunIcon /> : <MoonIcon />}
+    </IconButton>
   )
 }
 
@@ -140,7 +144,7 @@ function NavRail({
   )
 }
 
-function CopyLine({ text }: { text: string }) {
+function CopyLine({ text, inline = false }: { text: string; inline?: boolean }) {
   const [copied, setCopied] = useState(false)
   const timer = useRef<ReturnType<typeof setTimeout> | null>(null)
   const copy = useCallback(() => {
@@ -151,6 +155,18 @@ function CopyLine({ text }: { text: string }) {
     timer.current = setTimeout(() => setCopied(false), 1400)
   }, [text])
   useEffect(() => () => { if (timer.current) clearTimeout(timer.current) }, [])
+  if (inline) {
+    return (
+      <button
+        type="button"
+        onClick={copy}
+        aria-label="Copy code"
+        className="rounded-[6px] border border-border px-2 py-1 font-mono text-[11px] text-ink-3 transition-colors hover:bg-overlay hover:text-ink"
+      >
+        {copied ? "Copied" : "Copy"}
+      </button>
+    )
+  }
   return (
     <div className="flex items-center gap-3 rounded-[8px] border border-border bg-sunken px-3 py-2">
       <code className="min-w-0 flex-1 truncate font-mono text-[12px] text-ink-2">{text}</code>
@@ -165,51 +181,30 @@ function CopyLine({ text }: { text: string }) {
   )
 }
 
-function SectionLabel({ children }: { children: React.ReactNode }) {
-  return (
-    <h2 className="mb-3 font-mono text-[10px] tracking-[0.08em] text-ink-3 uppercase">
-      {children}
-    </h2>
-  )
-}
-
-function PreviewStage({
-  name,
-  description,
-  children,
-}: {
-  name: string
-  description: string
-  children: React.ReactNode
-}) {
-  return (
-    <div className="overflow-hidden rounded-[10px] border border-border bg-surface">
-      <div className="flex items-baseline justify-between gap-4 border-b border-border px-3.5 py-2">
-        <span className="font-mono text-[10px] tracking-[0.08em] text-ink-3 uppercase">{name}</span>
-        <span className="truncate text-[11px] text-ink-4">{description}</span>
-      </div>
-      <div className="flex min-h-28 items-center justify-center p-8">{children}</div>
-    </div>
-  )
+function SectionHeading({ children }: { children: React.ReactNode }) {
+  return <h2 className="mb-4 text-[15px] font-semibold tracking-[-0.01em] text-ink">{children}</h2>
 }
 
 function DetailPane({ entry }: { entry: CatalogEntry }) {
+  const importLine = `import { ${entry.exports.join(", ")} } from "@humanctl/ui/${entry.importPath}"`
+  const codeBlock = `${importLine}\n\n${entry.usage}`
+  const multi = entry.states.length > 1
   return (
-    <article className="mx-auto flex max-w-4xl flex-col gap-9 px-10 py-10 max-[900px]:px-6">
-      <header className="flex flex-col gap-2.5">
-        <div className="font-mono text-[10px] tracking-[0.08em] text-ink-4 uppercase">
+    <article className="mx-auto w-full max-w-3xl px-8 py-12 max-[900px]:px-5">
+      <header className="flex flex-col items-start gap-3">
+        <div className="font-mono text-[11px] tracking-[0.1em] text-ink-4 uppercase">
           {entry.category} · {entry.kind}
         </div>
-        <h1 className="text-[26px] leading-[30px] font-semibold tracking-[-0.02em] text-ink">
+        <h1 className="text-[30px] leading-[34px] font-semibold tracking-[-0.02em] text-ink">
           {entry.name}
         </h1>
-        <p className="max-w-[62ch] text-[15px] leading-6 text-ink-2">{entry.blurb}</p>
+        <p className="max-w-[60ch] text-[15px] leading-7 text-ink-2">{entry.blurb}</p>
         {entry.tags.length > 0 ? (
-          <div className="mt-1 flex flex-wrap gap-1.5">
+          <div className="flex flex-wrap gap-1.5 pt-1">
             {entry.tags.map((tag) => (
               <span
                 key={tag}
-                className="rounded-[5px] bg-overlay px-2 py-0.5 font-mono text-[10px] tracking-wide text-ink-3"
+                className="rounded-full border border-border px-2.5 py-0.5 font-mono text-[10px] tracking-wide text-ink-3"
               >
                 {tag}
               </span>
@@ -218,40 +213,57 @@ function DetailPane({ entry }: { entry: CatalogEntry }) {
         ) : null}
       </header>
 
-      <section>
-        <SectionLabel>Import</SectionLabel>
-        <CopyLine text={`import { ${entry.exports.join(", ")} } from "@humanctl/ui/${entry.importPath}"`} />
-      </section>
-
-      <section>
-        <SectionLabel>{entry.states.length > 1 ? "States" : "Preview"}</SectionLabel>
-        <div className="flex flex-col gap-4">
-          {entry.states.map((state) => (
-            <PreviewStage key={state.name} name={state.name} description={state.description}>
-              {state.render()}
-            </PreviewStage>
-          ))}
-        </div>
+      <section className="mt-9">
+        <Tabs defaultValue="preview">
+          <TabsList>
+            <TabsTrigger value="preview">Preview</TabsTrigger>
+            <TabsTrigger value="code">Code</TabsTrigger>
+          </TabsList>
+          <TabsContent value="preview" className="mt-3">
+            <div className="flex min-h-[280px] flex-col items-start justify-start gap-10 rounded-[12px] border border-border bg-surface p-10 max-[560px]:p-6">
+              {entry.states.map((state) => (
+                <div key={state.name} className="flex w-full flex-col items-start gap-3">
+                  {multi ? (
+                    <span className="font-mono text-[11px] tracking-[0.08em] text-ink-4 uppercase">
+                      {state.name}
+                    </span>
+                  ) : null}
+                  <div className="flex w-full flex-col items-start">{state.render()}</div>
+                </div>
+              ))}
+            </div>
+          </TabsContent>
+          <TabsContent value="code" className="mt-3">
+            <div className="flex items-start gap-3 rounded-[12px] border border-border bg-sunken">
+              <pre className="min-w-0 flex-1 overflow-x-auto p-5 font-mono text-[13px] leading-6 text-ink-2">
+                <code>{codeBlock}</code>
+              </pre>
+              <div className="p-3">
+                <CopyLine text={codeBlock} inline />
+              </div>
+            </div>
+          </TabsContent>
+        </Tabs>
       </section>
 
       {entry.props && entry.props.length > 0 ? (
-        <section>
-          <SectionLabel>Props</SectionLabel>
-          <div className="overflow-hidden rounded-[10px] border border-border">
+        <section className="mt-12">
+          <SectionHeading>Props</SectionHeading>
+          <div className="overflow-hidden rounded-[12px] border border-border">
             <table className="w-full border-collapse text-left">
               <thead>
-                <tr className="border-b border-border">
-                  <th className="px-3.5 py-2 font-mono text-[10px] tracking-[0.08em] text-ink-4 uppercase">Prop</th>
-                  <th className="px-3.5 py-2 font-mono text-[10px] tracking-[0.08em] text-ink-4 uppercase">Type</th>
-                  <th className="px-3.5 py-2 font-mono text-[10px] tracking-[0.08em] text-ink-4 uppercase">Note</th>
+                <tr className="border-b border-border bg-sunken">
+                  <th className="px-4 py-2.5 text-[12px] font-medium text-ink-3">Prop</th>
+                  <th className="px-4 py-2.5 text-[12px] font-medium text-ink-3">Type</th>
+                  <th className="px-4 py-2.5 text-[12px] font-medium text-ink-3">Note</th>
                 </tr>
               </thead>
               <tbody>
                 {entry.props.map((prop) => (
-                  <tr key={prop.name} className="border-b border-border last:border-b-0 align-top">
-                    <td className="px-3.5 py-2.5 font-mono text-[12px] text-ink"><span className="whitespace-nowrap">{prop.name}</span></td>
-                    <td className="px-3.5 py-2.5 font-mono text-[12px] text-accent-contrast">{prop.type}</td>
-                    <td className="px-3.5 py-2.5 text-[13px] leading-5 text-ink-2">{prop.note}</td>
+                  <tr key={prop.name} className="border-b border-border align-top last:border-b-0">
+                    <td className="px-4 py-3 font-mono text-[12px] whitespace-nowrap text-ink">{prop.name}</td>
+                    <td className="px-4 py-3 font-mono text-[12px] text-accent-contrast">{prop.type}</td>
+                    <td className="px-4 py-3 text-[13px] leading-6 text-ink-2">{prop.note}</td>
                   </tr>
                 ))}
               </tbody>
@@ -261,25 +273,18 @@ function DetailPane({ entry }: { entry: CatalogEntry }) {
       ) : null}
 
       {entry.accessibility && entry.accessibility.length > 0 ? (
-        <section>
-          <SectionLabel>Accessibility</SectionLabel>
-          <ul className="flex max-w-[64ch] flex-col gap-2">
+        <section className="mt-12">
+          <SectionHeading>Accessibility</SectionHeading>
+          <ul className="flex max-w-[64ch] flex-col gap-2.5">
             {entry.accessibility.map((item, index) => (
-              <li key={index} className="relative pl-4 text-[13px] leading-5 text-ink-2">
-                <span className="absolute top-[9px] left-0 h-px w-2 bg-ink-4" />
+              <li key={index} className="relative pl-5 text-[14px] leading-6 text-ink-2">
+                <span className="absolute top-[11px] left-0 h-1 w-1 rounded-full bg-ink-4" />
                 {item}
               </li>
             ))}
           </ul>
         </section>
       ) : null}
-
-      <section>
-        <SectionLabel>Usage</SectionLabel>
-        <pre className="overflow-x-auto rounded-[10px] border border-border bg-sunken p-4 font-mono text-[12px] leading-5 text-ink-2">
-          <code>{entry.usage}</code>
-        </pre>
-      </section>
     </article>
   )
 }
