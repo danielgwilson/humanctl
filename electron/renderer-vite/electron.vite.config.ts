@@ -38,7 +38,7 @@ export default defineConfig({
       __HUMANCTL_VERSION__: JSON.stringify(version),
     },
     resolve: {
-      alias: { '@': resolve(__dirname, 'src') },
+      alias: { '@': resolve(__dirname, 'src'), '@humanctl/ui': resolve(__dirname, '../../packages/ui/src') },
       dedupe: ['react', 'react-dom'],
     },
     build: {
