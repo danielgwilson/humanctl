@@ -31,23 +31,31 @@ function ListRow({
       data-slot="list-row"
       data-selected={selected || undefined}
       className={cn(
-        "group/row grid h-[var(--row-task)] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-2 overflow-hidden rounded-none border-x-0 border-t-0 border-b border-border px-3 py-1.5 text-left outline-none transition-colors duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] focus-visible:bg-[var(--overlay-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[selected]:bg-[var(--overlay-selected)] disabled:pointer-events-none disabled:opacity-45",
+        // Content truncates in the 1fr column; status and the trailing value
+        // live in a fixed, nowrap right cluster so the value can never be
+        // clipped and the status pill stays right-anchored down the list.
+        // Selected is an inset tint plus a left accent rule, not a card box.
+        "group/row grid h-[var(--row-task)] w-full grid-cols-[auto_minmax(0,1fr)_auto] items-center gap-3 overflow-hidden rounded-none border-x-0 border-t-0 border-b border-border pr-3 pl-3 py-1.5 text-left outline-none transition-colors duration-[var(--duration-color)] hover:bg-[var(--overlay-hover)] focus-visible:bg-[var(--overlay-hover)] focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring data-[selected]:bg-[var(--overlay-selected)] data-[selected]:shadow-[inset_2px_0_0_0_var(--color-primary)] disabled:pointer-events-none disabled:opacity-45",
         className,
       )}
     >
-      {leading ? <span className="grid shrink-0 place-items-center text-ink-3">{leading}</span> : null}
+      {leading ? (
+        <span className="grid shrink-0 place-items-center text-ink-3">{leading}</span>
+      ) : (
+        <span aria-hidden="true" />
+      )}
       <span className="min-w-0">
         <span className="block truncate text-sm leading-4 font-medium text-ink">{title}</span>
-        {summary || status || metadata ? (
+        {summary || metadata ? (
           <span className="mt-0.5 flex h-5 min-w-0 items-center gap-2">
             {summary ? <span className="min-w-0 flex-1 truncate text-sm leading-4 text-ink-2">{summary}</span> : null}
-            {status}
-            {metadata ? <span className="max-w-20 shrink truncate text-xs leading-4 text-ink-3">{metadata}</span> : null}
+            {metadata ? <span className="max-w-28 shrink-0 truncate text-xs leading-4 text-ink-3">{metadata}</span> : null}
           </span>
         ) : null}
       </span>
-      <span className="flex shrink-0 items-center gap-2">
-        {trailing}
+      <span className="flex shrink-0 items-center gap-2.5 justify-self-end whitespace-nowrap">
+        {status}
+        {trailing ? <span className="text-xs leading-4 tabular-nums text-ink-2">{trailing}</span> : null}
         <ChevronRightIcon className="size-3.5 text-ink-4 opacity-0 transition-opacity group-hover/row:opacity-100 group-focus-visible/row:opacity-100" />
       </span>
     </Item>
