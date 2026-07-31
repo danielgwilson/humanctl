@@ -74,7 +74,7 @@ function DialogHeader({ className, ...props }: ComponentProps<"div">) {
 function DialogFooter({ className, ...props }: ComponentProps<"div">) {
   return (
     <div
-      className={cn("flex items-center justify-end gap-2 border-t border-border pt-3", className)}
+      className={cn("flex items-center justify-end gap-2 pt-2", className)}
       {...props}
     />
   )
