@@ -1,10 +1,9 @@
 import type { ReactNode } from "react"
-import { BotIcon, CircleAlertIcon, UserIcon, WrenchIcon } from "lucide-react"
+import { BotIcon, CircleAlertIcon, WrenchIcon } from "lucide-react"
 
 import "@humanctl/ui/styles/typeset.css"
 
 import { Bubble, BubbleContent } from "@humanctl/ui/components/bubble"
-import { Marker, MarkerContent, MarkerIcon } from "@humanctl/ui/components/marker"
 import {
   Message,
   MessageAvatar,
@@ -42,17 +41,24 @@ function ConversationMessage({
   className,
 }: ConversationMessageProps) {
   const human = role === "human"
-  const Icon = human ? UserIcon : role === "interrupt" ? CircleAlertIcon : BotIcon
+  const Icon = role === "interrupt" ? CircleAlertIcon : BotIcon
+  // Canonical chat idiom (ChatGPT/Claude): the agent reads as bare left-aligned
+  // prose, the human's own turn carries the soft accent on the right. No filled
+  // bubble on the agent, no full-width rules between turns.
   const bubbleTone = tone ?? (human ? "tinted" : role === "interrupt" ? "destructive" : "ghost")
 
   return (
     <MessageScrollerItem
       messageId={messageId}
       scrollAnchor={scrollAnchor}
-      className={cn("border-b border-border px-4 py-3", className)}
+      className={cn("px-4 py-2.5", className)}
     >
       <Message align={human ? "end" : "start"}>
-        <MessageAvatar aria-hidden="true"><Icon /></MessageAvatar>
+        {human ? null : (
+          <MessageAvatar aria-hidden="true">
+            <Icon />
+          </MessageAvatar>
+        )}
         <MessageContent>
           <MessageHeader className="gap-2 text-xs leading-4 text-ink-3">
             <span>{label}</span>
@@ -85,18 +91,23 @@ function ConversationMarker({
   children,
   className,
 }: ConversationMarkerProps) {
+  const toneClass =
+    tone === "work" ? "text-work" : tone === "need" ? "text-need" : tone === "block" ? "text-block" : "text-ink-3"
+  // An inline event pill anchored to the agent side, not a full-width ruled
+  // band. Tool events read as a quiet aside in the transcript, the way modern
+  // AI chat surfaces collapse tool calls.
   return (
-    <MessageScrollerItem messageId={messageId} className={cn("border-b border-border px-4 py-2.5", className)}>
-      <Marker
+    <MessageScrollerItem messageId={messageId} className={cn("px-4 py-1.5", className)}>
+      <span
         className={cn(
-          "text-xs leading-4 font-medium",
-          tone === "work" ? "text-work" : tone === "need" ? "text-need" : tone === "block" ? "text-block" : "text-ink-3",
+          "inline-flex w-fit items-center gap-1.5 rounded-full bg-sunken px-2.5 py-1 text-xs leading-4 font-medium [&_svg]:size-3.5",
+          toneClass,
         )}
       >
-        {icon ? <MarkerIcon>{icon}</MarkerIcon> : null}
-        <MarkerContent className="flex-1">{children}</MarkerContent>
-        {timestamp ? <span className="text-ink-4">{timestamp}</span> : null}
-      </Marker>
+        {icon}
+        <span>{children}</span>
+        {timestamp ? <span className="text-ink-4">· {timestamp}</span> : null}
+      </span>
     </MessageScrollerItem>
   )
 }
