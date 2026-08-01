@@ -1,7 +1,7 @@
 export type HumanctlHarness = "claude-code" | "codex"
 export type HumanctlSessionState = "work" | "need" | "block" | "idle" | "done"
 export type HumanctlTier = "hot" | "drifting" | "archived"
-export type HumanctlView = "inbox" | "metrics" | "fleet" | "sessions" | "settings"
+export type HumanctlView = "inbox" | "metrics" | "fleet" | "brain" | "sessions" | "settings"
 export type HumanctlTheme = "system" | "light" | "dark"
 
 export interface HumanctlSessionSummary {

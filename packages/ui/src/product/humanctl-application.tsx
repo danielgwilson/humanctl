@@ -3,6 +3,7 @@ import type { LucideIcon } from "lucide-react"
 import {
   ActivityIcon,
   BarChart3Icon,
+  BrainIcon,
   CheckCheckIcon,
   InboxIcon,
   KeyboardIcon,
@@ -79,17 +80,19 @@ const NAVIGATION: Array<{ view: HumanctlView; label: string; icon: LucideIcon; k
   { view: "inbox", label: "Inbox", icon: InboxIcon, key: "1" },
   { view: "metrics", label: "Metrics", icon: BarChart3Icon, key: "2" },
   { view: "fleet", label: "Fleet", icon: ActivityIcon, key: "3" },
-  { view: "sessions", label: "Sessions", icon: LayoutListIcon, key: "4" },
+  { view: "brain", label: "Brain", icon: BrainIcon, key: "4" },
+  { view: "sessions", label: "Sessions", icon: LayoutListIcon, key: "5" },
   { view: "settings", label: "Settings", icon: SettingsIcon },
 ]
 
 const MetricsView = lazy(async () => ({ default: (await import("./metrics-view")).MetricsView }))
 const FleetView = lazy(async () => ({ default: (await import("./fleet-view")).FleetView }))
+const BrainView = lazy(async () => ({ default: (await import("./brain-view")).BrainView }))
 const SessionsView = lazy(async () => ({ default: (await import("./sessions-view")).SessionsView }))
 const SettingsView = lazy(async () => ({ default: (await import("./settings-view")).SettingsView }))
 const ChiefOfStaff = lazy(async () => ({ default: (await import("./chief-of-staff")).ChiefOfStaff }))
 
-const VIEW_FOR_KEY: Record<string, HumanctlView> = { "1": "inbox", "2": "metrics", "3": "fleet", "4": "sessions" }
+const VIEW_FOR_KEY: Record<string, HumanctlView> = { "1": "inbox", "2": "metrics", "3": "fleet", "4": "brain", "5": "sessions" }
 const THEME_ORDER: HumanctlTheme[] = ["dark", "light", "system"]
 
 function nextTheme(theme: HumanctlTheme): HumanctlTheme {
@@ -415,9 +418,11 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       ? <MetricsView model={model} dispatch={dispatch} />
       : state.view === "fleet"
         ? <FleetView model={model} dispatch={dispatch} />
-        : state.view === "sessions"
-          ? <SessionsView model={model} dispatch={dispatch} />
-          : <SettingsView model={model} dispatch={dispatch} />
+        : state.view === "brain"
+          ? <BrainView model={model} dispatch={dispatch} />
+          : state.view === "sessions"
+            ? <SessionsView model={model} dispatch={dispatch} />
+            : <SettingsView model={model} dispatch={dispatch} />
   const content = state.view === "inbox"
     ? routeContent
     : <Suspense fallback={<RouteFallback />}>{routeContent}</Suspense>
