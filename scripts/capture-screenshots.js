@@ -16,13 +16,13 @@
 // as scripts/perf-selftest/run.js (see that file's header for the port/
 // process-hygiene rationale this reuses verbatim).
 //
-// What it produces: the five views (inbox, metrics, fleet, sessions,
+// What it produces: the six views (inbox, metrics, fleet, brain, sessions,
 // settings) x both themes, plus session detail x both themes, plus the
 // chief-of-staff conversation x both themes, plus sidebar and chief-of-staff
 // collapsed and sheet states x both themes, one PNG each, via
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
 // Its compatibility surface is setTheme, setView, openDetail, and
-// setChiefOfStaff. 20 PNGs
+// setChiefOfStaff. 22 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -47,7 +47,7 @@ const { CDP, getPageTarget } = require('./perf-selftest/cdp');
 const REPO_ROOT = path.join(__dirname, '..');
 const DEFAULT_PORT = 4188;
 const DEFAULT_OUT = path.join('output', 'screenshots');
-const VIEWS = ['inbox', 'metrics', 'fleet', 'sessions', 'settings'];
+const VIEWS = ['inbox', 'metrics', 'fleet', 'brain', 'sessions', 'settings'];
 const THEMES = ['dark', 'light'];
 const VIEWPORT = { width: 1600, height: 1000, deviceScaleFactor: 1, mobile: false };
 // Extra settle time past rAF x2 + document.fonts.ready, covering the longest
@@ -467,7 +467,7 @@ async function main() {
       await settle(cdp);
     }
 
-    log(`done: 20 PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: ${(VIEWS.length + 5) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);
