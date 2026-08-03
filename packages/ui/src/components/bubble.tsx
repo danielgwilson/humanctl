@@ -16,7 +16,10 @@ function BubbleGroup({ className, ...props }: React.ComponentProps<"div">) {
 }
 
 const bubbleVariants = cva(
-  "group/bubble relative flex w-fit max-w-[80%] min-w-0 flex-col gap-1 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-full",
+  // Filled bubbles (human tinted, ask outline, interrupt) cap at ~72% so the
+  // human turn never dominates the column; the agent's ghost prose caps at the
+  // reading measure instead of typesetting to the full pane width.
+  "group/bubble relative flex w-fit max-w-[72%] min-w-0 flex-col gap-1 group-data-[align=end]/message:self-end data-[align=end]:self-end data-[variant=ghost]:max-w-[var(--measure-prose)]",
   {
     variants: {
       variant: {
@@ -72,7 +75,7 @@ function BubbleContent({
     props: mergeProps<"div">(
       {
         className: cn(
-          "w-fit max-w-full min-w-0 overflow-hidden rounded-[var(--radius-3)] border border-transparent px-3 py-1.5 text-sm leading-6 wrap-break-word group-data-[align=end]/bubble:self-end",
+          "w-fit max-w-full min-w-0 overflow-hidden rounded-[var(--radius-2)] border border-transparent px-3 py-1.5 text-sm leading-6 wrap-break-word group-data-[align=end]/bubble:self-end",
           className
         ),
       },

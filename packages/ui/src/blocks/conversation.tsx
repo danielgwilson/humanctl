@@ -25,6 +25,11 @@ type ConversationMessageProps = {
   receipt?: ReactNode
   tone?: ConversationTone
   scrollAnchor?: boolean
+  // Same speaker as the previous turn: fold into the run. A grouped turn drops
+  // the repeated avatar and label and tightens to a 2px gap, so a run of agent
+  // turns reads as one block instead of N identical bot icons stacked down the
+  // margin. A role change opens a 16px gap and reprints the avatar + label.
+  continues?: boolean
   children: ReactNode
   className?: string
 }
@@ -37,6 +42,7 @@ function ConversationMessage({
   receipt,
   tone,
   scrollAnchor = role === "human",
+  continues = false,
   children,
   className,
 }: ConversationMessageProps) {
@@ -51,19 +57,25 @@ function ConversationMessage({
     <MessageScrollerItem
       messageId={messageId}
       scrollAnchor={scrollAnchor}
-      className={cn("px-4 py-1.5", className)}
+      className={cn(continues ? "px-4 pt-0.5 pb-0.5" : "px-4 pt-4 pb-0.5", className)}
     >
       <Message align={human ? "end" : "start"}>
-        {human ? null : (
+        {human ? null : continues ? (
+          // Reserve the avatar column so grouped prose stays left-aligned with
+          // the first turn of the run.
+          <div className="size-6 min-w-6 shrink-0" aria-hidden="true" />
+        ) : (
           <MessageAvatar aria-hidden="true">
             <Icon />
           </MessageAvatar>
         )}
         <MessageContent>
-          <MessageHeader className="gap-2 text-xs leading-4 text-ink-3">
-            <span>{label}</span>
-            {timestamp ? <span className="text-ink-4">{timestamp}</span> : null}
-          </MessageHeader>
+          {continues ? null : (
+            <MessageHeader className="gap-2 text-xs leading-4 text-ink-3">
+              <span>{label}</span>
+              {timestamp ? <span className="text-ink-4">{timestamp}</span> : null}
+            </MessageHeader>
+          )}
           <Bubble align={human ? "end" : "start"} variant={bubbleTone}>
             <BubbleContent className="typeset typeset-chat text-ink-2">{children}</BubbleContent>
           </Bubble>

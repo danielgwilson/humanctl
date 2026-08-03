@@ -11,7 +11,7 @@ import {
 } from "lucide-react"
 
 import { Composer } from "@humanctl/ui/blocks/composer"
-import { ConversationMarker, ConversationMessage } from "@humanctl/ui/blocks/conversation"
+import { ConversationMarker, ConversationMessage, type ConversationRole } from "@humanctl/ui/blocks/conversation"
 import { DetailPane } from "@humanctl/ui/blocks/detail-pane"
 import { Alert, AlertAction, AlertDescription, AlertTitle } from "@humanctl/ui/components/alert"
 import { Button } from "@humanctl/ui/components/button"
@@ -137,13 +137,18 @@ function ThreadStream({
     )
   }
 
+  // Fold consecutive same-speaker entries into a run (avatar + label print once).
+  const roles: ConversationRole[] = entries.map(({ item }) =>
+    item.kind === "answer" ? "human" : item.kind === "ask-interrupted" ? "interrupt" : "agent",
+  )
   return (
     <>
       {entries.map(({ item, result }, index) => (
         <ConversationMessage
           key={`${item.kind}-${item.ts}-${index}`}
           messageId={`inbox-${item.kind}-${item.ts}-${index}`}
-          role={item.kind === "answer" ? "human" : item.kind === "ask-interrupted" ? "interrupt" : "agent"}
+          role={roles[index]}
+          continues={index > 0 && roles[index] === roles[index - 1]}
           label={itemLabel(item)}
           timestamp={formatTime(item.ts)}
           tone={item.kind === "answer" ? "tinted" : item.kind === "ask" ? "outline" : item.kind === "ask-interrupted" ? "destructive" : "ghost"}
@@ -200,6 +205,18 @@ function Timeline({
     return <MessageScrollerItem messageId="timeline-empty" className="border-b border-border px-4 py-5 text-sm text-ink-3">No conversation events were found.</MessageScrollerItem>
   }
 
+  // Fold consecutive same-speaker turns into a run. Tool markers are the agent's
+  // own aside, so they do not break an agent run (the turn after a tool call
+  // still continues).
+  let prevRole: ConversationRole | null = null
+  const continuesByKey = new Map<string | number, boolean>()
+  for (const item of timeline.items) {
+    if (item.event.k === "tools") continue
+    const role: ConversationRole = item.event.k === "user" ? "human" : item.event.k === "interrupt" ? "interrupt" : "agent"
+    continuesByKey.set(item.key, role === prevRole)
+    prevRole = role
+  }
+
   return (
     <>
       {!timeline.atStart ? (
@@ -224,6 +241,7 @@ function Timeline({
           key={item.key}
           messageId={`timeline-${item.key}`}
           role={item.event.k === "user" ? "human" : item.event.k === "interrupt" ? "interrupt" : "agent"}
+          continues={continuesByKey.get(item.key) ?? false}
           label={item.event.k === "user" ? "You" : item.event.k === "interrupt" ? "Interrupted" : "Agent"}
           timestamp={formatTime(item.event.ts)}
         >
@@ -389,8 +407,8 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
         <div className="flex flex-col gap-2">
           {!codexAcknowledged ? <CodexWriteDisclosure onAcknowledge={acknowledgeCodexWrites} /> : null}
           {pendingAsk ? (
-            <Alert className="border-need/20 border-l-2 border-l-need bg-need-soft/45">
-              <AlertTitle className="text-need">Waiting for your answer</AlertTitle>
+            <Alert variant="need">
+              <AlertTitle>Waiting for your answer</AlertTitle>
               <AlertDescription className="max-h-28 overflow-y-auto whitespace-pre-wrap text-sm leading-5 text-ink-2">
                 {pendingAsk.reason}
               </AlertDescription>

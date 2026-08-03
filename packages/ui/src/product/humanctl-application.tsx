@@ -169,16 +169,17 @@ function ProductNavigation({
                   <SidebarMenuButton
                     isActive={active}
                     aria-current={active ? "page" : undefined}
+                    className="relative data-active:text-sidebar-foreground data-active:before:absolute data-active:before:inset-y-1.5 data-active:before:left-0 data-active:before:w-0.5 data-active:before:rounded-full data-active:before:bg-primary"
                     onClick={() => {
                       if (isMobile) setOpenMobile(false)
                       onNavigate(item.view)
                     }}
                   >
-                    <Icon className="text-sidebar-foreground/65" />
+                    <Icon className={active ? "text-sidebar-foreground/80" : "text-sidebar-foreground/65"} />
                     <span>{item.label}</span>
                     {!count && item.key ? <kbd className="ml-auto rounded-[4px] border border-sidebar-border px-1 font-mono text-[10px] leading-4 font-normal text-sidebar-foreground/40">{item.key}</kbd> : null}
                   </SidebarMenuButton>
-                  {count > 0 ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
+                  {count > 0 ? <SidebarMenuBadge className={item.view === "fleet" ? "text-need" : "text-sidebar-foreground/70"}>{count}</SidebarMenuBadge> : null}
                 </SidebarMenuItem>
               )
             })}
