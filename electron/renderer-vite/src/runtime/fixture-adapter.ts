@@ -192,7 +192,11 @@ export function createFixtureAdapter(): HumanctlAdapter {
             primary: { used_percent: 46, window_minutes: 300, resets_at: Math.floor(epoch / 1000) + 36 * 60 },
             secondary: { used_percent: 71, window_minutes: 10080, resets_at: Math.floor(epoch / 1000) + 5 * 86400 },
           },
-          needsYou: rows.filter((row) => row.state === 'need' || row.state === 'block').length,
+          // Must match isNeedsYou / isWorking in lib/sessions.ts (need-state,
+          // non-archived): blocked is the blocked-on-agent lane, not needs-you,
+          // so dev and screenshots read the same count production does. Guarded
+          // by runtime.selftest.ts. Fixture rows are never archived.
+          needsYou: rows.filter((row) => row.state === 'need').length,
           working: rows.filter((row) => row.state === 'work').length,
           nearCompaction: rows.filter((row) => (row.contextPct || 0) >= 80).length,
           sessions: rows.length,
