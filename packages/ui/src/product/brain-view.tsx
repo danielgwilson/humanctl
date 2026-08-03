@@ -73,12 +73,24 @@ function formatValue(value: unknown): string {
   return text
 }
 
+// A producer is only envelope-validated (version + each entity's id/kind/label),
+// so any nested field may arrive malformed. These stay defensive so a bad field
+// degrades gracefully instead of white-screening the app (there is no error
+// boundary), honoring the contract's "malformed never crashes" rule.
+function asArray<T>(value: unknown): T[] {
+  return Array.isArray(value) ? (value as T[]) : []
+}
+
+function isObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
 // Resolve a column key against an entity generically: labels first (groupable
 // values), then spec facets. The viewer never hardcodes a domain field name.
 function cellValue(entity: VaultEntity, key: string): unknown {
   if (key === "label") return entity.label
-  if (entity.labels && key in entity.labels) return entity.labels[key]
-  if (entity.spec && key in entity.spec) return entity.spec[key]
+  if (isObject(entity.labels) && key in entity.labels) return entity.labels[key]
+  if (isObject(entity.spec) && key in entity.spec) return entity.spec[key]
   return undefined
 }
 
@@ -135,9 +147,9 @@ function StatusText({ status }: { status?: string }) {
 }
 
 function HealthStrip({ snapshot }: { snapshot: VaultSnapshot }) {
-  const vitals = snapshot.vitals || {}
-  const followups = snapshot.queues?.followups?.length ?? 0
-  const proposals = snapshot.queues?.proposals?.length ?? 0
+  const vitals = isObject(snapshot.vitals) ? snapshot.vitals : {}
+  const followups = asArray(snapshot.queues?.followups).length
+  const proposals = asArray(snapshot.queues?.proposals).length
   const tiles: Array<{ label: string; value: string; hint?: string }> = [
     { label: "Entities", value: String(vitals.entities ?? snapshot.entities.length), hint: "people + orgs" },
     { label: "Canon pages", value: vitals.canonPages != null ? String(vitals.canonPages) : "n/a", hint: "promoted" },
@@ -162,9 +174,9 @@ function HealthStrip({ snapshot }: { snapshot: VaultSnapshot }) {
 
 function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect: (id: string) => void }) {
   const view = snapshot.views?.people
-  const columns = view?.columns && view.columns.length ? view.columns : ["priority", "lastContactAt", "status"]
+  const columns = Array.isArray(view?.columns) && view.columns.length ? view.columns : ["priority", "lastContactAt", "status"]
   const entities = useMemo(() => {
-    const rows = snapshot.entities.slice()
+    const rows = asArray<VaultEntity>(snapshot.entities)
     const sort = view?.sort
     if (sort) {
       const [key, dir] = sort.split(":")
@@ -218,8 +230,8 @@ function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect
 }
 
 function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map<string, VaultEntity>; onBack: () => void }) {
-  const spec = entity.spec || {}
-  const labels = entity.labels || {}
+  const spec = isObject(entity.spec) ? entity.spec : {}
+  const labels = isObject(entity.labels) ? entity.labels : {}
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[var(--row-decision)] shrink-0 items-center gap-2 border-b border-border px-3">
@@ -258,23 +270,24 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
             </div>
           ) : null}
 
-          {(spec.sections || []).map((section) => (
-            <section key={section.heading} className="mt-4">
-              <h2 className="m-0 text-sm font-semibold text-ink">{section.heading}</h2>
-              <p className="m-0 mt-1 text-sm leading-6 text-ink-2">{section.body}</p>
+          {asArray<{ heading?: string; body?: string }>(spec.sections).map((section, i) => (
+            <section key={`${section.heading || "section"}-${i}`} className="mt-4">
+              {section.heading ? <h2 className="m-0 text-sm font-semibold text-ink">{String(section.heading)}</h2> : null}
+              {section.body ? <p className="m-0 mt-1 text-sm leading-6 text-ink-2">{String(section.body)}</p> : null}
             </section>
           ))}
 
-          {entity.relations && entity.relations.length ? (
+          {asArray(entity.relations).length ? (
             <section className="mt-5">
               <h2 className="m-0 flex items-center gap-2 text-xs font-medium tracking-wide text-ink-3 uppercase"><UsersIcon className="size-3.5" /> Connected</h2>
               <div className="mt-2 flex flex-wrap gap-2">
-                {entity.relations.map((relation, i) => {
-                  const target = resolveRef(index, relation.targetRef)
+                {asArray<{ targetRef?: string; note?: string; type?: string }>(entity.relations).map((relation, i) => {
+                  const ref = String(relation.targetRef || "")
+                  const target = resolveRef(index, ref)
                   return (
                     <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-sunken px-2.5 py-1 text-xs text-ink-2">
-                      <span className="font-medium text-ink">{target?.label || relation.targetRef}</span>
-                      <span className="text-ink-3">{relation.note || relation.type}</span>
+                      <span className="font-medium text-ink">{target?.label || ref}</span>
+                      <span className="text-ink-3">{String(relation.note || relation.type || "")}</span>
                     </span>
                   )
                 })}
@@ -282,16 +295,16 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
             </section>
           ) : null}
 
-          {spec.evidence && spec.evidence.length ? (
+          {asArray(spec.evidence).length ? (
             <section className="mt-5">
               <h2 className="m-0 flex items-center gap-2 text-xs font-medium tracking-wide text-ink-3 uppercase"><FileTextIcon className="size-3.5" /> Evidence</h2>
               <div className="mt-2 space-y-2">
-                {spec.evidence.map((item, i) => (
+                {asArray<{ quote?: string; date?: string; source?: string }>(spec.evidence).map((item, i) => (
                   <div key={i} className="border-l-2 border-border pl-3">
-                    <p className="m-0 text-sm leading-5 text-ink-2">&ldquo;{item.quote}&rdquo;</p>
+                    <p className="m-0 text-sm leading-5 text-ink-2">&ldquo;{String(item.quote || "")}&rdquo;</p>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-ink-3">
-                      {item.date ? <span className="tabular-nums">{item.date}</span> : null}
-                      {item.source ? <span className="font-mono">{item.source}</span> : null}
+                      {item.date ? <span className="tabular-nums">{String(item.date)}</span> : null}
+                      {item.source ? <span className="font-mono">{String(item.source)}</span> : null}
                     </div>
                   </div>
                 ))}
@@ -305,26 +318,27 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
 }
 
 function FollowUps({ snapshot, index, onSelect }: { snapshot: VaultSnapshot; index: Map<string, VaultEntity>; onSelect: (id: string) => void }) {
-  const followups = snapshot.queues?.followups || []
+  const followups = asArray<{ entityRef?: string; reason?: string; status?: string; overdueDays?: number }>(snapshot.queues?.followups)
   if (!followups.length) {
     return <div className="px-4 py-6 text-sm text-ink-3">Everyone is within cadence. Nothing is owed right now.</div>
   }
   return (
     <div className="divide-y divide-border">
       {followups.map((followup, i) => {
-        const entity = resolveRef(index, followup.entityRef)
+        const ref = String(followup.entityRef || "")
+        const entity = resolveRef(index, ref)
         const overdue = followup.status === "overdue"
         return (
           <button
-            key={`${followup.entityRef}-${i}`}
+            key={`${ref}-${i}`}
             type="button"
             onClick={() => entity && onSelect(entity.id)}
             className="flex w-full items-center gap-3 px-4 py-3 text-left hover:bg-[var(--overlay-hover)]"
           >
             <ClockIcon className={cn("size-4 shrink-0", overdue ? "text-need" : "text-idle")} />
             <div className="min-w-0 flex-1">
-              <div className="truncate text-sm font-medium text-ink">{entity?.label || followup.entityRef}</div>
-              {followup.reason ? <div className="truncate text-xs text-ink-3">{followup.reason}</div> : null}
+              <div className="truncate text-sm font-medium text-ink">{entity?.label || ref}</div>
+              {followup.reason ? <div className="truncate text-xs text-ink-3">{String(followup.reason)}</div> : null}
             </div>
             <div className="shrink-0 text-right">
               <StatusText status={followup.status} />
@@ -346,22 +360,23 @@ function ProposalQueue({ proposals }: { proposals: ReadonlyArray<VaultProposal> 
   }
   return (
     <div className="divide-y divide-border">
-      {proposals.map((proposal) => {
-        const decision = decisions[proposal.id]
+      {proposals.map((proposal, i) => {
+        const pid = String(proposal.id || i)
+        const decision = decisions[pid]
         return (
-          <div key={proposal.id} className={cn("px-4 py-3.5", decision && "opacity-60")}>
+          <div key={pid} className={cn("px-4 py-3.5", decision && "opacity-60")}>
             <div className="flex items-start gap-3">
               <GitMergeIcon className="mt-0.5 size-4 shrink-0 text-ink-3" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2">
-                  <Badge variant="outline" className="capitalize">{proposal.kind.replace(/-/g, " ")}</Badge>
-                  {proposal.confidence != null ? <span className="text-xs tabular-nums text-ink-3">{Math.round(proposal.confidence * 100)}% confidence</span> : null}
+                  <Badge variant="outline" className="capitalize">{String(proposal.kind).replace(/-/g, " ")}</Badge>
+                  {typeof proposal.confidence === "number" ? <span className="text-xs tabular-nums text-ink-3">{Math.round(proposal.confidence * 100)}% confidence</span> : null}
                 </div>
-                <div className="mt-1.5 text-sm font-medium text-ink">{proposal.title}</div>
-                {proposal.rationale ? <p className="m-0 mt-0.5 text-sm leading-5 text-ink-2">{proposal.rationale}</p> : null}
-                {proposal.evidence && proposal.evidence.length ? (
+                <div className="mt-1.5 text-sm font-medium text-ink">{String(proposal.title || "")}</div>
+                {proposal.rationale ? <p className="m-0 mt-0.5 text-sm leading-5 text-ink-2">{String(proposal.rationale)}</p> : null}
+                {asArray(proposal.evidence).length ? (
                   <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-xs text-ink-3">
-                    {proposal.evidence.map((source) => <span key={source} className="font-mono">{source}</span>)}
+                    {asArray<string>(proposal.evidence).map((source, i) => <span key={`${source}-${i}`} className="font-mono">{String(source)}</span>)}
                   </div>
                 ) : null}
               </div>
@@ -370,9 +385,9 @@ function ProposalQueue({ proposals }: { proposals: ReadonlyArray<VaultProposal> 
                   <span className={cn("text-xs font-medium capitalize", decision === "promoted" ? "text-work" : decision === "rejected" ? "text-need" : "text-ink-3")}>{decision}</span>
                 ) : (
                   <>
-                    <Button size="sm" variant="ghost" onClick={() => setDecisions((prev) => ({ ...prev, [proposal.id]: "deferred" }))}>Defer</Button>
-                    <Button size="icon-sm" variant="ghost" aria-label="Reject" onClick={() => setDecisions((prev) => ({ ...prev, [proposal.id]: "rejected" }))}><XIcon /></Button>
-                    <Button size="sm" onClick={() => setDecisions((prev) => ({ ...prev, [proposal.id]: "promoted" }))}><CheckIcon /> Promote</Button>
+                    <Button size="sm" variant="ghost" onClick={() => setDecisions((prev) => ({ ...prev, [pid]: "deferred" }))}>Defer</Button>
+                    <Button size="icon-sm" variant="ghost" aria-label="Reject" onClick={() => setDecisions((prev) => ({ ...prev, [pid]: "rejected" }))}><XIcon /></Button>
+                    <Button size="sm" onClick={() => setDecisions((prev) => ({ ...prev, [pid]: "promoted" }))}><CheckIcon /> Promote</Button>
                   </>
                 )}
               </div>
@@ -408,7 +423,10 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
   const selected = selectedId && snapshot ? snapshot.entities.find((entity) => entity.id === selectedId) || null : null
   const sampleBadge = model.mode === "fixture" ? <Badge variant="outline">Sample vault</Badge> : null
 
-  if (resource.status === "loading" && !snapshot) {
+  // Treat idle like loading: the load is dispatched from an effect after the
+  // first paint, so showing skeletons (not the onboarding state) until the
+  // resource actually resolves avoids a one-frame "not connected" flash.
+  if ((resource.status === "loading" || resource.status === "idle") && !snapshot) {
     return (
       <BrainShell>
         <PageBody><div className="p-4"><RowSkeletons count={8} /></div></PageBody>

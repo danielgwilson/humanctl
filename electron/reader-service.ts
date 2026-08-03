@@ -317,9 +317,11 @@ async function readBrainSnapshot(args: unknown): Promise<{ snapshot: VaultSnapsh
   const raw = args && typeof args === 'object' && 'path' in args ? (args as { path?: unknown }).path : undefined;
   const requested = typeof raw === 'string' ? raw.trim() : '';
   if (!requested) return { snapshot: null };
-  const resolved = requested.startsWith('~')
-    ? path.join(os.homedir(), requested.slice(1))
-    : requested;
+  const resolved = requested === '~'
+    ? os.homedir()
+    : requested.startsWith('~/')
+      ? path.join(os.homedir(), requested.slice(2))
+      : requested;
   if (!path.isAbsolute(resolved)) throw new Error('vault snapshot path must be absolute');
   const label = path.basename(resolved);
   let stat: fs.Stats;
@@ -329,10 +331,21 @@ async function readBrainSnapshot(args: unknown): Promise<{ snapshot: VaultSnapsh
     throw new Error(`vault snapshot not found: ${label}`);
   }
   if (!stat.isFile()) throw new Error(`vault snapshot path is not a file: ${label}`);
-  if (stat.size > MAX_VAULT_SNAPSHOT_BYTES) {
-    throw new Error(`vault snapshot is too large (${stat.size} bytes, cap ${MAX_VAULT_SNAPSHOT_BYTES})`);
+  // Bound the READ itself (not just the stat) to MAX+1 bytes, so a file that
+  // grows or is special between stat and read can never hand this process an
+  // unbounded buffer to hold and parse.
+  const handle = await fs.promises.open(resolved, 'r');
+  let text: string;
+  try {
+    const buffer = Buffer.allocUnsafe(MAX_VAULT_SNAPSHOT_BYTES + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > MAX_VAULT_SNAPSHOT_BYTES) {
+      throw new Error(`vault snapshot is too large (cap ${MAX_VAULT_SNAPSHOT_BYTES} bytes)`);
+    }
+    text = buffer.toString('utf8', 0, bytesRead);
+  } finally {
+    await handle.close();
   }
-  const text = await fs.promises.readFile(resolved, 'utf8');
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);

@@ -18,6 +18,11 @@ export default defineConfig([
       'lib/harness-icons.ts',
       'lib/summary-budget.ts',
       'lib/claude-quota.ts',
+      // Required at runtime by the compiled reader-service (electron/reader-
+      // service.ts imports '../lib/vault-snapshot' for brain.snapshot). Without
+      // this entry, dist/lib/vault-snapshot.js is never emitted and the
+      // utilityProcess crash-loops on boot, failing every reader read.
+      'lib/vault-snapshot.ts',
     ],
     outDir: 'dist/lib',
     format: ['cjs'],
