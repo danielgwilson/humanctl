@@ -389,8 +389,8 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
         <div className="flex flex-col gap-2">
           {!codexAcknowledged ? <CodexWriteDisclosure onAcknowledge={acknowledgeCodexWrites} /> : null}
           {pendingAsk ? (
-            <Alert className="border-need/30 bg-need-soft">
-              <AlertTitle>Waiting for your answer</AlertTitle>
+            <Alert className="border-need/20 border-l-2 border-l-need bg-need-soft/45">
+              <AlertTitle className="text-need">Waiting for your answer</AlertTitle>
               <AlertDescription className="max-h-28 overflow-y-auto whitespace-pre-wrap text-sm leading-5 text-ink-2">
                 {pendingAsk.reason}
               </AlertDescription>

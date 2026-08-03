@@ -6,6 +6,7 @@ import { ListRow } from "@humanctl/ui/blocks/list-row"
 import { Button } from "@humanctl/ui/components/button"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
+import { cn } from "@humanctl/ui/lib/cn"
 
 import type {
   HumanctlApplicationModel,
@@ -16,11 +17,10 @@ import type {
 import {
   filterInboxThreads,
   formatTime,
-  harnessLabel,
   type HarnessFilter,
   type InboxSort,
-  sessionMeta,
   type SessionStateFilter,
+  sessionRepo,
   threadPreview,
   threadSession,
   threadTitle,
@@ -74,6 +74,7 @@ function InboxVirtualRow({
   const session = threadSession(thread, context.byId)
   const unread = threadUnread(thread, context.lastReadTs)
   const pinned = context.pins.has(thread.sessionId)
+  const ctx = typeof session?.contextPct === "number" ? session.contextPct : null
   return (
     <ListRow
       {...rowProps}
@@ -81,14 +82,15 @@ function InboxVirtualRow({
       selected={thread.sessionId === context.selectedThreadId}
       title={threadTitle(thread, session)}
       summary={threadPreview(thread)}
-      metadata={session ? sessionMeta(session) : `${harnessLabel(thread.harness)} · ${formatTime(thread.lastTs)}`}
+      metadata={session ? sessionRepo(session) : undefined}
       leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft text-xs">?</span>}
       status={session ? <SessionStatus state={session.state} /> : undefined}
       trailing={
         <span className="flex items-center gap-2">
+          {ctx != null && ctx >= 80 ? <span className={cn("tabular-nums", ctx >= 90 ? "text-block" : "text-need")}>ctx {Math.round(ctx)}%</span> : null}
           {pinned ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
           {unread ? <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" /> : null}
-          <span className="text-xs tabular-nums text-ink-3">{formatTime(thread.lastTs)}</span>
+          <span className="tabular-nums text-ink-3">{formatTime(thread.lastTs)}</span>
         </span>
       }
       onClick={() => context.onSelect(thread)}

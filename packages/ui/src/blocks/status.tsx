@@ -12,12 +12,15 @@ const statusLabels: Record<StatusState, string> = {
   idle: "Idle",
 }
 
+// State is a colored dot plus a colored label, not a filled pill. The dot is
+// the semantic mark DESIGN.md requires; dropping the tinted box keeps the list
+// scannable without every row carrying a heavy chip (Linear/Geist status-dot).
 const statusClasses: Record<StatusState, string> = {
-  running: "bg-work-soft text-work before:bg-work",
-  "needs-input": "bg-need-soft text-need before:bg-need",
-  blocked: "bg-block-soft text-block before:bg-block",
-  complete: "bg-done-soft text-done before:bg-done",
-  idle: "bg-idle-soft text-idle before:bg-idle",
+  running: "text-work before:bg-work",
+  "needs-input": "text-need before:bg-need",
+  blocked: "text-block before:bg-block",
+  complete: "text-done before:bg-done",
+  idle: "text-idle before:bg-idle",
 }
 
 type StatusChipProps = ComponentProps<"span"> & {
@@ -31,7 +34,7 @@ function StatusChip({ state, label = statusLabels[state], className, ...props }:
       data-slot="status-chip"
       data-state={state}
       className={cn(
-        "inline-flex h-5 shrink-0 items-center gap-1.5 rounded-[var(--radius-1)] px-1.5 font-sans text-xs leading-none font-medium before:size-1.5 before:shrink-0 before:rounded-full",
+        "inline-flex h-5 shrink-0 items-center gap-1.5 font-sans text-xs leading-none font-medium tracking-[-0.006em] before:size-1.5 before:shrink-0 before:rounded-full",
         statusClasses[state],
         className,
       )}

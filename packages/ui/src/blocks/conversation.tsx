@@ -51,7 +51,7 @@ function ConversationMessage({
     <MessageScrollerItem
       messageId={messageId}
       scrollAnchor={scrollAnchor}
-      className={cn("px-4 py-2.5", className)}
+      className={cn("px-4 py-1.5", className)}
     >
       <Message align={human ? "end" : "start"}>
         {human ? null : (

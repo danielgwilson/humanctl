@@ -229,7 +229,9 @@ export function stateTone(state: HumanctlSessionState): StatusState {
 }
 
 export function sessionMeta(session: HumanctlSession): string {
-  return [sessionRepo(session), harnessLabel(session.harness), session.age || undefined]
+  // Recency (the age) is owned by the row's trailing slot, so it is not
+  // repeated here. The meta line stays to repo and harness only.
+  return [sessionRepo(session), harnessLabel(session.harness)]
     .filter(Boolean)
     .join(" · ")
 }

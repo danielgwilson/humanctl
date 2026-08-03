@@ -8,7 +8,9 @@ import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
-import { filterSessions, formatTime, type HarnessFilter, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionMeta, sessionTitle } from "./helpers"
+import { cn } from "@humanctl/ui/lib/cn"
+
+import { filterSessions, formatTime, type HarnessFilter, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionRepo, sessionTitle } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
 import { EmptyState, HarnessMark, PaneHeading, ResourceNotice, RowSkeletons, SessionStatus } from "./shared"
 import { BoundedVirtualList, type VirtualRowComponentProps } from "./virtual-list"
@@ -53,13 +55,14 @@ function SessionsVirtualRow({
       selected={session.id === context.selectedId}
       title={sessionTitle(session)}
       summary={sessionMessage(session)}
-      metadata={sessionMeta(session)}
+      metadata={sessionRepo(session)}
       leading={<HarnessMark harness={session.harness} />}
       status={<SessionStatus state={session.state} />}
       trailing={
         <span className="flex items-center gap-2">
+          {typeof session.contextPct === "number" && session.contextPct >= 80 ? <span className={cn("tabular-nums", session.contextPct >= 90 ? "text-block" : "text-need")}>ctx {Math.round(session.contextPct)}%</span> : null}
           {context.pins.has(session.id) ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
-          <span className="text-xs tabular-nums text-ink-3">{session.age || formatTime(session.ageMs)}</span>
+          <span className="tabular-nums text-ink-3">{session.age || formatTime(session.ageMs)}</span>
         </span>
       }
       onClick={() => context.onSelect(session.id)}

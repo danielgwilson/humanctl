@@ -72,7 +72,7 @@ function BubbleContent({
     props: mergeProps<"div">(
       {
         className: cn(
-          "w-fit max-w-full min-w-0 overflow-hidden rounded-[var(--radius-3)] border border-transparent px-3 py-2 text-sm leading-relaxed wrap-break-word group-data-[align=end]/bubble:self-end",
+          "w-fit max-w-full min-w-0 overflow-hidden rounded-[var(--radius-3)] border border-transparent px-3 py-1.5 text-sm leading-6 wrap-break-word group-data-[align=end]/bubble:self-end",
           className
         ),
       },

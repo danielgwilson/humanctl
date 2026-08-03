@@ -176,7 +176,7 @@ function ProductNavigation({
                   >
                     <Icon className="text-sidebar-foreground/65" />
                     <span>{item.label}</span>
-                    {!count && item.key ? <span className="ml-auto text-xs tabular-nums text-sidebar-foreground/45">{item.key}</span> : null}
+                    {!count && item.key ? <kbd className="ml-auto rounded-[4px] border border-sidebar-border px-1 font-mono text-[10px] leading-4 font-normal text-sidebar-foreground/40">{item.key}</kbd> : null}
                   </SidebarMenuButton>
                   {count > 0 ? <SidebarMenuBadge>{count}</SidebarMenuBadge> : null}
                 </SidebarMenuItem>
