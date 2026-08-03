@@ -10,6 +10,7 @@ import type {
   SkillAggregate,
   Status,
   TimelinePage,
+  VaultSnapshotModel,
 } from './contracts';
 
 export interface BridgeResult {
@@ -26,6 +27,7 @@ export interface StateResult extends BridgeResult { state?: AppState }
 export interface SkillsResult extends BridgeResult { agg?: SkillAggregate }
 export interface BudgetResult extends BridgeResult { budget?: BudgetStatus }
 export interface TimelineResult extends BridgeResult { page?: TimelinePage }
+export interface BrainResult extends BridgeResult { snapshot?: VaultSnapshotModel | null; unsupportedVersion?: boolean }
 export interface AskResult extends BridgeResult { answer?: string; engine?: string; at?: number }
 export interface SummaryResult extends BridgeResult { summary?: string; engine?: string }
 
@@ -64,6 +66,7 @@ export interface HumanctlAdapter {
   markAllThreadsRead(): Promise<BridgeResult>;
 
   aggregateSkills(opts?: unknown): Promise<SkillsResult>;
+  getBrain(arg?: { path?: string }): Promise<BrainResult>;
   getSummaryBudget(opts?: unknown): Promise<BudgetResult>;
   askAtlas(arg: { question: string; engine?: string }): Promise<AskResult>;
   askSession(arg: {

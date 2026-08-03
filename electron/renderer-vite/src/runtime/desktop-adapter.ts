@@ -24,6 +24,7 @@ export function createDesktopAdapter(bridge: DesktopBridge): HumanctlAdapter {
     markThreadRead: (arg) => bridge.markThreadRead(arg),
     markAllThreadsRead: () => bridge.markAllThreadsRead(),
     aggregateSkills: (opts) => bridge.aggregateSkills(opts),
+    getBrain: (arg) => bridge.getBrain(arg),
     getSummaryBudget: (opts) => bridge.getSummaryBudget(opts),
     askAtlas: (arg) => bridge.askAtlas(arg),
     askSession: (arg) => bridge.askSession(arg),

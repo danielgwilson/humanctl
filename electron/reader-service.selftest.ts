@@ -257,6 +257,40 @@ async function main(): Promise<void> {
     assert.strictEqual(r.ok, true);
   });
 
+  // ---- brain.snapshot: off-main read + parse + envelope validation ----
+  const snapshotPath = path.join(HOME, 'vault-snapshot.json');
+  fs.writeFileSync(snapshotPath, JSON.stringify({
+    apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
+    entities: [{ kind: 'person', id: 'person:x', label: 'X Person' }],
+  }));
+
+  await checkAsync('brain.snapshot with no path resolves ok with a null snapshot (onboarding, not an error)', async () => {
+    const r = await request(rendererPort2, 'brain.snapshot', {});
+    assert.strictEqual(r.ok, true);
+    assert.strictEqual((r.result as { snapshot: unknown }).snapshot, null);
+  });
+
+  await checkAsync('brain.snapshot reads and validates a real file, returning the parsed snapshot', async () => {
+    const r = await request(rendererPort2, 'brain.snapshot', { path: snapshotPath });
+    assert.strictEqual(r.ok, true);
+    const snap = (r.result as { snapshot: { entities: Array<{ id: string }> } }).snapshot;
+    assert.strictEqual(snap.entities[0].id, 'person:x');
+  });
+
+  await checkAsync('brain.snapshot on a missing file throws, surfacing as an honest ok:false', async () => {
+    const r = await request(rendererPort2, 'brain.snapshot', { path: path.join(HOME, 'no-such-snapshot.json') });
+    assert.strictEqual(r.ok, false);
+    assert.match(String(r.error), /not found/);
+  });
+
+  await checkAsync('brain.snapshot rejects an unsupported apiVersion', async () => {
+    const badPath = path.join(HOME, 'bad-version.json');
+    fs.writeFileSync(badPath, JSON.stringify({ apiVersion: 'humanctl.dev/vaultsnapshot/v999', entities: [] }));
+    const r = await request(rendererPort2, 'brain.snapshot', { path: badPath });
+    assert.strictEqual(r.ok, false);
+    assert.match(String(r.error), /unsupported/);
+  });
+
   console.log('reader-service selftest: quota.claude skipped (spawns the real claude CLI via a non-injectable default runner in lib/claude-quota.ts; see the header comment and lib/claude-quota.selftest.ts for the injected-runner pattern this file cannot reuse)');
 
   fs.rmSync(HOME, { recursive: true, force: true });

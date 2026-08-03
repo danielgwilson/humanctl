@@ -24,6 +24,14 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
   const [budgetDraft, setBudgetDraft] = useState<BudgetDraft | null>(null)
   const budgetInput = budgetInputValue(budgetDraft, dailyBudget)
   const loadingBudget = operationPending(model.operations, "settings.loadBudget")
+  const [brainPathDraft, setBrainPathDraft] = useState<string | null>(null)
+  const brainPathInput = brainPathDraft ?? (appState.brainSnapshotPath || "")
+
+  async function commitBrainPath() {
+    const trimmed = brainPathInput.trim()
+    await dispatch({ type: "app.patch", patch: { brainSnapshotPath: trimmed ? trimmed : undefined } })
+    setBrainPathDraft(null)
+  }
 
   async function setTheme(theme: HumanctlTheme) {
     await dispatch({ type: "app.patch", patch: { theme } })
@@ -126,6 +134,27 @@ export function SettingsView({ model, dispatch }: { model: HumanctlApplicationMo
               </div>
             ) : null}
             <div className="px-4 py-3 text-sm leading-5 text-ink-3">The budget applies to background summaries. Manual summaries and session questions still require an explicit action.</div>
+
+            <SectionHeading>Brain vault</SectionHeading>
+            <Field orientation="horizontal" className="grid min-h-10 grid-cols-[9rem_minmax(0,1fr)] items-center gap-4 border-b border-border px-4 py-2 text-sm">
+              <FieldLabel htmlFor="brain-snapshot-path">Snapshot path</FieldLabel>
+              <InputGroup>
+                <InputGroupInput
+                  id="brain-snapshot-path"
+                  aria-label="Path to the Brain vault snapshot file"
+                  className="font-mono text-xs"
+                  type="text"
+                  spellCheck={false}
+                  placeholder="~/path/to/vault-snapshot.json"
+                  value={brainPathInput}
+                  onFocus={() => setBrainPathDraft((current) => current ?? (appState.brainSnapshotPath || ""))}
+                  onChange={(event) => setBrainPathDraft(event.currentTarget.value)}
+                  onKeyDown={(event) => { if (event.key === "Enter") { event.preventDefault(); void commitBrainPath() } }}
+                />
+                <InputGroupAddon align="inline-end"><Button size="sm" variant="ghost" onClick={() => { void commitBrainPath() }}>Apply</Button></InputGroupAddon>
+              </InputGroup>
+            </Field>
+            <div className="px-4 py-3 text-sm leading-5 text-ink-3">Point Brain at a JSON snapshot in the documented vault format. The file is read locally and never leaves your machine. Leave it blank to disconnect.</div>
 
             <SectionHeading>Data handling</SectionHeading>
             <DefinitionRow label="Fleet reads" value="Local files and local desktop bridge" />

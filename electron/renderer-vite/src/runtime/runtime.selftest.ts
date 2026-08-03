@@ -210,6 +210,10 @@ class FakeAdapter implements HumanctlAdapter {
   async markThreadRead(): Promise<BridgeResult> { return { ok: true }; }
   async markAllThreadsRead(): Promise<BridgeResult> { return { ok: true }; }
   async aggregateSkills() { return { ok: true, agg: { skills: { test: 2 }, sessionsWithSkills: 1, totalInvocations: 2 } }; }
+  async getBrain(arg?: { path?: string }) {
+    if (!arg?.path) return { ok: true, snapshot: null };
+    return { ok: true, snapshot: { apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1', entities: [{ kind: 'person', id: 'person:test', label: 'Test Person' }] } };
+  }
   async getSummaryBudget(opts?: unknown) {
     const dailyBudgetUSD = (opts as { dailyBudgetUSD?: number } | undefined)?.dailyBudgetUSD || 1;
     return { ok: true, budget: { day: '2026-07-14', spentUSD: 0.2, dailyBudgetUSD, paused: false, remainingUSD: dailyBudgetUSD - 0.2 } };

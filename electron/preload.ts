@@ -148,6 +148,11 @@ contextBridge.exposeInMainWorld('humanctl', {
   answerAsk: (arg: unknown) => ipcRenderer.invoke('ask:answer', arg),
   getNotes: (opts: unknown) => callReaderPort('notes.list', opts),
   getInboxThreads: (opts: unknown) => callReaderPort('inbox.threads', opts),
+  // The Brain vault snapshot: one on-demand read + parse of a single curated
+  // file at a user-configured path. Routed to the reader-service (never
+  // ipcMain) so the fs read, the JSON parse, and the envelope validation all
+  // stay off the main process's event loop, per the never-block-main doctrine.
+  getBrain: (arg: unknown) => callReaderPort('brain.snapshot', arg || {}),
   markThreadRead: (arg: unknown) => ipcRenderer.invoke('inbox:mark-read', arg),
   markAllThreadsRead: () => ipcRenderer.invoke('inbox:mark-all-read'),
   askAtlas: (arg: unknown) => ipcRenderer.invoke('atlas:ask', arg),
