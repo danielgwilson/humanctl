@@ -68,6 +68,7 @@ import {
 } from '../lib/sessions';
 import { resolveSessionRow, inboxThreads, isInboxRelevantChange } from '../lib/commands';
 import { readClaudeQuota, type ClaudeQuota } from '../lib/claude-quota';
+import { validateVaultSnapshot, MAX_VAULT_SNAPSHOT_BYTES, type VaultSnapshot } from '../lib/vault-snapshot';
 
 const parentPort = (process as NodeJS.Process & { parentPort?: ParentPort }).parentPort;
 if (!parentPort) {
@@ -303,7 +304,45 @@ const HANDLERS: Record<string, Handler> = {
   // resolution `resolveSessionRow` (lib/commands.ts) does.
   'resolve-session-row': (p) => resolveSessionRow(String((p && p.id) || '')),
   'session.hot': (p) => setHot(p),
+  'brain.snapshot': (p) => readBrainSnapshot(p),
 };
+
+// The Brain vault snapshot: one on-demand read + parse of a single curated
+// file at a user-configured path, hosted here so the fs read, the JSON parse,
+// and the envelope validation stay off the Electron main process. An unset
+// path is not an error (the UI shows an onboarding state); a missing,
+// oversized, malformed, or unsupported-version file throws, which the caller
+// surfaces as `{ ok: false, error }` and the UI renders as a clear empty state.
+async function readBrainSnapshot(args: unknown): Promise<{ snapshot: VaultSnapshot | null }> {
+  const raw = args && typeof args === 'object' && 'path' in args ? (args as { path?: unknown }).path : undefined;
+  const requested = typeof raw === 'string' ? raw.trim() : '';
+  if (!requested) return { snapshot: null };
+  const resolved = requested.startsWith('~')
+    ? path.join(os.homedir(), requested.slice(1))
+    : requested;
+  if (!path.isAbsolute(resolved)) throw new Error('vault snapshot path must be absolute');
+  const label = path.basename(resolved);
+  let stat: fs.Stats;
+  try {
+    stat = await fs.promises.stat(resolved);
+  } catch {
+    throw new Error(`vault snapshot not found: ${label}`);
+  }
+  if (!stat.isFile()) throw new Error(`vault snapshot path is not a file: ${label}`);
+  if (stat.size > MAX_VAULT_SNAPSHOT_BYTES) {
+    throw new Error(`vault snapshot is too large (${stat.size} bytes, cap ${MAX_VAULT_SNAPSHOT_BYTES})`);
+  }
+  const text = await fs.promises.readFile(resolved, 'utf8');
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(`vault snapshot is not valid JSON: ${label}`);
+  }
+  const validation = validateVaultSnapshot(parsed);
+  if (!validation.ok) throw new Error(validation.error);
+  return { snapshot: validation.snapshot };
+}
 
 interface ReaderRequest { id: number; cmd: string; args?: unknown }
 

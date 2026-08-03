@@ -352,6 +352,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
 
   const skillsRequested = useRef(false)
   const budgetRequested = useRef(false)
+  const brainRequestedPath = useRef<string | null | undefined>(null)
 
   useEffect(() => {
     const root = document.documentElement
@@ -371,7 +372,11 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       budgetRequested.current = true
       void dispatch({ type: "settings.loadBudget", dailyBudgetUSD: state.summaryBudgetUSD ?? 1 })
     }
-  }, [dispatch, model.resources.budget.status, model.resources.skills.status, state.summaryBudgetUSD, state.view])
+    if (state.view === "brain" && (model.resources.brain.status === "idle" || brainRequestedPath.current !== state.brainSnapshotPath)) {
+      brainRequestedPath.current = state.brainSnapshotPath
+      void dispatch({ type: "brain.load" })
+    }
+  }, [dispatch, model.resources.brain.status, model.resources.budget.status, model.resources.skills.status, state.brainSnapshotPath, state.summaryBudgetUSD, state.view])
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {

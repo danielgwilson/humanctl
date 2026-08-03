@@ -1,3 +1,7 @@
+import type { VaultSnapshot } from "./vault-snapshot"
+
+export type { VaultSnapshot } from "./vault-snapshot"
+
 export type HumanctlHarness = "claude-code" | "codex"
 export type HumanctlSessionState = "work" | "need" | "block" | "idle" | "done"
 export type HumanctlTier = "hot" | "drifting" | "archived"
@@ -173,6 +177,7 @@ export interface HumanctlAppState {
   selectedId?: string
   summaryBudgetUSD?: number
   askCodexAck?: boolean
+  brainSnapshotPath?: string
 }
 
 export type HumanctlResourceStatus = "idle" | "loading" | "ready" | "error"
@@ -203,6 +208,7 @@ export interface HumanctlApplicationModel {
     budget: HumanctlResource<HumanctlBudgetStatus | null>
     timeline: HumanctlResource<HumanctlTimeline | null>
     atlas: HumanctlResource<ReadonlyArray<HumanctlAtlasExchange>>
+    brain: HumanctlResource<VaultSnapshot | null>
   }
   operations: Readonly<Record<string, HumanctlOperation>>
 }
@@ -214,6 +220,7 @@ export type HumanctlIntent =
   | { type: "thread.markRead"; threadId: string; at?: number }
   | { type: "threads.markAllRead"; at?: number }
   | { type: "metrics.loadSkills" }
+  | { type: "brain.load" }
   | { type: "settings.loadBudget"; dailyBudgetUSD: number }
   | { type: "atlas.ask"; question: string; engine?: "claude" | "codex" }
   | { type: "session.ask"; session: HumanctlSession; question: string }

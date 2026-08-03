@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://humanctl.dev/schemas/vault-snapshot.v1alpha1.json",
+  "title": "Humanctl vault snapshot",
+  "description": "The generic, versioned interchange the Brain view renders. A producer (any external tool over any personal knowledge base) maps its own opinionated schema into this shape and writes one file; humanctl reads and renders it and never inspects the producer's source. No producer-specific ontology term is a field here: domain values travel as data inside `labels`/`annotations`/`spec`, never as named columns the viewer hardcodes.",
+  "type": "object",
+  "required": ["apiVersion", "entities"],
+  "additionalProperties": true,
+  "properties": {
+    "apiVersion": {
+      "description": "The contract version, carried inside the document. The viewer keys behavior off this string and shows an 'unsupported snapshot' state rather than crashing on an unknown major. Additive, backward-compatible changes do not bump the major.",
+      "type": "string",
+      "const": "humanctl.dev/vaultsnapshot/v1alpha1"
+    },
+    "generatedAt": {
+      "description": "When the producer wrote this snapshot (ISO 8601).",
+      "type": "string"
+    },
+    "source": {
+      "description": "Free-form, non-identifying label for the producer (for example 'markdown vault'). Never a path, never personal.",
+      "type": "string"
+    },
+    "vitals": {
+      "description": "Headline counts for the health strip. All optional; the viewer renders whatever is present.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "entities": { "type": "integer", "minimum": 0 },
+        "canonPages": { "type": "integer", "minimum": 0 },
+        "lastIngest": { "type": "string", "description": "ISO 8601 or a short relative label like '2h'." },
+        "ingestOk": { "type": "boolean" }
+      }
+    },
+    "entities": {
+      "description": "The rows of the vault. Each entity is generic; the producer owns the mapping from its own schema into this shape.",
+      "type": "array",
+      "items": { "$ref": "#/$defs/entity" }
+    },
+    "queues": {
+      "description": "Pre-computed work queues. The producer decides membership and ordering; the viewer only renders.",
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "followups": { "type": "array", "items": { "$ref": "#/$defs/followup" } },
+        "proposals": { "type": "array", "items": { "$ref": "#/$defs/proposal" } }
+      }
+    },
+    "views": {
+      "description": "Optional presentation hints owned by the producer, so the viewer stays dumb about the domain. A hint names which label/spec keys become columns, the default sort, and optional per-label-value tones. Delivered as data, never baked into viewer code.",
+      "type": "object",
+      "additionalProperties": { "$ref": "#/$defs/view" }
+    }
+  },
+  "$defs": {
+    "entity": {
+      "type": "object",
+      "required": ["kind", "id", "label"],
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "type": "string", "description": "Generic discriminant, e.g. 'person' or 'org'. The viewer renders unknown kinds with generic columns." },
+        "id": { "type": "string", "description": "Stable identity, e.g. derived from the source file path. Referenced by relations and queues as '<kind>:<id>' or the bare id." },
+        "label": { "type": "string", "description": "Human display name." },
+        "labels": {
+          "description": "Small closed key/value map the viewer may group, filter, and color by WITHOUT knowing what any key means. A producer's ontology value (say a relationship tier) ships here as a value, never as a first-class schema field.",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "annotations": {
+          "description": "Arbitrary non-identifying metadata the viewer shows but never interprets (role, one-line context).",
+          "type": "object",
+          "additionalProperties": { "type": "string" }
+        },
+        "spec": {
+          "description": "Generic contact facets, all optional. Producer pre-computes any derived state (a resolved status, not a raw staleness rule). The viewer renders known keys and shows unknown ones in a generic key/value fallback.",
+          "type": "object",
+          "additionalProperties": true,
+          "properties": {
+            "priority": { "type": "number", "description": "Generic 0-100 maintenance priority." },
+            "lastContactAt": { "type": "string", "description": "ISO 8601 date of last meaningful contact." },
+            "cadenceDays": { "type": "integer", "minimum": 0, "description": "Target contact cadence in days." },
+            "status": { "type": "string", "description": "Producer-resolved cadence status, e.g. 'on-track' | 'due' | 'overdue'." },
+            "nextTouch": { "type": "string", "description": "Suggested next action." },
+            "summary": { "type": "string", "description": "Where things were left off." },
+            "sections": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["heading", "body"],
+                "additionalProperties": true,
+                "properties": {
+                  "heading": { "type": "string" },
+                  "body": { "type": "string" }
+                }
+              }
+            },
+            "evidence": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "required": ["quote"],
+                "additionalProperties": true,
+                "properties": {
+                  "date": { "type": "string" },
+                  "source": { "type": "string", "description": "A generic source label (a note filename). Never an absolute path." },
+                  "quote": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "relations": {
+          "description": "Typed edge list, never inline nesting. targetRef points at another entity by '<kind>:<id>' or bare id.",
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["type", "targetRef"],
+            "additionalProperties": true,
+            "properties": {
+              "type": { "type": "string" },
+              "targetRef": { "type": "string" },
+              "note": { "type": "string" }
+            }
+          }
+        }
+      }
+    },
+    "followup": {
+      "type": "object",
+      "required": ["entityRef"],
+      "additionalProperties": true,
+      "properties": {
+        "entityRef": { "type": "string" },
+        "reason": { "type": "string" },
+        "status": { "type": "string" },
+        "overdueDays": { "type": "integer" }
+      }
+    },
+    "proposal": {
+      "type": "object",
+      "required": ["id", "kind", "title"],
+      "additionalProperties": true,
+      "properties": {
+        "id": { "type": "string" },
+        "kind": { "type": "string", "description": "Generic proposal kind, e.g. 'merge' | 'new-entity' | 'field-update' | 'tier-change'." },
+        "title": { "type": "string" },
+        "rationale": { "type": "string" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "evidence": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "view": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "columns": {
+          "description": "Ordered label/spec keys to render as columns. 'label' is the entity name.",
+          "type": "array",
+          "items": { "type": "string" }
+        },
+        "sort": { "type": "string", "description": "A '<key>:asc' or '<key>:desc' hint." },
+        "groupBy": { "type": "string" },
+        "labelTones": {
+          "description": "Optional per-label-value tone hints, e.g. { \"group\": { \"inner\": \"accent\", \"dormant\": \"muted\" } }. Tones are a generic palette role, never a raw color.",
+          "type": "object",
+          "additionalProperties": { "type": "object", "additionalProperties": { "type": "string" } }
+        }
+      }
+    }
+  }
+}

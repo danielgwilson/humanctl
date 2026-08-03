@@ -19,3 +19,13 @@ DerivedData
 .humanctl/state
 .humanctl/inbox/events.jsonl
 .claude/
+
+# Private, per-operator scratch: goals, specs, and personal-ontology mapping
+# notes never belong in this public repo. Belt-and-suspenders on top of the
+# leak-scan hook so a stray personal spec can never be staged.
+private/
+# A real exported vault snapshot is the operator's personal data; only the
+# generic schema (docs/vault-snapshot.schema.json) and fabricated fixtures
+# are tracked. Never commit a produced snapshot.
+*.snapshot.json
+vault-snapshot.json

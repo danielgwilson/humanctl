@@ -31,7 +31,10 @@ import type {
   HumanctlTimelineEvent,
   HumanctlTimelineMeta,
   HumanctlView,
+  VaultSnapshot,
 } from '@humanctl/ui/product';
+
+export type VaultSnapshotModel = VaultSnapshot;
 
 export type Harness = HumanctlHarness;
 export type SessionState = HumanctlSessionState;
@@ -111,6 +114,7 @@ export interface IntentResultMap {
   'thread.markRead': AppState;
   'threads.markAllRead': AppState;
   'metrics.loadSkills': SkillAggregate | null;
+  'brain.load': VaultSnapshot | null;
   'settings.loadBudget': BudgetStatus | null;
   'atlas.ask': { answer: string; engine?: string };
   'session.ask': { answer: string; engine?: string };

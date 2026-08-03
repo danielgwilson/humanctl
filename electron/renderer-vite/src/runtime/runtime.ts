@@ -71,6 +71,7 @@ function initialModel(
       budget: resource(null),
       timeline: resource(null),
       atlas: resource<ReadonlyArray<AtlasExchange>>([], 'ready'),
+      brain: resource(null),
     },
     operations: {},
   };
@@ -568,6 +569,19 @@ export class HumanctlRuntime {
     });
   }
 
+  private async loadBrain(): Promise<DispatchOutcome<RuntimeResources['brain']['data']>> {
+    this.beginResource('brain');
+    const path = this.snapshot.resources.appState.data.brainSnapshotPath;
+    return this.execute('brain.load', () => this.adapter.getBrain({ path }), (result) => {
+      const data = 'snapshot' in result ? result.snapshot || null : null;
+      this.commitResource('brain', data);
+      return data;
+    }).then((outcome) => {
+      if (!outcome.ok) this.failResource('brain', outcome.error);
+      return outcome;
+    });
+  }
+
   private async loadBudget(dailyBudgetUSD: number): Promise<DispatchOutcome<RuntimeResources['budget']['data']>> {
     this.beginResource('budget');
     return this.execute('settings.loadBudget', () => this.adapter.getSummaryBudget({ dailyBudgetUSD }), (result) => {
@@ -793,6 +807,8 @@ export class HumanctlRuntime {
       }
       case 'metrics.loadSkills':
         return this.loadSkills();
+      case 'brain.load':
+        return this.loadBrain();
       case 'settings.loadBudget':
         return this.loadBudget(intent.dailyBudgetUSD);
       case 'atlas.ask': {

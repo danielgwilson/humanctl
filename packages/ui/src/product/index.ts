@@ -29,4 +29,5 @@ export type {
   HumanctlTimelineEvent,
   HumanctlTimelineMeta,
   HumanctlView,
+  VaultSnapshot,
 } from "./contracts"

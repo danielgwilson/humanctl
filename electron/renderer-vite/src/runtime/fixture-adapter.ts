@@ -1,4 +1,5 @@
 import type { HumanctlAdapter } from './adapter';
+import { FIXTURE_VAULT_SNAPSHOT } from './brain-fixture';
 import {
   DEFAULT_APP_STATE,
   type AppState,
@@ -232,6 +233,13 @@ export function createFixtureAdapter(): HumanctlAdapter {
     async aggregateSkills() {
       await wait(90);
       return { ok: true, agg: { skills: { 'code-review': 6, 'test-runner': 4, 'doc-gardener': 2 }, sessionsWithSkills: 5, totalInvocations: 12 } };
+    },
+    async getBrain() {
+      // Fixture mode always resolves the synthetic snapshot, so the browser
+      // build and screenshots render a fully populated Brain view. The path
+      // argument is ignored here; only the desktop adapter reads a real file.
+      await wait(70);
+      return { ok: true, snapshot: clone(FIXTURE_VAULT_SNAPSHOT) };
     },
     async getSummaryBudget(opts) {
       await wait(30);
