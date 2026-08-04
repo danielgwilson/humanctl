@@ -18,9 +18,6 @@ const badgeVariants = cva(
           "bg-block-soft text-block [a]:hover:bg-[color-mix(in_oklch,var(--block-soft),var(--ink)_5%)]",
         outline:
           "border-border text-ink [a]:hover:bg-[var(--overlay-hover)] [a]:hover:text-ink-2",
-        ghost:
-          "text-ink-2 hover:bg-[var(--overlay-hover)] hover:text-ink",
-        link: "text-primary underline-offset-4 hover:underline",
       },
     },
     defaultVariants: {
