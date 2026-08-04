@@ -9,14 +9,21 @@ export function focusComposer() {
   if (el && !el.disabled) el.focus()
 }
 
+// True while any Base UI dialog is mounted (command palette, shortcuts help,
+// the compact assistant sheet). Global bare-key shortcuts bail on this so they
+// never fire behind an open modal.
+export function isModalOpen(): boolean {
+  return document.querySelector('[role="dialog"]') !== null
+}
+
 type WorkLoopRow = { id: string; state?: HumanctlSessionState }
 
 // The operator work-loop keys for a list view: j/k move the selection, "/"
-// focuses that view's search, Enter or e drops into the composer for the
-// selected session, r resumes it. Modifier combos and typing in an
-// input/textarea are ignored, so the global palette/nav shortcuts and normal
-// text entry are untouched. This is a pure keydown listener (no timers, no
-// fs/IPC), so it never blocks the main process.
+// focuses that view's search, Enter drops into the composer for the selected
+// session, r resumes it. Modifier combos, typing in an input/textarea, and an
+// open modal are ignored, so the global palette/nav shortcuts and normal text
+// entry are untouched. This is a pure keydown listener (no timers, no fs/IPC),
+// so it never blocks the main process.
 export function useWorkLoopKeys(opts: {
   ordered: ReadonlyArray<WorkLoopRow>
   selectedId: string | undefined
@@ -29,6 +36,7 @@ export function useWorkLoopKeys(opts: {
   useEffect(() => {
     function onKey(event: KeyboardEvent) {
       if (event.metaKey || event.ctrlKey || event.altKey) return
+      if (isModalOpen()) return
       const target = event.target as HTMLElement | null
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return
       if (event.key === "j" || event.key === "k") {
@@ -42,7 +50,10 @@ export function useWorkLoopKeys(opts: {
       } else if (event.key === "/") {
         event.preventDefault()
         onFocusSearch()
-      } else if ((event.key === "Enter" || event.key === "e") && selectedSession) {
+      } else if (event.key === "Enter" && selectedSession) {
+        // Do not steal Enter from a focused button or link (native activation,
+        // e.g. selecting a row); only drop into the composer from a plain focus.
+        if (target?.closest("button, a, [role=button]")) return
         event.preventDefault()
         focusComposer()
       } else if (event.key === "r" && selectedSession) {

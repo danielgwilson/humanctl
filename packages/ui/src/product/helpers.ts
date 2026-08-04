@@ -1,6 +1,5 @@
 import type {
   HumanctlInboxThread,
-  HumanctlHarness,
   HumanctlQuotaWindow,
   HumanctlSession,
   HumanctlSessionState,
@@ -40,12 +39,6 @@ export function basename(value?: string): string {
 
 export function sessionRepo(session: HumanctlSession): string {
   return basename(session.repo || session.cwd)
-}
-
-export function harnessLabel(harness?: HumanctlHarness): string {
-  if (harness === "codex") return "Codex"
-  if (harness === "claude-code") return "Claude Code"
-  return "Unknown harness"
 }
 
 export function formatMoney(value?: number | null): string {
@@ -155,19 +148,22 @@ export function threadSession(
 }
 
 // The next session that still needs you, scanning forward from the current one
-// and wrapping. Excludes the current id so the just-answered session (whose
-// backend state has not flipped out of "need" yet) is never re-selected. Returns
-// undefined when nothing else is waiting, which clears the detail and ends the
-// answer-and-advance loop.
+// and wrapping. Excludes the current id AND every id in `answered` so the loop
+// never bounces back to a session you already replied to: answering does not
+// flip a session out of "need" until the next fleet poll (~20s), so the stale
+// rows would otherwise re-qualify and re-open a resolved ask. Returns undefined
+// when nothing else is waiting, which clears the detail and ends the loop.
 export function nextNeedsAttentionId(
   ordered: ReadonlyArray<{ id: string; state?: HumanctlSessionState }>,
   currentId: string | undefined,
+  answered?: ReadonlySet<string>,
 ): string | undefined {
   if (ordered.length === 0) return undefined
   const start = currentId ? ordered.findIndex((row) => row.id === currentId) : -1
   for (let step = 1; step <= ordered.length; step++) {
     const candidate = ordered[(start + step + ordered.length) % ordered.length]
     if (candidate.id === currentId) continue
+    if (answered?.has(candidate.id)) continue
     if (candidate.state === "need") return candidate.id
   }
   return undefined
@@ -247,13 +243,6 @@ export function stateTone(state: HumanctlSessionState): StatusState {
   return "idle"
 }
 
-export function sessionMeta(session: HumanctlSession): string {
-  // Recency (the age) is owned by the row's trailing slot, so it is not
-  // repeated here. The meta line stays to repo and harness only.
-  return [sessionRepo(session), harnessLabel(session.harness)]
-    .filter(Boolean)
-    .join(" · ")
-}
 
 export function threadTitle(thread: HumanctlInboxThread, session?: HumanctlSession): string {
   const resolved = session || thread.session

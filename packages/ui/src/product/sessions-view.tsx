@@ -95,6 +95,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
   }), [dispatch, pins, selected?.id])
 
   const searchRef = useRef<HTMLInputElement>(null)
+  const answeredIds = useRef<Set<string>>(new Set())
   const orderedRows = useMemo(() => sessions.map((session) => ({ id: session.id, state: session.state })), [sessions])
   useWorkLoopKeys({
     ordered: orderedRows,
@@ -171,7 +172,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to sessions</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, selected?.id) } }) }} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} onAnswered={() => { const id = selected?.id; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
       </section>
     </div>
   )

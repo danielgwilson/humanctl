@@ -153,6 +153,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
   }), [byId, lastReadTs, pins, select, selectedThread?.sessionId])
 
   const searchRef = useRef<HTMLInputElement>(null)
+  const answeredIds = useRef<Set<string>>(new Set())
   const orderedRows = useMemo(() => threads.map((thread) => ({ id: thread.sessionId, state: threadSession(thread, byId)?.state })), [threads, byId])
   useWorkLoopKeys({
     ordered: orderedRows,
@@ -233,7 +234,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to inbox</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, selectedThread?.sessionId) } }) }} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { const id = selectedThread?.sessionId; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
       </section>
     </div>
   )

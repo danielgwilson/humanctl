@@ -123,7 +123,6 @@ export function FleetView({ model, dispatch }: { model: HumanctlApplicationModel
 
   const onSelect = (id: string) => { void dispatch({ type: "app.patch", patch: { selectedId: id } }) }
   const loading = sessionsResource.status === "loading" && sessions.length === 0
-  const ready = sessionsResource.status !== "loading" || sessions.length > 0
 
   return (
     <PageFrame>
@@ -151,7 +150,7 @@ export function FleetView({ model, dispatch }: { model: HumanctlApplicationModel
         <ScrollArea className="h-full">
           {loading ? (
             <div className="p-4"><RowSkeletons count={8} /></div>
-          ) : sessions.length === 0 && ready ? (
+          ) : sessions.length === 0 ? (
             <EmptyState title="No sessions in the last 72 hours" description="Active tasks across your local harnesses will appear on the timeline here." />
           ) : (
             <>

@@ -68,7 +68,7 @@ import { InboxView } from "./inbox-view"
 import { formatTime, nextNeedsAttentionId, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
 import { KeyboardKey } from "./shared"
-import { focusComposer } from "./use-workloop-keys"
+import { focusComposer, isModalOpen } from "./use-workloop-keys"
 
 declare global {
   interface Window {
@@ -423,6 +423,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
   const skillsRequested = useRef(false)
   const budgetRequested = useRef(false)
   const brainRequestedPath = useRef<string | null | undefined>(null)
+  const answeredIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
     const root = document.documentElement
@@ -463,6 +464,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       if (event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return
+      if (isModalOpen()) return
       if (event.key === "?") {
         event.preventDefault()
         setShortcutsOpen(true)
@@ -514,7 +516,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       <div className="flex h-[var(--chrome)] shrink-0 items-center border-b border-border px-3">
         <Button size="sm" variant="ghost" onClick={closeSession}>Back to {NAVIGATION.find((item) => item.view === state.view)?.label || "view"}</Button>
       </div>
-      <div className="min-h-0 flex-1"><LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id) } }) }} /></div>
+      <div className="min-h-0 flex-1"><LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onAnswered={() => { answeredIds.current.add(selected.id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id, answeredIds.current) } }) }} /></div>
     </div>
   ) : content
   const assistant = state.rightRailOpen && !compactAssistant ? (
@@ -539,7 +541,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
         mobileNavigationOpen={mobileNavigationOpen}
         onMobileNavigationOpenChange={setMobileNavigationOpen}
         navigationBreakpoint={state.rightRailOpen && !compactAssistant ? 1224 : 864}
-        detail={externalDetail && !compactDetail ? <LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id) } }) }} /> : undefined}
+        detail={externalDetail && !compactDetail ? <LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} onAnswered={() => { answeredIds.current.add(selected.id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id, answeredIds.current) } }) }} /> : undefined}
         assistant={assistant}
         topbar={
           <ProductTopbar

@@ -141,5 +141,7 @@ equal(nextNeedsAttentionId(advanceRows, undefined), "a", "advance with no curren
 equal(nextNeedsAttentionId([{ id: "a", state: "need" }], "a"), undefined, "advance excludes the current row so the last need clears the detail")
 equal(nextNeedsAttentionId([{ id: "a", state: "work" }], undefined), undefined, "advance returns undefined when nothing needs you")
 equal(nextNeedsAttentionId([], "a"), undefined, "advance on an empty list returns undefined")
+equal(nextNeedsAttentionId(advanceRows, "c", new Set(["a"])), undefined, "advance skips already-answered ids, so answering c after a clears the detail instead of bouncing back")
+equal(nextNeedsAttentionId(advanceRows, "a", new Set(["c"])), undefined, "advance with the only other need already answered returns undefined")
 
 console.log("derivations.selftest: ok")

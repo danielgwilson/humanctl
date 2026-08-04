@@ -373,7 +373,7 @@ async function assertFoundationBehavior(cdp) {
 
   await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
   await settle(cdp);
-  log('foundation assertions passed: font, focus, 44px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
+  log('foundation assertions passed: font, focus, 46px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
 }
 
 async function capture(cdp, outDir, filename) {
