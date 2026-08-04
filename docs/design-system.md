@@ -83,10 +83,11 @@ The system uses a 4px spacing grid.
 | `--status-band` | 32px | global status band |
 | `--row` | 36px | single-line operator row |
 | `--row-decision` | 56px | row requiring a second content line |
-| `--row-task` | 52px | compact Inbox and Sessions row |
+| `--row-list` | 46px | compact two-line Inbox and Sessions row |
+| `--row-task` | 52px | Inbox and Sessions loading-skeleton row |
 | `--rail` | 275px | desktop navigation rail |
 | `--assistant-rail` | 360px | desktop chief-of-staff rail |
-| `--split-list` | 340px | list pane in a split view |
+| `--split-list` | clamp(360px, 26vw, 460px) | list pane in a split view |
 | `--detail` | 320px | detail side rail |
 | `--palette` | 672px | command palette maximum width |
 | `--measure-prose` | 560px | readable long-form text |

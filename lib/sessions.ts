@@ -1340,6 +1340,18 @@ export interface AccountStatus {
   generatedAt: number;
 }
 
+// Single source of truth for the two top-bar fleet counts, so every surface
+// (backend status, fixture adapter, nav badge, status band, Fleet view) counts
+// the same way. A session "needs you" when its tail asks for input and it is
+// still in a live tier; "blocked" is the blocked-on-agent lane, not needs-you,
+// and archived sessions are out of the default views and out of these counts.
+export function isNeedsYou(row: { state: string; tier?: string }): boolean {
+  return row.state === 'need' && row.tier !== 'archived';
+}
+export function isWorking(row: { state: string; tier?: string }): boolean {
+  return row.state === 'work' && row.tier !== 'archived';
+}
+
 // Public: account-level rollup for the top bar. Real spend estimate for Claude
 // (metered), real rate-limit quota for Codex (plan-billed), and a needs-you count.
 export function accountStatus(opts: ListRecentOpts = {}): AccountStatus {
@@ -1370,11 +1382,10 @@ export function accountStatus(opts: ListRecentOpts = {}): AccountStatus {
   return {
     per,
     codexQuota,
-    // Content-shaped counts: needs-you means the tail actually asks for you
-    // (or was interrupted), within the hot or drifting tier. Archived sessions
-    // are out of the default views and out of these counts.
-    needsYou: rows.filter((r) => r.state === 'need' && r.tier !== 'archived').length,
-    working: rows.filter((r) => r.state === 'work' && r.tier !== 'archived').length,
+    // Content-shaped counts, via the shared predicates so no other surface can
+    // drift to a different rule (see isNeedsYou / isWorking above).
+    needsYou: rows.filter(isNeedsYou).length,
+    working: rows.filter(isWorking).length,
     nearCompaction,
     sessions: rows.length,
     pricingAsOf: AS_OF,

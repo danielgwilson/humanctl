@@ -12,6 +12,7 @@ type LazySessionDetailProps = {
   session: HumanctlSession | null
   thread?: HumanctlInboxThread | null
   onClose?: () => void
+  onAnswered?: () => void
 }
 
 function SessionDetailFallback() {

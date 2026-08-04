@@ -6,17 +6,6 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@humanctl/ui/lib/cn"
 import { Separator } from "@humanctl/ui/components/separator"
 
-function ItemGroup({ className, ...props }: React.ComponentProps<"div">) {
-  return (
-    <div
-      role="list"
-      data-slot="item-group"
-      className={cn("group/item-group flex w-full flex-col gap-4", className)}
-      {...props}
-    />
-  )
-}
-
 function ItemSeparator({
   className,
   ...props
@@ -42,7 +31,6 @@ const itemVariants = cva(
       },
       size: {
         default: "gap-2.5 px-3 py-2.5",
-        sm: "gap-2.5 px-3 py-2.5",
         xs: "gap-2 px-2.5 py-2 in-data-[slot=dropdown-menu-content]:p-0",
       },
     },
@@ -189,7 +177,6 @@ export {
   ItemMedia,
   ItemContent,
   ItemActions,
-  ItemGroup,
   ItemSeparator,
   ItemTitle,
   ItemDescription,

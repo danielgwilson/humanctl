@@ -20,10 +20,18 @@ const KB = 1000;
 // Variable WOFF2 files. Total JS is back under the long-standing 700 kB ceiling
 // now that the catalog chunk no longer ships in the app. Typeset stays isolated
 // to the lazy conversation chunk. Initial and total CSS have distinct ceilings.
+//
+// Measured 2026-08-03 after the expert-panel UI pass (foundation tokens,
+// readable rows, transcript grouping, quota/nav/tab work, the Fleet timeline,
+// Metrics and Brain redesigns, and the keyboard work-loop): initial CSS grew to
+// 86.62 kB, +5.67 kB of new Tailwind utilities distributed across all three
+// redesigned surfaces and the timeline (not one hotspot; ~1 kB gzipped). Initial
+// JS stayed at 557 kB. Raised the initial-CSS ceiling 84 -> 90 kB to keep the
+// prior ~3 kB headroom over the new baseline; the other ceilings are unchanged.
 const BUDGETS = {
   initialJs: 600 * KB,
   totalJs: 700 * KB,
-  initialCss: 84 * KB,
+  initialCss: 90 * KB,
   totalCss: 104 * KB,
   fonts: 120 * KB,
 };

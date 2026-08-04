@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { CheckCheckIcon, PinIcon } from "lucide-react"
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
@@ -6,6 +6,7 @@ import { ListRow } from "@humanctl/ui/blocks/list-row"
 import { Button } from "@humanctl/ui/components/button"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
+import { cn } from "@humanctl/ui/lib/cn"
 
 import type {
   HumanctlApplicationModel,
@@ -16,17 +17,18 @@ import type {
 import {
   filterInboxThreads,
   formatTime,
-  harnessLabel,
   type HarnessFilter,
   type InboxSort,
-  sessionMeta,
+  nextNeedsAttentionId,
   type SessionStateFilter,
+  sessionRepo,
   threadPreview,
   threadSession,
   threadTitle,
   threadUnread,
 } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
+import { useWorkLoopKeys } from "./use-workloop-keys"
 import {
   EmptyState,
   HarnessMark,
@@ -74,6 +76,7 @@ function InboxVirtualRow({
   const session = threadSession(thread, context.byId)
   const unread = threadUnread(thread, context.lastReadTs)
   const pinned = context.pins.has(thread.sessionId)
+  const ctx = typeof session?.contextPct === "number" ? session.contextPct : null
   return (
     <ListRow
       {...rowProps}
@@ -81,14 +84,15 @@ function InboxVirtualRow({
       selected={thread.sessionId === context.selectedThreadId}
       title={threadTitle(thread, session)}
       summary={threadPreview(thread)}
-      metadata={session ? sessionMeta(session) : `${harnessLabel(thread.harness)} · ${formatTime(thread.lastTs)}`}
+      metadata={session ? sessionRepo(session) : undefined}
       leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft text-xs">?</span>}
       status={session ? <SessionStatus state={session.state} /> : undefined}
       trailing={
         <span className="flex items-center gap-2">
+          {ctx != null && ctx >= 80 ? <span className={cn("tabular-nums", ctx >= 90 ? "text-block" : "text-need")}>ctx {Math.round(ctx)}%</span> : null}
           {pinned ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
           {unread ? <span className="size-1.5 rounded-full bg-primary" aria-label="Unread" /> : null}
-          <span className="text-xs tabular-nums text-ink-3">{formatTime(thread.lastTs)}</span>
+          <span className="tabular-nums text-ink-3">{formatTime(thread.lastTs)}</span>
         </span>
       }
       onClick={() => context.onSelect(thread)}
@@ -148,6 +152,18 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
     onSelect: (thread) => { void select(thread) },
   }), [byId, lastReadTs, pins, select, selectedThread?.sessionId])
 
+  const searchRef = useRef<HTMLInputElement>(null)
+  const answeredIds = useRef<Set<string>>(new Set())
+  const orderedRows = useMemo(() => threads.map((thread) => ({ id: thread.sessionId, state: threadSession(thread, byId)?.state })), [threads, byId])
+  useWorkLoopKeys({
+    ordered: orderedRows,
+    selectedId: selectedThread?.sessionId,
+    selectedSession,
+    onSelect: (id) => { const thread = threads.find((row) => row.sessionId === id); if (thread) void select(thread) },
+    onFocusSearch: () => searchRef.current?.focus(),
+    dispatch,
+  })
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[var(--split-list)_minmax(0,1fr)] max-[1040px]:grid-cols-1">
       <section className={`flex min-h-0 min-w-0 flex-col border-r border-border bg-background max-[1040px]:border-r-0 ${appState.selectedId ? "max-[1040px]:hidden" : ""}`} aria-label="Inbox threads">
@@ -163,7 +179,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         />
         <FilterToolbar
           search={
-            <FilterSearch aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+            <FilterSearch ref={searchRef} aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
@@ -218,7 +234,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to inbox</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { const id = selectedThread?.sessionId; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
       </section>
     </div>
   )

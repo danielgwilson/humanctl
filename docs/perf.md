@@ -66,7 +66,7 @@ constants:
 | Heap growth over 20 cycles | reaches steady state |
 | Renderer initial JS (`bundle:check`, runs in CI) | < 600.00 kB |
 | Renderer total emitted JS (`bundle:check`, runs in CI) | < 700.00 kB |
-| Renderer initial CSS (`bundle:check`, runs in CI) | < 84.00 kB |
+| Renderer initial CSS (`bundle:check`, runs in CI) | < 90.00 kB |
 | Renderer total emitted CSS (`bundle:check`, runs in CI) | < 104.00 kB |
 
 Every renderer reset and release records a fresh local result. Sessions,

@@ -8,7 +8,7 @@ function Skeleton({ className, ...props }: ComponentProps<"div">) {
       data-slot="skeleton"
       aria-hidden="true"
       className={cn(
-        "animate-pulse rounded-[var(--radius-1)] bg-[color-mix(in_oklch,var(--surface-1),var(--ink)_8%)] motion-reduce:animate-none",
+        "animate-pulse rounded-[var(--radius-1)] bg-[color-mix(in_oklch,var(--surface-1),var(--ink)_8%)]",
         className,
       )}
       {...props}

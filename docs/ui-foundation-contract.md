@@ -146,14 +146,14 @@ All dimensions derive from a 4px grid.
 | Bottom status band | 32px | application shell |
 | Navigation rail | 275px | Registry Sidebar |
 | Chief-of-staff rail | 360px | Registry Sidebar, right side |
-| Split list pane | 340px | inbox or sessions block |
+| Split list pane | clamp(360px, 26vw, 460px) | inbox or sessions block |
 | Detail side rail | 320px | detail block |
 | Page gutter | 16px | page frame |
 | Compact control | 28px, radius 8px | primitive |
 | Large input or action | 32px, radius 10px | primitive |
 | Single-line row | 36px | list block |
 | Decision row | 56px minimum | compact two-line decision block |
-| Task row | 52px | compact Inbox and Sessions list row |
+| List row | 46px | compact two-line Inbox and Sessions list row (loading skeletons 52px) |
 | Floating panel | radius 12px | overlay primitive |
 | Command palette | 672px max width | command block |
 

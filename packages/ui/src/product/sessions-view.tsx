@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { PinIcon, RefreshCwIcon } from "lucide-react"
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
@@ -8,8 +8,11 @@ import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectValue } from "@humanctl/ui/components/select"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
-import { filterSessions, formatTime, type HarnessFilter, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionMeta, sessionTitle } from "./helpers"
+import { cn } from "@humanctl/ui/lib/cn"
+
+import { filterSessions, formatTime, type HarnessFilter, nextNeedsAttentionId, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionRepo, sessionTitle } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
+import { useWorkLoopKeys } from "./use-workloop-keys"
 import { EmptyState, HarnessMark, PaneHeading, ResourceNotice, RowSkeletons, SessionStatus } from "./shared"
 import { BoundedVirtualList, type VirtualRowComponentProps } from "./virtual-list"
 
@@ -53,13 +56,14 @@ function SessionsVirtualRow({
       selected={session.id === context.selectedId}
       title={sessionTitle(session)}
       summary={sessionMessage(session)}
-      metadata={sessionMeta(session)}
+      metadata={sessionRepo(session)}
       leading={<HarnessMark harness={session.harness} />}
       status={<SessionStatus state={session.state} />}
       trailing={
         <span className="flex items-center gap-2">
+          {typeof session.contextPct === "number" && session.contextPct >= 80 ? <span className={cn("tabular-nums", session.contextPct >= 90 ? "text-block" : "text-need")}>ctx {Math.round(session.contextPct)}%</span> : null}
           {context.pins.has(session.id) ? <PinIcon className="size-3 fill-current text-primary" aria-label="Pinned" /> : null}
-          <span className="text-xs tabular-nums text-ink-3">{session.age || formatTime(session.ageMs)}</span>
+          <span className="tabular-nums text-ink-3">{session.age || formatTime(session.ageMs)}</span>
         </span>
       }
       onClick={() => context.onSelect(session.id)}
@@ -90,6 +94,18 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
     onSelect: (id) => { void dispatch({ type: "app.patch", patch: { selectedId: id } }) },
   }), [dispatch, pins, selected?.id])
 
+  const searchRef = useRef<HTMLInputElement>(null)
+  const answeredIds = useRef<Set<string>>(new Set())
+  const orderedRows = useMemo(() => sessions.map((session) => ({ id: session.id, state: session.state })), [sessions])
+  useWorkLoopKeys({
+    ordered: orderedRows,
+    selectedId: selected?.id,
+    selectedSession: selected,
+    onSelect: (id) => { void dispatch({ type: "app.patch", patch: { selectedId: id } }) },
+    onFocusSearch: () => searchRef.current?.focus(),
+    dispatch,
+  })
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[var(--split-list)_minmax(0,1fr)] max-[1040px]:grid-cols-1">
       <section className={`flex min-h-0 min-w-0 flex-col border-r border-border max-[1040px]:border-r-0 ${appState.selectedId ? "max-[1040px]:hidden" : ""}`} aria-label="Sessions">
@@ -105,7 +121,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         />
         <FilterToolbar
           search={
-            <FilterSearch aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+            <FilterSearch ref={searchRef} aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
@@ -156,7 +172,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to sessions</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} onAnswered={() => { const id = selected?.id; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
       </section>
     </div>
   )

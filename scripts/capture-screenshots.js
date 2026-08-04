@@ -133,18 +133,22 @@ async function waitForServer(url, timeoutMs = 15000) {
   throw new Error(`static server never answered ${url} within ${timeoutMs}ms`);
 }
 
-// Ensures a server is answering at http://localhost:<port>/. If one is
-// already up (e.g. an operator already ran `npm run renderer:serve`),
-// reuses it and does not touch its lifecycle. Otherwise builds the browser
-// bundle (electron/renderer-vite's own `npm ci` guard is reproduced here
-// since `renderer:build` itself does not carry it) and spawns
-// scripts/serve-static.ts, the repo's zero-dependency static file server,
-// against the fresh build.
+// Ensures a server is answering at http://localhost:<port>/. By DEFAULT it
+// always builds the current bundle and serves that, so the gate can never
+// certify a stale build (a running `renderer:serve` on the port would otherwise
+// be reused silently, and the images would not match HEAD). Reuse is opt-in via
+// HUMANCTL_SCREENSHOTS_REUSE_SERVER=1 for the fast local iteration loop only.
+// Otherwise builds the browser bundle (electron/renderer-vite's own `npm ci`
+// guard is reproduced here since `renderer:build` itself does not carry it) and
+// spawns scripts/serve-static.ts, the repo's zero-dependency static file server.
 async function ensureServer(port) {
   const url = `http://localhost:${port}/`;
-  if (await pingServer(url)) {
-    log(`reusing an already-running server at ${url}`);
+  if (process.env.HUMANCTL_SCREENSHOTS_REUSE_SERVER === '1' && await pingServer(url)) {
+    log(`reusing an already-running server at ${url} (HUMANCTL_SCREENSHOTS_REUSE_SERVER=1)`);
     return { url, ownServer: false, child: null };
+  }
+  if (await pingServer(url)) {
+    throw new Error(`a server is already listening on ${url}; refusing to reuse it (it may serve a stale build). Stop it, or set HUMANCTL_SCREENSHOTS_REUSE_SERVER=1 to opt in.`);
   }
 
   const rendererDir = path.join(REPO_ROOT, 'electron', 'renderer-vite');
@@ -317,7 +321,7 @@ async function assertFoundationBehavior(cdp) {
   assert(initial.bodyFont.includes('Geist Variable'), `body should use Geist Variable, received ${initial.bodyFont}`);
   assert(initial.geistLoaded, 'Geist Variable should be loaded before capture');
   assert(Math.abs((initial.leftGap?.width || 0) - 275) < 1, `left rail should be 275px, received ${initial.leftGap?.width}`);
-  assert(Math.abs((initial.row?.height || 0) - 52) < 1, `task rows should be 52px, received ${initial.row?.height}`);
+  assert(Math.abs((initial.row?.height || 0) - 46) < 1, `task rows should be 46px, received ${initial.row?.height}`);
   assert(!initial.fit.scrollX && !initial.fit.scrollY, 'desktop shell should not scroll at the document root');
 
   await dispatchKeyChord(cdp, { code: 'KeyB', key: 'b', modifiers: 4 });
@@ -369,7 +373,7 @@ async function assertFoundationBehavior(cdp) {
 
   await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
   await settle(cdp);
-  log('foundation assertions passed: font, focus, 52px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
+  log('foundation assertions passed: font, focus, 46px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
 }
 
 async function capture(cdp, outDir, filename) {

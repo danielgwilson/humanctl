@@ -7,17 +7,36 @@
   --surface-sunken: oklch(0.115 0.003 260);
   --surface-inverted: oklch(0.97 0.002 260);
 
-  --ink: oklch(0.97 0.002 260);
-  --ink-2: oklch(0.97 0.002 260 / 0.72);
-  --ink-3: oklch(0.97 0.002 260 / 0.56);
-  --ink-4: oklch(0.97 0.002 260 / 0.42);
+  /* Solid, cool-tinted text ramp. Secondary tiers were alpha-white, which
+     took on whatever surface sat under them and read muddy/inconsistent;
+     solid greys hold one value and one contrast everywhere (Linear/Radix). */
+  --ink: oklch(0.972 0.004 250);
+  --ink-2: oklch(0.86 0.014 255);
+  --ink-3: oklch(0.645 0.014 256);
+  /* ink-4 is decoration/quaternary meta only; it clears 4.5:1 on surface-0 so
+     it can also carry the dimmest true-text (Linear quaternary). */
+  --ink-4: oklch(0.565 0.012 258);
   --ink-inverted: oklch(0.18 0.004 260);
 
   --overlay-hover: oklch(1 0 0 / 0.06);
-  --overlay-press: oklch(0 0 0 / 0.16);
-  --overlay-selected: oklch(0.72 0.13 250 / 0.18);
+  --overlay-press: oklch(0 0 0 / 0.12);
+  --overlay-selected: oklch(0.72 0.13 250 / 0.16);
+  /* One filled-action feedback pair (hover lightens, press darkens the accent),
+     so primary/destructive stop routing hover through the neutral overlay that
+     is invisible on blue. */
+  --accent-hover: color-mix(in oklch, var(--accent-solid), white 13%);
+  --accent-press: color-mix(in oklch, var(--accent-solid), black 12%);
+  --block-hover: color-mix(in oklch, var(--block-solid), white 13%);
+  --block-press: color-mix(in oklch, var(--block-solid), black 12%);
+  /* Disabled never dims via opacity (which drops fill + label together below
+     3:1); a fixed muted fill + muted ink keeps a control reading as a control. */
+  --disabled-bg: color-mix(in oklch, var(--surface-1), var(--ink) 4%);
+  --disabled-ink: var(--ink-3);
   --hairline-w: 1px;
-  --hairline: oklch(1 0 0 / 0.16);
+  /* Two border tiers: a near-invisible separator for in-list row rules, a
+     stronger hairline for panes, toolbars, section rules, and control edges. */
+  --separator: oklch(1 0 0 / 0.055);
+  --hairline: oklch(1 0 0 / 0.11);
 
   --accent-solid: oklch(0.52 0.15 255);
   --block-solid: oklch(0.485 0.185 26);
@@ -58,6 +77,7 @@
   --radius-3: 10px;
   --radius-4: 12px;
   --radius: var(--radius-2);
+  --radius-nested: 6px;
   --control-sm: 28px;
   --control: 32px;
   --chrome: 48px;
@@ -67,9 +87,10 @@
   --row: 36px;
   --row-decision: 56px;
   --row-task: 52px;
+  --row-list: 46px;
   --rail: 275px;
   --assistant-rail: 360px;
-  --split-list: 340px;
+  --split-list: clamp(360px, 26vw, 460px);
   --detail: 320px;
   --palette: 672px;
   --measure-prose: 560px;
@@ -113,20 +134,29 @@
 
 .light {
   color-scheme: light;
-  --surface-0: oklch(0.985 0.002 260);
+  /* Page is a real step below the white panels so nav/list/detail read as
+     distinct planes, not one white field held together by a hairline. */
+  --surface-0: oklch(0.972 0.003 260);
   --surface-1: oklch(1 0 0);
   --surface-2: oklch(1 0 0);
   --surface-sunken: oklch(0.955 0.003 260);
   --surface-inverted: oklch(0.205 0.004 260);
-  --ink: oklch(0.205 0.004 260);
-  --ink-2: oklch(0.205 0.004 260 / 0.76);
-  --ink-3: oklch(0.205 0.004 260 / 0.62);
-  --ink-4: oklch(0.205 0.004 260 / 0.48);
+  --ink: oklch(0.245 0.014 258);
+  --ink-2: oklch(0.42 0.014 258);
+  --ink-3: oklch(0.52 0.016 256);
+  --ink-4: oklch(0.6 0.015 255);
   --ink-inverted: oklch(0.985 0.002 260);
-  --overlay-hover: oklch(0.205 0.004 260 / 0.045);
-  --overlay-press: oklch(0 0 0 / 0.06);
-  --overlay-selected: oklch(0.52 0.15 255 / 0.12);
-  --hairline: oklch(0.205 0.004 260 / 0.13);
+  --overlay-hover: oklch(0.245 0.014 258 / 0.055);
+  --overlay-press: oklch(0 0 0 / 0.1);
+  --overlay-selected: oklch(0.52 0.15 255 / 0.18);
+  --accent-hover: color-mix(in oklch, var(--accent-solid), white 12%);
+  --accent-press: color-mix(in oklch, var(--accent-solid), black 10%);
+  --block-hover: color-mix(in oklch, var(--block-solid), white 12%);
+  --block-press: color-mix(in oklch, var(--block-solid), black 10%);
+  --disabled-bg: color-mix(in oklch, var(--surface-1), var(--ink) 5%);
+  --disabled-ink: var(--ink-3);
+  --separator: oklch(0.245 0.014 258 / 0.08);
+  --hairline: oklch(0.245 0.014 258 / 0.14);
   --shade-1: oklch(0.3 0.01 260 / 0.06);
   --shade-2: oklch(0.3 0.01 260 / 0.1);
   --shade-3: oklch(0.3 0.01 260 / 0.16);
@@ -167,6 +197,7 @@
   --color-accent: var(--accent);
   --color-accent-foreground: var(--accent-foreground);
   --color-input: var(--input);
+  --color-separator: var(--separator);
   --color-surface: var(--surface-1);
   --color-overlay: var(--surface-2);
   --color-sunken: var(--surface-sunken);

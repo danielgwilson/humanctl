@@ -370,8 +370,30 @@ async function run(): Promise<void> {
 
   await testQuotaCoalescing();
   await testTimelineCap();
+  await testFixtureStatusCounts();
 
   console.log('runtime.selftest: ok');
+}
+
+// Guards the top-bar fleet counts against the "two different numbers" drift: the
+// fixture adapter must count needsYou the same way the backend does (need-state
+// only, not blocked), so dev and screenshots match production. See isNeedsYou in
+// lib/sessions.ts.
+async function testFixtureStatusCounts(): Promise<void> {
+  const fixture = createFixtureAdapter();
+  const statusResult = await fixture.getStatus();
+  const sessionsResult = await fixture.listSessions();
+  const payload = statusResult.status;
+  const rows = sessionsResult.rows;
+  assert(payload, 'fixture status payload present');
+  assert(rows, 'fixture sessions present');
+  const need = rows.filter((row) => row.state === 'need').length;
+  const blocked = rows.filter((row) => row.state === 'block').length;
+  const work = rows.filter((row) => row.state === 'work').length;
+  assert(blocked > 0, 'fixture has a blocked session, so the count rule is observable');
+  equal(payload.needsYou, need, 'fixture needsYou counts only need-state sessions');
+  assert(payload.needsYou < need + blocked, 'blocked sessions are not counted as needs-you');
+  equal(payload.working, work, 'fixture working counts only work-state sessions');
 }
 
 function testShellStateCache(): void {

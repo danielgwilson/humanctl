@@ -2,6 +2,7 @@ import type { HumanctlInboxThread, HumanctlSession, HumanctlSessionState } from 
 import {
   filterInboxThreads,
   filterSessions,
+  nextNeedsAttentionId,
   pinSessionsFirst,
   sessionMessage,
   threadSession,
@@ -126,5 +127,21 @@ equal(filterInboxThreads({
   pins: new Set<string>(),
   lastReadTs: {},
 }).map((row) => row.sessionId), ["old-inbox-decision"], "older inbox decisions remain searchable and filterable without a recent-session row")
+
+const advanceRows: Array<{ id: string; state?: HumanctlSessionState }> = [
+  { id: "a", state: "need" },
+  { id: "b", state: "work" },
+  { id: "c", state: "need" },
+  { id: "d", state: "idle" },
+]
+equal(nextNeedsAttentionId(advanceRows, "a"), "c", "advance skips non-need and lands on the next need")
+equal(nextNeedsAttentionId(advanceRows, "c"), "a", "advance wraps past the end to the first need")
+equal(nextNeedsAttentionId(advanceRows, "d"), "a", "advance from a non-need row finds the next need")
+equal(nextNeedsAttentionId(advanceRows, undefined), "a", "advance with no current selection finds the first need")
+equal(nextNeedsAttentionId([{ id: "a", state: "need" }], "a"), undefined, "advance excludes the current row so the last need clears the detail")
+equal(nextNeedsAttentionId([{ id: "a", state: "work" }], undefined), undefined, "advance returns undefined when nothing needs you")
+equal(nextNeedsAttentionId([], "a"), undefined, "advance on an empty list returns undefined")
+equal(nextNeedsAttentionId(advanceRows, "c", new Set(["a"])), undefined, "advance skips already-answered ids, so answering c after a clears the detail instead of bouncing back")
+equal(nextNeedsAttentionId(advanceRows, "a", new Set(["c"])), undefined, "advance with the only other need already answered returns undefined")
 
 console.log("derivations.selftest: ok")

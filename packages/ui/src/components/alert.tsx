@@ -9,6 +9,11 @@ const alertVariants = cva(
     variants: {
       variant: {
         default: "bg-sunken text-ink",
+        // State bands own their color at the component, not the call site, so a
+        // pending-ask or running band is never hand-styled in a view (one-owner
+        // law). Title inherits the state color; body stays neutral ink to read.
+        need: "border-l-2 border-l-need bg-need-soft/50 text-need *:data-[slot=alert-description]:text-ink-2 *:[svg]:text-current",
+        work: "border-l-2 border-l-work bg-work-soft/50 text-work *:data-[slot=alert-description]:text-ink-2 *:[svg]:text-current",
         destructive:
           "border-block/30 bg-block-soft text-block *:data-[slot=alert-description]:text-block *:[svg]:text-current",
       },
