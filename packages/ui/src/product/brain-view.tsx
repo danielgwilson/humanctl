@@ -14,6 +14,7 @@ import { PageActions, PageBody, PageDescription, PageFrame, PageHeader, PageHead
 import { Badge } from "@humanctl/ui/components/badge"
 import { Button } from "@humanctl/ui/components/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@humanctl/ui/components/empty"
+import { Progress, ProgressIndicator, ProgressTrack } from "@humanctl/ui/components/progress"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@humanctl/ui/components/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@humanctl/ui/components/tabs"
@@ -21,7 +22,7 @@ import { cn } from "@humanctl/ui/lib/cn"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { RowSkeletons, SectionHeading } from "./shared"
-import type { VaultEntity, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
+import type { VaultEntity, VaultFollowup, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
 
 // Generic palette roles a producer's `views.labelTones` hint may name, mapped to
 // a semantic dot color. The viewer knows the roles, never the domain values.
@@ -108,6 +109,12 @@ function displayValue(key: string, value: unknown): string {
   return formatValue(value)
 }
 
+// One owner for the owed-magnitude wording, shared by the People table's Owed
+// column and the Follow-ups tab.
+function owedMagnitude(followup: { overdueDays?: number }): string {
+  return (followup.overdueDays ?? 0) > 0 ? `${followup.overdueDays}d over` : "due now"
+}
+
 function compareBy(key: string, dir: "asc" | "desc") {
   return (left: VaultEntity, right: VaultEntity): number => {
     const a = cellValue(left, key)
@@ -133,6 +140,38 @@ function useEntityIndex(entities: ReadonlyArray<VaultEntity>): Map<string, Vault
 
 function resolveRef(index: Map<string, VaultEntity>, ref: string): VaultEntity | undefined {
   return index.get(ref) || index.get(ref.split(":").pop() || "")
+}
+
+// Index follow-ups by their entityRef (and its bare id) so the People table can
+// join "what is owed" per row. entityRef == entity.id in the contract.
+function useFollowupIndex(followups: ReadonlyArray<VaultFollowup>): Map<string, VaultFollowup> {
+  return useMemo(() => {
+    const map = new Map<string, VaultFollowup>()
+    for (const followup of followups) {
+      const ref = String(followup.entityRef || "")
+      if (!ref) continue
+      if (!map.has(ref)) map.set(ref, followup)
+      const bare = ref.includes(":") ? ref.slice(ref.indexOf(":") + 1) : ref
+      if (!map.has(bare)) map.set(bare, followup)
+    }
+    return map
+  }, [followups])
+}
+
+// Neutral priority micro-bar. The fill is ink (never the blue accent, which is
+// reserved for selection/focus); the number stays the readable owner. Producers
+// have no guaranteed priority range, so normalize against max(100, observed max)
+// so values read as "out of 100" without overflowing a larger producer scale.
+function PriorityBar({ value, max }: { value: number; max: number }) {
+  const pct = Math.max(0, Math.min(100, Math.round((100 * value) / Math.max(100, max))))
+  return (
+    <span className="inline-flex items-center justify-end gap-2">
+      <Progress value={pct} showTrack={false} aria-label={`Priority ${value}`} className="w-14 flex-none items-center gap-0">
+        <ProgressTrack className="h-1 w-full bg-sunken"><ProgressIndicator className="bg-ink-2" /></ProgressTrack>
+      </Progress>
+      <span className="tabular-nums text-ink-2">{value}</span>
+    </span>
+  )
 }
 
 function StatusText({ status }: { status?: string }) {
@@ -175,14 +214,23 @@ function HealthStrip({ snapshot }: { snapshot: VaultSnapshot }) {
 function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect: (id: string) => void }) {
   const view = snapshot.views?.people
   const columns = Array.isArray(view?.columns) && view.columns.length ? view.columns : ["priority", "lastContactAt", "status"]
-  const entities = useMemo(() => {
+  // Owed subsumes last-contact + status, so drop the standalone last-contact
+  // column when a status/owed column is present (no second recency owner).
+  const renderColumns = columns.includes("status") ? columns.filter((key) => key !== "lastContactAt") : columns
+  const followupIndex = useFollowupIndex(asArray<VaultFollowup>(snapshot.queues?.followups))
+  const { entities, maxPriority } = useMemo(() => {
     const rows = asArray<VaultEntity>(snapshot.entities)
     const sort = view?.sort
     if (sort) {
       const [key, dir] = sort.split(":")
       rows.sort(compareBy(key, dir === "asc" ? "asc" : "desc"))
     }
-    return rows
+    let max = 0
+    for (const row of rows) {
+      const priority = cellValue(row, "priority")
+      if (typeof priority === "number" && priority > max) max = priority
+    }
+    return { entities: rows, maxPriority: max }
   }, [snapshot.entities, view?.sort])
   const sample = entities[0]
 
@@ -191,39 +239,63 @@ function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect
       <TableHeader>
         <TableRow className="bg-sunken hover:bg-sunken">
           <TableHead className="h-9 w-[34%] px-4 text-xs text-ink-3">Person</TableHead>
-          {columns.map((key) => (
-            <TableHead key={key} className={cn("h-9 px-2 text-xs text-ink-3", sample && typeof cellValue(sample, key) === "number" && "text-right")}>
-              {humanizeKey(key)}
+          {renderColumns.map((key) => (
+            <TableHead key={key} className={cn("h-9 px-2 text-xs text-ink-3", (key === "priority" || (sample && typeof cellValue(sample, key) === "number")) && "text-right")}>
+              {key === "status" ? "Owed" : humanizeKey(key)}
             </TableHead>
           ))}
         </TableRow>
       </TableHeader>
       <TableBody>
-        {entities.map((entity) => (
-          <TableRow
-            key={entity.id}
-            className="h-[var(--row)] cursor-pointer hover:bg-[var(--overlay-hover)]"
-            onClick={() => onSelect(entity.id)}
-          >
-            <TableCell className="px-4 py-0">
-              <div className="truncate text-sm font-medium text-ink">{entity.label}</div>
-              {entity.annotations?.role ? <div className="truncate text-xs text-ink-3">{entity.annotations.role}</div> : null}
-            </TableCell>
-            {columns.map((key) => {
-              const value = cellValue(entity, key)
-              const numeric = typeof value === "number"
-              const tone = toneFor(key, value, view)
-              return (
-                <TableCell key={key} className={cn("px-2 py-0 text-xs", numeric ? "text-right tabular-nums text-ink-2" : "text-ink-2")}>
-                  <span className="inline-flex items-center gap-1.5">
-                    {tone && !numeric ? <span className={cn("size-1.5 rounded-full", tone)} aria-hidden="true" /> : null}
-                    {displayValue(key, value)}
-                  </span>
-                </TableCell>
-              )
-            })}
-          </TableRow>
-        ))}
+        {entities.map((entity) => {
+          const followup = followupIndex.get(entity.id) || followupIndex.get(entity.id.split(":").pop() || "")
+          return (
+            <TableRow
+              key={entity.id}
+              className="h-[var(--row)] cursor-pointer hover:bg-[var(--overlay-hover)]"
+              onClick={() => onSelect(entity.id)}
+            >
+              <TableCell className="px-4 py-0">
+                <div className="truncate text-sm font-medium text-ink">{entity.label}</div>
+                {entity.annotations?.role ? <div className="truncate text-xs text-ink-3">{entity.annotations.role}</div> : null}
+              </TableCell>
+              {renderColumns.map((key) => {
+                if (key === "priority") {
+                  const value = cellValue(entity, key)
+                  return (
+                    <TableCell key={key} className="px-2 py-0 text-right text-xs">
+                      {typeof value === "number" ? <PriorityBar value={value} max={maxPriority} /> : null}
+                    </TableCell>
+                  )
+                }
+                if (key === "status") {
+                  const status = (() => { const value = cellValue(entity, key); return value == null ? "" : String(value) })()
+                  const tone = toneFor("status", status, view)
+                  return (
+                    <TableCell key={key} className="px-2 py-0 text-xs text-ink-2">
+                      <span className="inline-flex items-center gap-1.5">
+                        {tone ? <span className={cn("size-1.5 rounded-full", tone)} aria-hidden="true" /> : null}
+                        <span>{STATUS_LABEL[status] || status}</span>
+                        {followup?.overdueDays != null ? <span className="tabular-nums text-ink-3">· {owedMagnitude(followup)}</span> : null}
+                      </span>
+                    </TableCell>
+                  )
+                }
+                const value = cellValue(entity, key)
+                const numeric = typeof value === "number"
+                const tone = toneFor(key, value, view)
+                return (
+                  <TableCell key={key} className={cn("px-2 py-0 text-xs", numeric ? "text-right tabular-nums text-ink-2" : "text-ink-2")}>
+                    <span className="inline-flex items-center gap-1.5">
+                      {tone && !numeric ? <span className={cn("size-1.5 rounded-full", tone)} aria-hidden="true" /> : null}
+                      {displayValue(key, value)}
+                    </span>
+                  </TableCell>
+                )
+              })}
+            </TableRow>
+          )
+        })}
       </TableBody>
     </Table>
   )
@@ -342,7 +414,7 @@ function FollowUps({ snapshot, index, onSelect }: { snapshot: VaultSnapshot; ind
             </div>
             <div className="shrink-0 text-right">
               <StatusText status={followup.status} />
-              {followup.overdueDays != null ? <div className="mt-0.5 text-xs tabular-nums text-ink-3">{followup.overdueDays > 0 ? `${followup.overdueDays}d over` : "due now"}</div> : null}
+              {followup.overdueDays != null ? <div className="mt-0.5 text-xs tabular-nums text-ink-3">{owedMagnitude(followup)}</div> : null}
             </div>
           </button>
         )

@@ -6,7 +6,7 @@ import { QuotaRow } from "@humanctl/ui/blocks/quota"
 import { Button } from "@humanctl/ui/components/button"
 import { ScrollArea } from "@humanctl/ui/components/scroll-area"
 import { Skeleton } from "@humanctl/ui/components/skeleton"
-import { Table, TableBody, TableCaption, TableCell, TableHead, TableHeader, TableRow } from "@humanctl/ui/components/table"
+import { Table, TableBody, TableCaption, TableCell, TableFooter, TableHead, TableHeader, TableRow } from "@humanctl/ui/components/table"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { compactNumber, formatMoney, quotaReset } from "./helpers"
@@ -28,6 +28,18 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
     return values.length ? values.reduce((sum, value) => sum + value, 0) / values.length : null
   }, [model.resources.sessions.data])
   const skills = useMemo(() => Object.entries(skillsResource.data?.skills || {}).sort((left, right) => right[1] - left[1]), [skillsResource.data])
+  // Quota reads worst-first within each provider group, so the tightest window
+  // is always at the top of its lane. Grouped (not one global sort) so the two
+  // providers keep their independent progressive-load lanes without reflowing
+  // across each other when the slower Claude resource lands.
+  const codexQuotaRows = useMemo(() => {
+    const q = status?.codexQuota
+    const out: Array<{ key: string; label: string; value: number; detail?: string; reset?: string }> = []
+    if (q?.primary) out.push({ key: "codex-primary", label: "Codex primary", value: q.primary.used_percent, detail: q.primary.label || q.plan_type, reset: quotaReset(q.primary) })
+    if (q?.secondary) out.push({ key: "codex-secondary", label: "Codex secondary", value: q.secondary.used_percent, detail: q.secondary.label, reset: quotaReset(q.secondary) })
+    return out.sort((left, right) => right.value - left.value)
+  }, [status?.codexQuota])
+  const claudeWindows = useMemo(() => [...(quotaResource.data?.windows ?? [])].sort((left, right) => right.used_percent - left.used_percent), [quotaResource.data])
 
   return (
     <PageFrame>
@@ -56,19 +68,7 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
                 <div className="space-y-px p-4" role="status" aria-label="Loading usage"><Skeleton className="h-12" /><Skeleton className="h-12" /><Skeleton className="h-12" /></div>
               ) : status ? (
                 <>
-                  <div className="grid grid-cols-5 border-b border-border max-[1200px]:grid-cols-3">
-                    <div className="border-r border-border px-4 py-4">
-                      <div className="text-xs font-medium text-ink-3">Sessions</div>
-                      <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{status.sessions}</div>
-                    </div>
-                    <div className="border-r border-border px-4 py-4">
-                      <div className="text-xs font-medium text-ink-3">Tokens</div>
-                      <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{compactNumber(totalTokens)}</div>
-                    </div>
-                    <div className="px-4 py-4">
-                      <div className="text-xs font-medium text-ink-3">Est. cost</div>
-                      <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{formatMoney(totalCost)}</div>
-                    </div>
+                  <div className="grid grid-cols-2 border-b border-border">
                     <div className="border-r border-border px-4 py-4">
                       <div className="text-xs font-medium text-ink-3">Avg. context</div>
                       <div className="mt-1 text-[24px] leading-7 font-semibold tabular-nums text-ink">{averageContext == null ? "N/A" : `${Math.round(averageContext)}%`}</div>
@@ -97,6 +97,14 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
                         </TableRow>
                       ))}
                     </TableBody>
+                    <TableFooter>
+                      <TableRow className="h-[var(--row)] hover:bg-sunken">
+                        <TableCell className="px-4 py-0 text-sm text-ink-2">All harnesses</TableCell>
+                        <TableCell className="px-2 py-0 text-right text-xs tabular-nums text-ink">{status.sessions}</TableCell>
+                        <TableCell className="px-2 py-0 text-right text-xs tabular-nums text-ink">{compactNumber(totalTokens)}</TableCell>
+                        <TableCell className="px-4 py-0 text-right text-xs tabular-nums text-ink">{formatMoney(totalCost)}</TableCell>
+                      </TableRow>
+                    </TableFooter>
                     {status.pricingAsOf ? <TableCaption className="m-0 px-4 py-2 text-left text-xs tabular-nums text-ink-3">Pricing snapshot {status.pricingAsOf}</TableCaption> : null}
                   </Table>
                 </>
@@ -105,14 +113,11 @@ export function MetricsView({ model, dispatch }: { model: HumanctlApplicationMod
               )}
 
               <SectionHeading><span className="flex items-center gap-2"><CoinsIcon className="size-3.5" />Quota</span></SectionHeading>
-              {status?.codexQuota?.primary ? (
-                <QuotaRow label="Codex primary" value={status.codexQuota.primary.used_percent} detail={status.codexQuota.primary.label || status.codexQuota.plan_type} reset={quotaReset(status.codexQuota.primary)} />
+              {codexQuotaRows.length > 0 ? (
+                codexQuotaRows.map((row) => <QuotaRow key={row.key} label={row.label} value={row.value} detail={row.detail} reset={row.reset} />)
               ) : statusResource.status === "loading" ? <QuotaRow label="Codex primary" loading /> : null}
-              {status?.codexQuota?.secondary ? (
-                <QuotaRow label="Codex secondary" value={status.codexQuota.secondary.used_percent} detail={status.codexQuota.secondary.label} reset={quotaReset(status.codexQuota.secondary)} />
-              ) : null}
               {quotaResource.status === "loading" && !quotaResource.data ? <QuotaRow label="Claude workspace" loading /> : null}
-              {quotaResource.data?.windows.map((window, index) => (
+              {claudeWindows.map((window, index) => (
                 <QuotaRow
                   key={`${window.label || "window"}-${index}`}
                   label={`Claude ${window.label || (window.window_minutes ? `${Math.round(window.window_minutes / 60)} hour` : `window ${index + 1}`)}`}
