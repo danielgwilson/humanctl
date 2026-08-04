@@ -1,4 +1,4 @@
-import { useCallback, useMemo, useState } from "react"
+import { useCallback, useMemo, useRef, useState } from "react"
 import { CheckCheckIcon, PinIcon } from "lucide-react"
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
@@ -19,6 +19,7 @@ import {
   formatTime,
   type HarnessFilter,
   type InboxSort,
+  nextNeedsAttentionId,
   type SessionStateFilter,
   sessionRepo,
   threadPreview,
@@ -27,6 +28,7 @@ import {
   threadUnread,
 } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
+import { useWorkLoopKeys } from "./use-workloop-keys"
 import {
   EmptyState,
   HarnessMark,
@@ -150,6 +152,17 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
     onSelect: (thread) => { void select(thread) },
   }), [byId, lastReadTs, pins, select, selectedThread?.sessionId])
 
+  const searchRef = useRef<HTMLInputElement>(null)
+  const orderedRows = useMemo(() => threads.map((thread) => ({ id: thread.sessionId, state: threadSession(thread, byId)?.state })), [threads, byId])
+  useWorkLoopKeys({
+    ordered: orderedRows,
+    selectedId: selectedThread?.sessionId,
+    selectedSession,
+    onSelect: (id) => { const thread = threads.find((row) => row.sessionId === id); if (thread) void select(thread) },
+    onFocusSearch: () => searchRef.current?.focus(),
+    dispatch,
+  })
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[var(--split-list)_minmax(0,1fr)] max-[1040px]:grid-cols-1">
       <section className={`flex min-h-0 min-w-0 flex-col border-r border-border bg-background max-[1040px]:border-r-0 ${appState.selectedId ? "max-[1040px]:hidden" : ""}`} aria-label="Inbox threads">
@@ -165,7 +178,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         />
         <FilterToolbar
           search={
-            <FilterSearch aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+            <FilterSearch ref={searchRef} aria-label="Search inbox" placeholder="Search inbox" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
@@ -220,7 +233,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to inbox</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, selectedThread?.sessionId) } }) }} /></div>
       </section>
     </div>
   )

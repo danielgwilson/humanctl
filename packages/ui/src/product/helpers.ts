@@ -154,6 +154,25 @@ export function threadSession(
   return sessionsById.get(thread.sessionId) || thread.session
 }
 
+// The next session that still needs you, scanning forward from the current one
+// and wrapping. Excludes the current id so the just-answered session (whose
+// backend state has not flipped out of "need" yet) is never re-selected. Returns
+// undefined when nothing else is waiting, which clears the detail and ends the
+// answer-and-advance loop.
+export function nextNeedsAttentionId(
+  ordered: ReadonlyArray<{ id: string; state?: HumanctlSessionState }>,
+  currentId: string | undefined,
+): string | undefined {
+  if (ordered.length === 0) return undefined
+  const start = currentId ? ordered.findIndex((row) => row.id === currentId) : -1
+  for (let step = 1; step <= ordered.length; step++) {
+    const candidate = ordered[(start + step + ordered.length) % ordered.length]
+    if (candidate.id === currentId) continue
+    if (candidate.state === "need") return candidate.id
+  }
+  return undefined
+}
+
 export function filterInboxThreads({
   threads,
   sessionsById,

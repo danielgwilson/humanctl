@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react"
+import { useMemo, useRef, useState } from "react"
 import { PinIcon, RefreshCwIcon } from "lucide-react"
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
@@ -10,8 +10,9 @@ import { Select, SelectContent, SelectGroup, SelectItem, SelectTrigger, SelectVa
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { cn } from "@humanctl/ui/lib/cn"
 
-import { filterSessions, formatTime, type HarnessFilter, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionRepo, sessionTitle } from "./helpers"
+import { filterSessions, formatTime, type HarnessFilter, nextNeedsAttentionId, pinSessionsFirst, type SessionSort, type SessionStateFilter, sessionMessage, sessionRepo, sessionTitle } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
+import { useWorkLoopKeys } from "./use-workloop-keys"
 import { EmptyState, HarnessMark, PaneHeading, ResourceNotice, RowSkeletons, SessionStatus } from "./shared"
 import { BoundedVirtualList, type VirtualRowComponentProps } from "./virtual-list"
 
@@ -93,6 +94,17 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
     onSelect: (id) => { void dispatch({ type: "app.patch", patch: { selectedId: id } }) },
   }), [dispatch, pins, selected?.id])
 
+  const searchRef = useRef<HTMLInputElement>(null)
+  const orderedRows = useMemo(() => sessions.map((session) => ({ id: session.id, state: session.state })), [sessions])
+  useWorkLoopKeys({
+    ordered: orderedRows,
+    selectedId: selected?.id,
+    selectedSession: selected,
+    onSelect: (id) => { void dispatch({ type: "app.patch", patch: { selectedId: id } }) },
+    onFocusSearch: () => searchRef.current?.focus(),
+    dispatch,
+  })
+
   return (
     <div className="grid h-full min-h-0 grid-cols-[var(--split-list)_minmax(0,1fr)] max-[1040px]:grid-cols-1">
       <section className={`flex min-h-0 min-w-0 flex-col border-r border-border max-[1040px]:border-r-0 ${appState.selectedId ? "max-[1040px]:hidden" : ""}`} aria-label="Sessions">
@@ -108,7 +120,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         />
         <FilterToolbar
           search={
-            <FilterSearch aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
+            <FilterSearch ref={searchRef} aria-label="Search sessions" placeholder="Search sessions" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />
           }
           filters={
             <>
@@ -159,7 +171,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to sessions</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selected?.id || "empty"} model={model} dispatch={dispatch} session={selected} thread={thread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, selected?.id) } }) }} /></div>
       </section>
     </div>
   )

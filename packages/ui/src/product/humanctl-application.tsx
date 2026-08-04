@@ -10,13 +10,18 @@ import {
   LayoutListIcon,
   PanelLeftCloseIcon,
   PanelRightIcon,
+  PinIcon,
+  PlayIcon,
   RefreshCwIcon,
+  ReplyIcon,
   SearchIcon,
   SettingsIcon,
+  SparklesIcon,
   SunMoonIcon,
 } from "lucide-react"
 
 import { AppShell } from "@humanctl/ui/blocks/app-shell"
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@humanctl/ui/components/dialog"
 import {
   Command,
   CommandDialog,
@@ -60,9 +65,10 @@ import type {
   HumanctlView,
 } from "./contracts"
 import { InboxView } from "./inbox-view"
-import { formatTime, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
+import { formatTime, nextNeedsAttentionId, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
 import { KeyboardKey } from "./shared"
+import { focusComposer } from "./use-workloop-keys"
 
 declare global {
   interface Window {
@@ -282,6 +288,9 @@ function ProductCommandPalette({
   const { open: navigationOpen, toggleSidebar } = useSidebar()
   const state = model.resources.appState.data
   const sessions = useMemo(() => model.resources.sessions.data.slice().sort((left, right) => right.ageMs - left.ageMs).slice(0, 12), [model.resources.sessions.data])
+  const selected = state.selectedId ? model.resources.sessions.data.find((session) => session.id === state.selectedId) : undefined
+  const pinned = selected ? state.pins.includes(selected.id) : false
+  const replyable = selected?.state === "need" || selected?.state === "block"
   const close = () => onOpenChange(false)
   return (
     <CommandDialog open={open} onOpenChange={onOpenChange}>
@@ -305,6 +314,27 @@ function ProductCommandPalette({
               </CommandItem>
             ))}
           </CommandGroup>
+          {selected ? (
+            <>
+              <CommandSeparator />
+              <CommandGroup heading="Task actions">
+                {replyable ? (
+                  <CommandItem value={`answer reply ${sessionTitle(selected)}`} onSelect={() => { onOpenSession(selected); close(); requestAnimationFrame(() => requestAnimationFrame(focusComposer)) }}>
+                    <ReplyIcon /><span>Answer</span>
+                  </CommandItem>
+                ) : null}
+                <CommandItem value={`summarize ${sessionTitle(selected)}`} onSelect={() => { void dispatch({ type: "session.summarize", session: selected }); close() }}>
+                  <SparklesIcon /><span>Summarize</span>
+                </CommandItem>
+                <CommandItem value={`resume ${sessionTitle(selected)}`} onSelect={() => { void dispatch({ type: "session.resume", session: selected }); close() }}>
+                  <PlayIcon /><span>Resume</span>
+                </CommandItem>
+                <CommandItem value={`${pinned ? "unpin" : "pin"} ${sessionTitle(selected)}`} onSelect={() => { void dispatch({ type: "session.togglePin", id: selected.id }); close() }}>
+                  <PinIcon /><span>{pinned ? "Unpin task" : "Pin task"}</span>
+                </CommandItem>
+              </CommandGroup>
+            </>
+          ) : null}
           <CommandSeparator />
           <CommandGroup heading="Actions">
             <CommandItem value="mark all read inbox" onSelect={() => { void dispatch({ type: "threads.markAllRead" }); close() }}>
@@ -326,8 +356,47 @@ function ProductCommandPalette({
   )
 }
 
+const WORKLOOP_SHORTCUTS: Array<{ keys: string[]; label: string }> = [
+  { keys: ["/"], label: "Search the current list" },
+  { keys: ["j"], label: "Next task" },
+  { keys: ["k"], label: "Previous task" },
+  { keys: ["Enter"], label: "Answer the selected task" },
+  { keys: ["⌘", "Enter"], label: "Send, then advance to the next that needs you" },
+  { keys: ["r"], label: "Resume the selected task" },
+  { keys: ["⌘", "K"], label: "Command palette" },
+  { keys: ["⌘", "B"], label: "Toggle navigation" },
+  { keys: ["⌘", "⌥", "B"], label: "Toggle chief of staff" },
+  { keys: ["?"], label: "This help" },
+]
+
+function ShortcutsDialog({ open, onOpenChange }: { open: boolean; onOpenChange: (open: boolean) => void }) {
+  const rows = [
+    ...NAVIGATION.filter((item) => item.key).map((item) => ({ keys: [item.key as string], label: item.label })),
+    ...WORKLOOP_SHORTCUTS,
+  ]
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-w-md">
+        <DialogHeader>
+          <DialogTitle>Keyboard shortcuts</DialogTitle>
+          <DialogDescription>Drive the fleet without leaving the keyboard.</DialogDescription>
+        </DialogHeader>
+        <div className="flex flex-col">
+          {rows.map((row) => (
+            <div key={row.label} className="flex items-center justify-between gap-6 border-b border-separator py-1.5 last:border-b-0">
+              <span className="text-sm text-ink-2">{row.label}</span>
+              <span className="flex shrink-0 items-center gap-1">{row.keys.map((key, index) => <KeyboardKey key={index}>{key}</KeyboardKey>)}</span>
+            </div>
+          ))}
+        </div>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 export function HumanctlApplication({ model, dispatch, version }: HumanctlApplicationProps) {
   const [paletteOpen, setPaletteOpen] = useState(false)
+  const [shortcutsOpen, setShortcutsOpen] = useState(false)
   const [mobileNavigationOpen, setMobileNavigationOpen] = useState(false)
   const state = model.resources.appState.data
   const compactAssistant = useMediaQuery("(max-width: 1040px)")
@@ -394,6 +463,11 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       if (event.metaKey || event.ctrlKey || event.altKey) return
       const target = event.target as HTMLElement | null
       if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable) return
+      if (event.key === "?") {
+        event.preventDefault()
+        setShortcutsOpen(true)
+        return
+      }
       const view = VIEW_FOR_KEY[event.key]
       if (view) {
         event.preventDefault()
@@ -440,7 +514,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       <div className="flex h-[var(--chrome)] shrink-0 items-center border-b border-border px-3">
         <Button size="sm" variant="ghost" onClick={closeSession}>Back to {NAVIGATION.find((item) => item.view === state.view)?.label || "view"}</Button>
       </div>
-      <div className="min-h-0 flex-1"><LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} /></div>
+      <div className="min-h-0 flex-1"><LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id) } }) }} /></div>
     </div>
   ) : content
   const assistant = state.rightRailOpen && !compactAssistant ? (
@@ -465,7 +539,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
         mobileNavigationOpen={mobileNavigationOpen}
         onMobileNavigationOpenChange={setMobileNavigationOpen}
         navigationBreakpoint={state.rightRailOpen && !compactAssistant ? 1224 : 864}
-        detail={externalDetail && !compactDetail ? <LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} /> : undefined}
+        detail={externalDetail && !compactDetail ? <LazySessionDetail key={selected.id} model={model} dispatch={dispatch} session={selected} thread={selectedThread} onClose={closeSession} onAnswered={() => { void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(sessions.map((session) => ({ id: session.id, state: session.state })), selected.id) } }) }} /> : undefined}
         assistant={assistant}
         topbar={
           <ProductTopbar
@@ -497,6 +571,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
               </SheetContent>
             </Sheet>
             <ProductCommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} model={model} dispatch={dispatch} onNavigate={navigate} onOpenSession={openSession} />
+            <ShortcutsDialog open={shortcutsOpen} onOpenChange={setShortcutsOpen} />
           </>
         }
       >

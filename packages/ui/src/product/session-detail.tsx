@@ -38,6 +38,9 @@ type SessionDetailProps = {
   session: HumanctlSession | null
   thread?: HumanctlInboxThread | null
   onClose?: () => void
+  // Fired after a reply to a pending ask is delivered, so the caller can advance
+  // to the next session that needs you (the answer-and-advance work loop).
+  onAnswered?: () => void
 }
 
 function itemLabel(item: HumanctlThreadItem): string {
@@ -255,7 +258,7 @@ function Timeline({
   )
 }
 
-export function SessionDetail({ model, dispatch, session, thread, onClose }: SessionDetailProps) {
+export function SessionDetail({ model, dispatch, session, thread, onClose, onAnswered }: SessionDetailProps) {
   const [draft, setDraft] = useState("")
   const [answer, setAnswer] = useState<string | null>(null)
   const [localAnswers, setLocalAnswers] = useState<LocalAnswer[]>([])
@@ -335,6 +338,7 @@ export function SessionDetail({ model, dispatch, session, thread, onClose }: Ses
         ts: new Date(result.at || Date.now()).toISOString(),
       }, result }])
       setDraft("")
+      onAnswered?.()
       return
     }
 
