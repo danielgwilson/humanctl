@@ -122,13 +122,32 @@ export function createFixtureAdapter(): HumanctlAdapter {
   ];
 
   const notes: NoteItem[] = [
+    { id: 'fixture-note-general', ts: new Date(epoch - 1 * 6e4).toISOString(), level: 'review', message: 'The synthetic release packet is ready for review.', repo: 'release' },
     { id: 'fixture-note-1', ts: new Date(epoch - 4 * 6e4).toISOString(), level: 'review', message: 'The activity update is ready for review.', repo: 'activity', session: 'fixture-c3c3c3c3' },
     { id: 'fixture-note-2', ts: new Date(epoch - 7 * 6e4).toISOString(), level: 'blocked', message: 'The smoke test needs a replacement credential.', repo: 'tokens', session: 'rollout-fixture-d4d4' },
     { id: 'fixture-note-3', ts: new Date(epoch - 26 * 6e4).toISOString(), level: 'done', message: 'The hygiene sweep completed.', repo: 'hygiene', session: 'rollout-fixture-f6f6' },
   ];
+  const generalItems: InboxThread['items'] = Array.from({ length: 100 }, (_, index) => {
+    const latest = index === 99;
+    return {
+      kind: 'note',
+      level: latest ? 'review' : 'fyi',
+      message: latest ? notes[0].message : `Synthetic workspace update ${index + 1}.`,
+      repo: latest ? notes[0].repo : index % 2 === 0 ? 'release' : 'docs',
+      ts: latest ? notes[0].ts : new Date(epoch - (100 - index) * 6e4).toISOString(),
+      id: latest ? notes[0].id : `fixture-note-general-${index + 1}`,
+    };
+  });
 
   const threads: InboxThread[] = [
     {
+      threadId: 'general-updates', scope: 'general', path: '', title: 'General updates',
+      items: generalItems,
+      lastTs: notes[0].ts,
+      omittedItemCount: 25,
+    },
+    {
+      threadId: 'fixture-a1a1a1a1', scope: 'session',
       sessionId: 'fixture-a1a1a1a1', repo: '~/fixtures/console', harness: 'claude-code',
       cwd: '~/fixtures/console', path: rows[0].path || '', title: rows[0].title,
       session: rows[0],
@@ -136,6 +155,7 @@ export function createFixtureAdapter(): HumanctlAdapter {
       lastTs: new Date(epoch - 2 * 6e4).toISOString(),
     },
     {
+      threadId: 'rollout-fixture-b2b2', scope: 'session',
       sessionId: 'rollout-fixture-b2b2', repo: '~/fixtures/core', harness: 'codex',
       cwd: '~/fixtures/core', path: rows[1].path || '', title: rows[1].title,
       session: rows[1],
@@ -143,18 +163,20 @@ export function createFixtureAdapter(): HumanctlAdapter {
       lastTs: new Date(epoch - 6 * 6e4).toISOString(),
     },
     {
+      threadId: 'rollout-fixture-d4d4', scope: 'session',
       sessionId: 'rollout-fixture-d4d4', repo: '~/fixtures/tokens', harness: 'codex',
       cwd: '~/fixtures/tokens', path: rows[3].path || '', title: rows[3].title,
       session: rows[3],
-      items: [{ kind: 'note', level: 'blocked', message: notes[1].message, ts: notes[1].ts, id: notes[1].id }],
-      lastTs: notes[1].ts,
+      items: [{ kind: 'note', level: 'blocked', message: notes[2].message, ts: notes[2].ts, id: notes[2].id }],
+      lastTs: notes[2].ts,
     },
     {
+      threadId: 'fixture-c3c3c3c3', scope: 'session',
       sessionId: 'fixture-c3c3c3c3', repo: '~/fixtures/activity', harness: 'claude-code',
       cwd: '~/fixtures/activity', path: rows[2].path || '', title: rows[2].title,
       session: rows[2],
-      items: [{ kind: 'note', level: 'review', message: notes[0].message, ts: notes[0].ts, id: notes[0].id }],
-      lastTs: notes[0].ts,
+      items: [{ kind: 'note', level: 'review', message: notes[1].message, ts: notes[1].ts, id: notes[1].id }],
+      lastTs: notes[1].ts,
     },
   ];
 

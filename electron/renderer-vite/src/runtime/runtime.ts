@@ -783,7 +783,7 @@ export class HumanctlRuntime {
         return this.patchAppState({ pins: [...pins] });
       }
       case 'thread.markRead': {
-        const thread = this.snapshot.resources.inbox.data.find((item) => item.sessionId === intent.threadId);
+        const thread = this.snapshot.resources.inbox.data.find((item) => item.threadId === intent.threadId);
         const newest = thread?.items[thread.items.length - 1];
         const at = intent.at ?? ((newest ? Date.parse(newest.ts) : 0) || this.clock.now());
         const lastReadTs = { ...(this.snapshot.resources.appState.data.lastReadTs || {}), [intent.threadId]: at };
@@ -797,7 +797,7 @@ export class HumanctlRuntime {
       case 'threads.markAllRead': {
         const at = intent.at ?? this.clock.now();
         const lastReadTs = { ...(this.snapshot.resources.appState.data.lastReadTs || {}) };
-        this.snapshot.resources.inbox.data.forEach((thread) => { lastReadTs[thread.sessionId] = at; });
+        this.snapshot.resources.inbox.data.forEach((thread) => { lastReadTs[thread.threadId] = at; });
         const [stateResult, readResult] = await Promise.all([
           this.patchAppState({ lastReadTs }),
           this.adapter.markAllThreadsRead(),

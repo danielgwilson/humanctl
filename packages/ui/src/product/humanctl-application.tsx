@@ -65,7 +65,7 @@ import type {
   HumanctlView,
 } from "./contracts"
 import { InboxView } from "./inbox-view"
-import { formatTime, nextNeedsAttentionId, quotaReset, sessionRepo, sessionTitle, threadUnread } from "./helpers"
+import { formatTime, nextNeedsAttentionId, quotaReset, selectedSessionForView, sessionRepo, sessionTitle, threadUnread } from "./helpers"
 import { LazySessionDetail } from "./lazy-session-detail"
 import { KeyboardKey } from "./shared"
 import { focusComposer, isModalOpen } from "./use-workloop-keys"
@@ -288,7 +288,8 @@ function ProductCommandPalette({
   const { open: navigationOpen, toggleSidebar } = useSidebar()
   const state = model.resources.appState.data
   const sessions = useMemo(() => model.resources.sessions.data.slice().sort((left, right) => right.ageMs - left.ageMs).slice(0, 12), [model.resources.sessions.data])
-  const selected = state.selectedId ? model.resources.sessions.data.find((session) => session.id === state.selectedId) : undefined
+  const sessionsById = useMemo(() => new Map(model.resources.sessions.data.map((session) => [session.id, session])), [model.resources.sessions.data])
+  const selected = selectedSessionForView(state.view, state.selectedId, model.resources.inbox.data, sessionsById)
   const pinned = selected ? state.pins.includes(selected.id) : false
   const replyable = selected?.state === "need" || selected?.state === "block"
   const close = () => onOpenChange(false)
@@ -403,7 +404,8 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
   const reservedShellWidth = (state.navPinned ? 275 : 0) + (state.rightRailOpen && !compactAssistant ? 360 : 0)
   const compactDetail = useMediaQuery(`(max-width: ${1040 + reservedShellWidth}px)`)
   const sessions = model.resources.sessions.data
-  const selected = state.selectedId ? sessions.find((session) => session.id === state.selectedId) || null : null
+  const sessionsById = useMemo(() => new Map(sessions.map((session) => [session.id, session])), [sessions])
+  const selected = selectedSessionForView(state.view, state.selectedId, model.resources.inbox.data, sessionsById) || null
   const lastReadTs = useMemo(() => state.lastReadTs || {}, [state.lastReadTs])
   const unread = useMemo(() => model.resources.inbox.data.filter((thread) => threadUnread(thread, lastReadTs)).length, [lastReadTs, model.resources.inbox.data])
 
@@ -413,8 +415,17 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
   }, [dispatch])
 
   const openSession = useCallback((session: HumanctlSession) => {
+    if (state.view === "inbox") {
+      const thread = model.resources.inbox.data.find((item) => item.scope === "session" && item.sessionId === session.id)
+      if (thread) {
+        void dispatch({ type: "app.patch", patch: { selectedId: thread.threadId } })
+        return
+      }
+      void dispatch({ type: "app.patch", patch: { view: "sessions", selectedId: session.id } })
+      return
+    }
     void dispatch({ type: "app.patch", patch: { selectedId: session.id } })
-  }, [dispatch])
+  }, [dispatch, model.resources.inbox.data, state.view])
 
   const closeSession = useCallback(() => {
     void dispatch({ type: "app.patch", patch: { selectedId: undefined } })
@@ -509,7 +520,9 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
     ? routeContent
     : <Suspense fallback={<RouteFallback />}>{routeContent}</Suspense>
   const routeOwnsDetail = state.view === "inbox" || state.view === "sessions"
-  const selectedThread = selected ? model.resources.inbox.data.find((thread) => thread.sessionId === selected.id) || null : null
+  const selectedThread = state.view === "inbox" && state.selectedId
+    ? model.resources.inbox.data.find((thread) => thread.threadId === state.selectedId) || null
+    : selected ? model.resources.inbox.data.find((thread) => thread.scope === "session" && thread.sessionId === selected.id) || null : null
   const externalDetail = selected && !routeOwnsDetail
   const visibleContent = externalDetail && compactDetail ? (
     <div className="flex h-full min-h-0 flex-col">

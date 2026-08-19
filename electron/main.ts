@@ -534,10 +534,10 @@ function markThreadRead(threadId: string, at: number | undefined, ctx?: Registry
 async function markAllThreadsRead(ctx?: RegistryInvokeCtx): Promise<Record<string, unknown>> {
   const now = Date.now();
   const r = await callReader('inbox.threads', {});
-  const threads = (r.ok ? (r.threads as { sessionId: string }[]) : []) || [];
+  const threads = (r.ok ? (r.threads as { threadId: string }[]) : []) || [];
   const s = readState();
   const lastReadTs = Object.assign({}, s.lastReadTs || {});
-  for (const t of threads) lastReadTs[t.sessionId] = now;
+  for (const t of threads) lastReadTs[t.threadId] = now;
   const res = applyStatePatch({ lastReadTs }, ctx);
   if (!res.ok) return res;
   return { ok: true, at: now, count: threads.length };

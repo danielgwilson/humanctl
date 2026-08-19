@@ -141,14 +141,26 @@ class FakeAdapter implements HumanctlAdapter {
   readonly notesResult: NotesResult = { ok: true, notes: [] };
   readonly inboxResult: InboxResult = {
     ok: true,
-    threads: [{
-      sessionId: ROW.id,
-      harness: ROW.harness,
-      path: ROW.path || '',
-      title: ROW.title,
-      items: [{ kind: 'ask', reason: 'Choose the bounded path.', ts: '2026-07-14T00:00:00.000Z' }],
-      lastTs: '2026-07-14T00:00:00.000Z',
-    }],
+    threads: [
+      {
+        threadId: ROW.id,
+        scope: 'session',
+        sessionId: ROW.id,
+        harness: ROW.harness,
+        path: ROW.path || '',
+        title: ROW.title,
+        items: [{ kind: 'ask', reason: 'Choose the bounded path.', ts: '2026-07-14T00:00:00.000Z' }],
+        lastTs: '2026-07-14T00:00:00.000Z',
+      },
+      {
+        threadId: 'general-updates',
+        scope: 'general',
+        path: '',
+        title: 'General updates',
+        items: [{ kind: 'note', level: 'fyi', message: 'Synthetic general update', ts: '2026-07-14T00:01:00.000Z', id: 'general-note' }],
+        lastTs: '2026-07-14T00:01:00.000Z',
+      },
+    ],
   };
   quotaResult: QuotaResult = {
     ok: true,
@@ -306,6 +318,11 @@ async function run(): Promise<void> {
   equal(adapter.stateWrites.length, 1, 'app patch persists once');
   equal(runtime.getSnapshot().resources.status.status, 'ready', 'status settled');
   equal(runtime.getSnapshot().resources.inbox.status, 'ready', 'inbox settled');
+
+  const generalReadAt = Date.parse('2026-07-14T00:02:00.000Z');
+  const generalRead = await runtime.dispatch({ type: 'thread.markRead', threadId: 'general-updates', at: generalReadAt });
+  assert(generalRead.ok, 'general thread can be marked read without a session');
+  equal(runtime.getSnapshot().resources.appState.data.lastReadTs?.['general-updates'], generalReadAt, 'general thread read marker uses threadId');
 
   const enginePatch = await runtime.dispatch({ type: 'app.patch', patch: { summarizer: 'codex' } });
   assert(enginePatch.ok, 'summary engine patch succeeds');

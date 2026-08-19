@@ -87,7 +87,7 @@ export function SessionsView({ model, dispatch }: { model: HumanctlApplicationMo
     ? resource.data.find((session) => session.id === appState.selectedId) || null
     : sessions[0] || null
   const selectedIndex = selected ? sessions.findIndex((session) => session.id === selected.id) : -1
-  const thread = selected ? model.resources.inbox.data.find((item) => item.sessionId === selected.id) || null : null
+  const thread = selected ? model.resources.inbox.data.find((item) => item.scope === "session" && item.sessionId === selected.id) || null : null
   const rowContext = useMemo<SessionsRowContext>(() => ({
     pins,
     selectedId: selected?.id,

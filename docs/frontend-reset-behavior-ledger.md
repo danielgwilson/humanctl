@@ -91,16 +91,17 @@ active refresh without replacing the resource data.
 
 | ID | Required behavior | Acceptance proof |
 |---|---|---|
-| INBOX-01 | Inbox shows one thread per session assembled by the backend from notes, asks, interrupted asks, answers, and session state. | Fixture for every thread-item kind. |
-| INBOX-02 | Search matches title, repo, and message to the human. Filters cover state and harness. Sorts are recent, needs-first, and alphabetic. | `npm run ui:derivations:selftest`. |
+| INBOX-01 | Inbox shows one thread per session assembled by the backend from notes, asks, interrupted asks, answers, and session state, plus one read-only General updates thread for unlinked notes. | Fixture for every thread-item kind and an unlinked note. |
+| INBOX-02 | Search matches title, repo, and every visible message to the human. Filters cover state and harness. Sorts are recent, needs-first, and alphabetic. | `npm run ui:derivations:selftest`. |
 | INBOX-03 | Needs-first uses `need`, `block`, `work`, `idle`, `done`, then recency within a state. | `npm run ui:derivations:selftest`. |
-| INBOX-04 | Unread means at least one item timestamp is newer than that session's persisted last-read timestamp. | `npm run ui:derivations:selftest`. |
+| INBOX-04 | Unread means at least one item timestamp is newer than that thread's persisted last-read timestamp. | `npm run ui:derivations:selftest`. |
 | INBOX-05 | Selecting a thread marks it read and shows its detail without remounting the search field. | Focus-preservation test. |
 | INBOX-06 | Mark-all-read persists every visible thread through the registered command and updates the unread digest immediately. | Command spy plus UI assertion. |
 | INBOX-07 | Pin and unpin persist through the registered state path. Opening, full-detail opening, and mark-read remain available by keyboard or menu. | Keyboard and context-menu test. |
 | INBOX-08 | The list remains responsive with at least 200 threads and mounts only a bounded window of rows. | `npm run ui:virtual-list:selftest` plus the local click-to-paint gate. |
 | INBOX-09 | Empty and no-match states explain the next action without inventing data. | Empty fixtures. |
 | INBOX-10 | Inbox keeps the authoritative session row from its 30-day scan, including pending decisions older than the 72-hour Sessions inventory. | `npm run commands:selftest` plus `npm run ui:derivations:selftest`. |
+| INBOX-11 | Unlinked notes keep a stable thread ID, derive attention state from the newest note, and expose no session actions. | `npm run commands:selftest`, `npm run ui:derivations:selftest`, and both-theme Inbox screenshots. |
 
 ## 7. Sessions and detail
 

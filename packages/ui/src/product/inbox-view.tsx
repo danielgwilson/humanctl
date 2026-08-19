@@ -1,5 +1,5 @@
 import { useCallback, useMemo, useRef, useState } from "react"
-import { CheckCheckIcon, PinIcon } from "lucide-react"
+import { CheckCheckIcon, MessageSquareIcon, PinIcon } from "lucide-react"
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
 import { ListRow } from "@humanctl/ui/blocks/list-row"
@@ -15,6 +15,7 @@ import type {
   HumanctlSession,
 } from "./contracts"
 import {
+  basename,
   filterInboxThreads,
   formatTime,
   type HarnessFilter,
@@ -24,6 +25,7 @@ import {
   sessionRepo,
   threadPreview,
   threadSession,
+  threadState,
   threadTitle,
   threadUnread,
 } from "./helpers"
@@ -74,19 +76,20 @@ function InboxVirtualRow({
   ...rowProps
 }: VirtualRowComponentProps<HumanctlInboxThread, InboxRowContext>) {
   const session = threadSession(thread, context.byId)
+  const state = threadState(thread, context.byId)
   const unread = threadUnread(thread, context.lastReadTs)
-  const pinned = context.pins.has(thread.sessionId)
+  const pinned = Boolean(session && context.pins.has(session.id))
   const ctx = typeof session?.contextPct === "number" ? session.contextPct : null
   return (
     <ListRow
       {...rowProps}
       data-virtualized={virtualized || undefined}
-      selected={thread.sessionId === context.selectedThreadId}
+      selected={thread.threadId === context.selectedThreadId}
       title={threadTitle(thread, session)}
       summary={threadPreview(thread)}
-      metadata={session ? sessionRepo(session) : undefined}
-      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft text-xs">?</span>}
-      status={session ? <SessionStatus state={session.state} /> : undefined}
+      metadata={session ? sessionRepo(session) : thread.scope === "general" ? "Across workspaces" : basename(thread.repo || thread.cwd)}
+      leading={session ? <HarnessMark harness={session.harness} /> : <span className="grid size-6 place-items-center bg-idle-soft text-ink-3"><MessageSquareIcon className="size-3.5" /></span>}
+      status={<SessionStatus state={state} />}
       trailing={
         <span className="flex items-center gap-2">
           {ctx != null && ctx >= 80 ? <span className={cn("tabular-nums", ctx >= 90 ? "text-block" : "text-need")}>ctx {Math.round(ctx)}%</span> : null}
@@ -128,38 +131,38 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
   )
 
   const selectedThread = appState.selectedId
-    ? resource.data.find((thread) => thread.sessionId === appState.selectedId) || null
+    ? resource.data.find((thread) => thread.threadId === appState.selectedId) || null
     : threads[0] || null
   const selectedSession = selectedThread
     ? threadSession(selectedThread, byId) || null
-    : appState.selectedId ? byId.get(appState.selectedId) || null : null
-  const selectedIndex = selectedThread ? threads.findIndex((thread) => thread.sessionId === selectedThread.sessionId) : -1
+    : null
+  const selectedIndex = selectedThread ? threads.findIndex((thread) => thread.threadId === selectedThread.threadId) : -1
   const unreadCount = useMemo(
     () => resource.data.filter((thread) => threadUnread(thread, lastReadTs)).length,
     [lastReadTs, resource.data],
   )
 
   const select = useCallback(async (thread: HumanctlInboxThread) => {
-    await dispatch({ type: "app.patch", patch: { selectedId: thread.sessionId } })
-    if (threadUnread(thread, lastReadTs)) await dispatch({ type: "thread.markRead", threadId: thread.sessionId })
+    await dispatch({ type: "app.patch", patch: { selectedId: thread.threadId } })
+    if (threadUnread(thread, lastReadTs)) await dispatch({ type: "thread.markRead", threadId: thread.threadId })
   }, [dispatch, lastReadTs])
 
   const rowContext = useMemo<InboxRowContext>(() => ({
     byId,
     lastReadTs,
     pins,
-    selectedThreadId: selectedThread?.sessionId,
+    selectedThreadId: selectedThread?.threadId,
     onSelect: (thread) => { void select(thread) },
-  }), [byId, lastReadTs, pins, select, selectedThread?.sessionId])
+  }), [byId, lastReadTs, pins, select, selectedThread?.threadId])
 
   const searchRef = useRef<HTMLInputElement>(null)
   const answeredIds = useRef<Set<string>>(new Set())
-  const orderedRows = useMemo(() => threads.map((thread) => ({ id: thread.sessionId, state: threadSession(thread, byId)?.state })), [threads, byId])
+  const orderedRows = useMemo(() => threads.map((thread) => ({ id: thread.threadId, state: threadState(thread, byId) })), [threads, byId])
   useWorkLoopKeys({
     ordered: orderedRows,
-    selectedId: selectedThread?.sessionId,
+    selectedId: selectedThread?.threadId,
     selectedSession,
-    onSelect: (id) => { const thread = threads.find((row) => row.sessionId === id); if (thread) void select(thread) },
+    onSelect: (id) => { const thread = threads.find((row) => row.threadId === id); if (thread) void select(thread) },
     onFocusSearch: () => searchRef.current?.focus(),
     dispatch,
   })
@@ -211,7 +214,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         {threads.length > 0 ? (
           <BoundedVirtualList
             items={threads}
-            getKey={(thread) => thread.sessionId}
+            getKey={(thread) => thread.threadId}
             rowComponent={InboxVirtualRow}
             rowContext={rowContext}
             selectedIndex={selectedIndex}
@@ -234,7 +237,7 @@ export function InboxView({ model, dispatch }: { model: HumanctlApplicationModel
         <div className="hidden h-[var(--chrome)] shrink-0 items-center border-b border-border px-3 max-[1040px]:flex">
           <Button size="sm" variant="ghost" onClick={() => { void dispatch({ type: "app.patch", patch: { selectedId: undefined } }) }}>Back to inbox</Button>
         </div>
-        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.sessionId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { const id = selectedThread?.sessionId; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
+        <div className="min-h-0 flex-1 overflow-hidden"><LazySessionDetail key={selectedSession?.id || selectedThread?.threadId || "empty"} model={model} dispatch={dispatch} session={selectedSession} thread={selectedThread} onAnswered={() => { const id = selectedThread?.threadId; if (id) answeredIds.current.add(id); void dispatch({ type: "app.patch", patch: { selectedId: nextNeedsAttentionId(orderedRows, id, answeredIds.current) } }) }} /></div>
       </section>
     </div>
   )

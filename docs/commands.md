@@ -69,6 +69,16 @@ command with no handler fails honestly (`"only available through the running
 desktop app"`) rather than silently doing nothing, so an incomplete wire-up is
 loud, not silent.
 
+`inbox.threads` returns a stable `threadId` for read state and selection.
+Session threads normally use the session ID as both `threadId` and `sessionId`;
+an ID that collides with the app-owned thread namespace gets a deterministic
+escaped `threadId` while retaining its original `sessionId`. Notes posted
+without a session join the `general-updates` thread, whose `scope` is `general`
+and which has no `sessionId`. The desktop renders that thread as a read-only
+stream and never fabricates task actions for it. The general stream is bounded
+to its 100 most recent note items for predictable detail rendering; the
+append-only `notes.jsonl` source is not rewritten.
+
 ## Param validation
 
 `lib/commands.ts` carries a minimal plain-JS schema per command:
@@ -335,8 +345,8 @@ real `~/.humanctl/notes.jsonl` is never read and never written. Covers: the
 `COMMANDS` table shape, param validation (required / unknown / enum / type /
 truncation), `digestParams` shaping, registry dispatch (unknown command,
 missing handler, validation short-circuit, a throwing handler turned into
-`ok: false`, a real `note.post` write), inbox thread assembly (notes,
-detected asks, and persisted btw Q&A each producing the right thread shape),
+`ok: false`, a real `note.post` write), inbox thread assembly (linked notes,
+unlinked notes, detected asks, and persisted btw Q&A each producing the right thread shape),
 the ask-log round-trip (`appendAskLog`/`readAskLog`), the shell-v2 command
 declarations (`app.set-mode` deleted; `app.set-view`/`app.set-nav` added;
 the persistent-rail commands removed; `inbox.mark-read`, `atlas.ask`),

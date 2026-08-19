@@ -4,8 +4,12 @@ import {
   filterSessions,
   nextNeedsAttentionId,
   pinSessionsFirst,
+  selectedSessionForView,
   sessionMessage,
   threadSession,
+  threadState,
+  threadTitle,
+  threadUnread,
   type InboxSort,
   type SessionSort,
 } from "./helpers"
@@ -43,6 +47,8 @@ function thread(
   message: string,
 ): HumanctlInboxThread {
   return {
+    threadId: sessionRow.id,
+    scope: "session",
     sessionId: sessionRow.id,
     repo: sessionRow.repo,
     harness: sessionRow.harness,
@@ -127,6 +133,79 @@ equal(filterInboxThreads({
   pins: new Set<string>(),
   lastReadTs: {},
 }).map((row) => row.sessionId), ["old-inbox-decision"], "older inbox decisions remain searchable and filterable without a recent-session row")
+
+const generalThread: HumanctlInboxThread = {
+  threadId: "general-updates",
+  scope: "general",
+  path: "",
+  title: "General updates",
+  items: [
+    { kind: "note", level: "fyi", message: "Synthetic deployment receipt is ready", repo: "fixture-release", ts: "2025-06-16T12:00:00.000Z", id: "general-1" },
+    { kind: "note", level: "review", message: "Review the synthetic release packet", repo: "fixture-release", ts: "2025-06-16T12:05:00.000Z", id: "general-2" },
+  ],
+  lastTs: "2025-06-16T12:05:00.000Z",
+}
+equal(threadTitle(generalThread), "General updates", "general thread has an explicit human-facing title")
+equal(threadSession(generalThread, sessionsById), undefined, "general thread never resolves to a session")
+equal(threadState(generalThread, sessionsById), "need", "general thread derives state from its newest note level")
+const hostileGeneralPayload: HumanctlInboxThread = { ...generalThread, sessionId: rows[3].id, session: rows[3] }
+equal(threadSession(hostileGeneralPayload, sessionsById), undefined, "general scope ignores a hostile embedded session payload")
+equal(threadTitle(hostileGeneralPayload), "General updates", "general scope never borrows an embedded session title")
+equal(threadState(hostileGeneralPayload, sessionsById), "need", "general scope derives state from notes even when a session payload is present")
+equal(threadUnread(generalThread, { "general-updates": Date.parse("2025-06-16T12:04:00.000Z") }), true, "general thread unread state uses its thread id")
+equal(threadUnread(generalThread, { "general-updates": Date.parse("2025-06-16T12:06:00.000Z") }), false, "general thread read marker clears every visible item")
+equal(filterInboxThreads({
+  threads: [generalThread],
+  sessionsById,
+  query: "deployment receipt",
+  harness: "all",
+  state: "need",
+  sort: "needs",
+  pins: new Set<string>(),
+  lastReadTs: {},
+}).map((row) => row.threadId), ["general-updates"], "general thread search covers older messages and state derives from the newest note")
+equal(filterInboxThreads({
+  threads: [generalThread],
+  sessionsById,
+  query: "",
+  harness: "codex",
+  state: "all",
+  sort: "recent",
+  pins: new Set<string>(),
+  lastReadTs: {},
+}).map((row) => row.threadId), [], "harness filters exclude the general thread")
+
+const reservedIdSession = session("general-updates", "need", NOW - 1_000, { title: "Reserved id task" })
+const reservedIdThread: HumanctlInboxThread = {
+  ...thread(reservedIdSession, "2025-06-16T12:06:00.000Z", "Reserved id task needs review"),
+  threadId: "session:general-updates",
+}
+const reservedSessionsById = new Map([[reservedIdSession.id, reservedIdSession]])
+equal(
+  selectedSessionForView("inbox", "general-updates", [generalThread, reservedIdThread], reservedSessionsById)?.id,
+  undefined,
+  "palette exposes no task actions when General is selected beside a colliding session id",
+)
+equal(
+  selectedSessionForView("inbox", "session:general-updates", [generalThread, reservedIdThread], reservedSessionsById)?.id,
+  "general-updates",
+  "palette resolves task actions through the escaped session thread id",
+)
+equal(
+  selectedSessionForView("sessions", "general-updates", [generalThread, reservedIdThread], reservedSessionsById)?.id,
+  "general-updates",
+  "non-Inbox routes resolve direct session selections by raw session id",
+)
+equal(filterInboxThreads({
+  threads: [generalThread, reservedIdThread],
+  sessionsById: reservedSessionsById,
+  query: "",
+  harness: "all",
+  state: "all",
+  sort: "recent",
+  pins: new Set(["general-updates"]),
+  lastReadTs: {},
+}).map((row) => row.threadId), ["session:general-updates", "general-updates"], "escaped session threads retain raw-session pin ordering")
 
 const advanceRows: Array<{ id: string; state?: HumanctlSessionState }> = [
   { id: "a", state: "need" },

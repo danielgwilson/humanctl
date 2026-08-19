@@ -63,9 +63,10 @@ Routes keep one visible owner per signal:
 ## Inbox and Sessions
 
 Inbox is message-centric. It shows one thread per session assembled by the
-backend from notes, asks, answers, and session state. Search matches title,
-repository, and message. State and harness filters plus recent, needs-first,
-and alphabetic sorts are shared derivations, not separate screen logic.
+backend from notes, asks, answers, and session state, plus one stable General
+updates thread for notes posted without a session. Search matches title,
+repository, and every visible message. State and harness filters plus recent,
+needs-first, and alphabetic sorts are shared derivations, not separate screen logic.
 Each thread carries the authoritative row from the Inbox's 30-day scan, so a
 pending decision does not disappear or become idle merely because it is older
 than the 72-hour Sessions inventory.
@@ -80,6 +81,9 @@ states explain the next action without inventing data.
 
 Inbox and Sessions open the same package-owned detail block. Back returns to
 the originating route. Split and full-width contexts do not fork the component.
+General updates and session threads whose source session is unavailable open
+a read-only note stream with no resume, summarize, reply, pin, or transcript
+actions.
 
 Detail exposes the session title, harness, state and reason, repository, model,
 context fill, notes and asks, cached summary, live conversation, touched
@@ -462,9 +466,10 @@ humanctl note "FYI refactor is going well, no action needed"
 
 `--level` is one of `fyi | review | blocked | done`. Notes append to
 `~/.humanctl/notes.jsonl` (one global inbox across every repo; the cwd and repo
-are captured automatically). Pass `--session <id>` to link a note to a session
-so the Inbox can open it. This is the core loop: agents avoid silently blocking
-on you by leaving a small, durable note instead.
+are captured automatically). A note without `--session` appears in the
+read-only General updates thread. Pass `--session <id>` to join a specific task
+thread and expose that task's actions. This is the core loop: agents avoid
+silently blocking on you by leaving a small, durable note instead.
 
 ## Notch
 

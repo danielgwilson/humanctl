@@ -117,7 +117,10 @@ async function main(): Promise<void> {
 
   const notesPath = path.join(HOME, '.humanctl', 'notes.jsonl');
   fs.mkdirSync(path.dirname(notesPath), { recursive: true });
-  fs.writeFileSync(notesPath, JSON.stringify({ id: 'note-1', ts: iso(2), level: 'review', message: 'PR is up', session: sessionId }) + '\n');
+  fs.writeFileSync(notesPath, [
+    { id: 'note-1', ts: iso(2), level: 'review', message: 'PR is up', session: sessionId },
+    { id: 'note-2', ts: iso(3), level: 'fyi', message: 'Synthetic workspace update', repo: 'fixture-proj' },
+  ].map((note) => JSON.stringify(note)).join('\n') + '\n');
 
   // ---- transport 1: process.parentPort (main.ts's own requests) ----
 
@@ -143,6 +146,17 @@ async function main(): Promise<void> {
     const t = threads.find((x) => x.sessionId === sessionId);
     assert.ok(t, 'expected a thread for the noted session (proves the notes.jsonl -> inbox.threads join)');
     assert.strictEqual((t as { items: Array<{ kind: string }> }).items[0].kind, 'note');
+  });
+
+  await checkAsync('inbox.threads surfaces an unlinked note in the general thread', async () => {
+    const r = await request(fakeParentPort, 'inbox.threads', {});
+    assert.strictEqual(r.ok, true);
+    const threads = (r.result as { threads: Array<{ threadId: string; scope: string; sessionId?: string; items: Array<{ message?: string }> }> }).threads;
+    const general = threads.find((thread) => thread.threadId === 'general-updates');
+    assert.ok(general, 'expected a stable general thread for the unlinked note');
+    assert.strictEqual(general.scope, 'general');
+    assert.strictEqual(general.sessionId, undefined);
+    assert.ok(general.items.some((item) => item.message === 'Synthetic workspace update'));
   });
 
   await checkAsync('an unknown cmd replies ok:false with an "unknown cmd" error', async () => {
