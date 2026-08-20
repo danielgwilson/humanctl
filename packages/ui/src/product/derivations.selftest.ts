@@ -1,4 +1,5 @@
 import type { HumanctlInboxThread, HumanctlSession, HumanctlSessionState } from "./contracts"
+import { filterVaultEntities } from "./vault-derivations"
 import {
   filterInboxThreads,
   filterSessions,
@@ -206,6 +207,29 @@ equal(filterInboxThreads({
   pins: new Set(["general-updates"]),
   lastReadTs: {},
 }).map((row) => row.threadId), ["session:general-updates", "general-updates"], "escaped session threads retain raw-session pin ordering")
+
+const vaultEntities = [
+  {
+    kind: "person",
+    id: "person:mara-voss",
+    label: "Mara Voss",
+    labels: { group: "inner" },
+    annotations: { role: "Climate sensor founder" },
+    spec: { summary: "Preparing a reference architecture", sections: [{ heading: "Open threads", body: "Pilot design partners" }] },
+  },
+  {
+    kind: "person",
+    id: "person:desmond-ilori",
+    label: "Desmond Ilori",
+    annotations: { role: "Developer tools investor" },
+    spec: { summary: "Reviewing an observability thesis" },
+  },
+]
+equal(filterVaultEntities(vaultEntities, "mara").map((entity) => entity.id), ["person:mara-voss"], "vault search matches a person name")
+equal(filterVaultEntities(vaultEntities, "sensor founder").map((entity) => entity.id), ["person:mara-voss"], "vault search matches role terms")
+equal(filterVaultEntities(vaultEntities, "pilot partners").map((entity) => entity.id), ["person:mara-voss"], "vault search matches person-page section terms")
+equal(filterVaultEntities(vaultEntities, "observability").map((entity) => entity.id), ["person:desmond-ilori"], "vault search matches summary terms")
+equal(filterVaultEntities(vaultEntities, "missing person").map((entity) => entity.id), [], "vault search returns an honest empty result")
 
 const advanceRows: Array<{ id: string; state?: HumanctlSessionState }> = [
   { id: "a", state: "need" },

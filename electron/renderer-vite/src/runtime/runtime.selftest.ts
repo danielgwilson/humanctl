@@ -113,6 +113,7 @@ class FakeAdapter implements HumanctlAdapter {
   stateWrites: Partial<AppState>[] = [];
   summaryArgs: Array<Parameters<HumanctlAdapter['summarize']>[0]> = [];
   hotArgs: Array<{ path: string; harness?: string; from?: number } | null> = [];
+  brainArgs: Array<{ path?: string } | undefined> = [];
   statusDeferred = deferred<StatusResult>();
   sessionsDeferred = deferred<SessionsResult>();
   notesDeferred = deferred<NotesResult>();
@@ -223,6 +224,7 @@ class FakeAdapter implements HumanctlAdapter {
   async markAllThreadsRead(): Promise<BridgeResult> { return { ok: true }; }
   async aggregateSkills() { return { ok: true, agg: { skills: { test: 2 }, sessionsWithSkills: 1, totalInvocations: 2 } }; }
   async getBrain(arg?: { path?: string }) {
+    this.brainArgs.push(arg ? clone(arg) : undefined);
     if (!arg?.path) return { ok: true, snapshot: null };
     return { ok: true, snapshot: { apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1', entities: [{ kind: 'person', id: 'person:test', label: 'Test Person' }] } };
   }
@@ -318,6 +320,14 @@ async function run(): Promise<void> {
   equal(adapter.stateWrites.length, 1, 'app patch persists once');
   equal(runtime.getSnapshot().resources.status.status, 'ready', 'status settled');
   equal(runtime.getSnapshot().resources.inbox.status, 'ready', 'inbox settled');
+
+  const brainPath = '/fixtures/vault-snapshot.json';
+  const brainPathPatch = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: brainPath } });
+  assert(brainPathPatch.ok, 'brain snapshot path patch succeeds');
+  const brainReload = await runtime.dispatch({ type: 'brain.load' });
+  assert(brainReload.ok, 'explicit Brain reload succeeds');
+  equal(adapter.brainArgs[adapter.brainArgs.length - 1]?.path, brainPath, 'Brain reload rereads the configured snapshot path');
+  equal(runtime.getSnapshot().resources.brain.data?.entities[0]?.id, 'person:test', 'Brain reload commits the refreshed snapshot');
 
   const generalReadAt = Date.parse('2026-07-14T00:02:00.000Z');
   const generalRead = await runtime.dispatch({ type: 'thread.markRead', threadId: 'general-updates', at: generalReadAt });

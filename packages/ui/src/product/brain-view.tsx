@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from "react"
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
   ArrowLeftIcon,
   BrainIcon,
@@ -6,10 +6,12 @@ import {
   ClockIcon,
   FileTextIcon,
   GitMergeIcon,
+  RefreshCwIcon,
   UsersIcon,
   XIcon,
 } from "lucide-react"
 
+import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
 import { PageActions, PageBody, PageDescription, PageFrame, PageHeader, PageHeading, PageTitle } from "@humanctl/ui/blocks/page-frame"
 import { Badge } from "@humanctl/ui/components/badge"
 import { Button } from "@humanctl/ui/components/button"
@@ -21,7 +23,9 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@humanctl/ui/component
 import { cn } from "@humanctl/ui/lib/cn"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
-import { RowSkeletons, SectionHeading } from "./shared"
+import { ResourceNotice, RowSkeletons, SectionHeading } from "./shared"
+import { isModalOpen } from "./use-workloop-keys"
+import { filterVaultEntities } from "./vault-derivations"
 import type { VaultEntity, VaultFollowup, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
 
 // Generic palette roles a producer's `views.labelTones` hint may name, mapped to
@@ -211,7 +215,7 @@ function HealthStrip({ snapshot }: { snapshot: VaultSnapshot }) {
   )
 }
 
-function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect: (id: string) => void }) {
+function PeopleTable({ snapshot, query, onSelect, onClear }: { snapshot: VaultSnapshot; query: string; onSelect: (id: string) => void; onClear: () => void }) {
   const view = snapshot.views?.people
   const columns = Array.isArray(view?.columns) && view.columns.length ? view.columns : ["priority", "lastContactAt", "status"]
   // Owed subsumes last-contact + status, so drop the standalone last-contact
@@ -219,7 +223,7 @@ function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect
   const renderColumns = columns.includes("status") ? columns.filter((key) => key !== "lastContactAt") : columns
   const followupIndex = useFollowupIndex(asArray<VaultFollowup>(snapshot.queues?.followups))
   const { entities, maxPriority } = useMemo(() => {
-    const rows = asArray<VaultEntity>(snapshot.entities)
+    const rows = filterVaultEntities(asArray<VaultEntity>(snapshot.entities), query)
     const sort = view?.sort
     if (sort) {
       const [key, dir] = sort.split(":")
@@ -231,8 +235,22 @@ function PeopleTable({ snapshot, onSelect }: { snapshot: VaultSnapshot; onSelect
       if (typeof priority === "number" && priority > max) max = priority
     }
     return { entities: rows, maxPriority: max }
-  }, [snapshot.entities, view?.sort])
+  }, [query, snapshot.entities, view?.sort])
   const sample = entities[0]
+
+  if (!entities.length) {
+    const searching = Boolean(query.trim())
+    return (
+      <Empty className="mx-auto max-w-md py-12">
+        <EmptyHeader>
+          <EmptyMedia variant="icon"><UsersIcon /></EmptyMedia>
+          <EmptyTitle>{searching ? "No matching people" : "No people in this snapshot"}</EmptyTitle>
+          <EmptyDescription>{searching ? "Try a name, role, relationship label, or detail from the person page." : "Refresh the producer snapshot after it has exported at least one person."}</EmptyDescription>
+        </EmptyHeader>
+        {searching ? <EmptyContent><Button size="sm" variant="ghost" onClick={onClear}>Clear search</Button></EmptyContent> : null}
+      </Empty>
+    )
+  }
 
   return (
     <Table className="table-fixed">
@@ -472,7 +490,7 @@ function ProposalQueue({ proposals }: { proposals: ReadonlyArray<VaultProposal> 
   )
 }
 
-function BrainShell({ badge, children }: { badge?: ReactNode; children: ReactNode }) {
+function BrainShell({ actions, notice, children }: { actions?: ReactNode; notice?: ReactNode; children: ReactNode }) {
   return (
     <PageFrame>
       <PageHeader>
@@ -480,8 +498,9 @@ function BrainShell({ badge, children }: { badge?: ReactNode; children: ReactNod
           <PageTitle>Brain</PageTitle>
           <PageDescription>The relationship vault your agents maintain: people, threads, and what&rsquo;s owed</PageDescription>
         </PageHeading>
-        <PageActions>{badge}</PageActions>
+        <PageActions>{actions}</PageActions>
       </PageHeader>
+      {notice}
       {children}
     </PageFrame>
   )
@@ -489,18 +508,53 @@ function BrainShell({ badge, children }: { badge?: ReactNode; children: ReactNod
 
 export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel; dispatch: HumanctlDispatch }) {
   const [selectedId, setSelectedId] = useState<string | null>(null)
+  const [query, setQuery] = useState("")
+  const searchRef = useRef<HTMLInputElement>(null)
   const resource = model.resources.brain
   const snapshot = resource.data
   const index = useEntityIndex(snapshot?.entities || [])
   const selected = selectedId && snapshot ? snapshot.entities.find((entity) => entity.id === selectedId) || null : null
   const sampleBadge = model.mode === "fixture" ? <Badge variant="outline">Sample vault</Badge> : null
+  const filteredPeople = snapshot ? filterVaultEntities(snapshot.entities, query).length : 0
+  const generatedAt = snapshot?.generatedAt ? new Date(snapshot.generatedAt) : null
+  const generatedLabel = generatedAt && !Number.isNaN(generatedAt.getTime())
+    ? `Snapshot ${generatedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
+    : null
+  const shellActions = (
+    <>
+      {generatedLabel ? <span className="text-xs tabular-nums text-ink-3">{generatedLabel}</span> : null}
+      {snapshot ? (
+        <Button size="sm" variant="ghost" disabled={resource.status === "loading"} onClick={() => { void dispatch({ type: "brain.load" }) }}>
+          <RefreshCwIcon data-icon="inline-start" className={resource.status === "loading" ? "animate-spin" : undefined} /> Reload
+        </Button>
+      ) : null}
+      {sampleBadge}
+    </>
+  )
+  const staleNotice = snapshot && resource.error
+    ? <ResourceNotice resource={resource} label="Brain snapshot reload failed; showing the previous snapshot" />
+    : null
+
+  useEffect(() => {
+    function keydown(event: KeyboardEvent) {
+      if (event.key !== "/" || event.metaKey || event.ctrlKey || event.altKey || event.shiftKey) return
+      const input = searchRef.current
+      if (!input) return
+      const target = event.target as HTMLElement | null
+      if (target?.tagName === "INPUT" || target?.tagName === "TEXTAREA" || target?.isContentEditable || isModalOpen()) return
+      event.preventDefault()
+      input.focus()
+    }
+    window.addEventListener("keydown", keydown)
+    return () => window.removeEventListener("keydown", keydown)
+  }, [])
 
   // Treat idle like loading: the load is dispatched from an effect after the
   // first paint, so showing skeletons (not the onboarding state) until the
   // resource actually resolves avoids a one-frame "not connected" flash.
   if ((resource.status === "loading" || resource.status === "idle") && !snapshot) {
     return (
-      <BrainShell>
+      <BrainShell actions={shellActions} notice={staleNotice}>
         <PageBody><div className="p-4"><RowSkeletons count={8} /></div></PageBody>
       </BrainShell>
     )
@@ -508,7 +562,7 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
 
   if (resource.error && !snapshot) {
     return (
-      <BrainShell>
+      <BrainShell actions={shellActions}>
         <PageBody>
           <div className="grid h-full place-items-center px-6">
             <Empty className="max-w-md">
@@ -532,7 +586,7 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
 
   if (!snapshot) {
     return (
-      <BrainShell>
+      <BrainShell actions={shellActions}>
         <PageBody>
           <div className="grid h-full place-items-center px-6">
             <Empty className="max-w-md">
@@ -555,14 +609,14 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
 
   if (selected) {
     return (
-      <BrainShell badge={sampleBadge}>
+      <BrainShell actions={shellActions} notice={staleNotice}>
         <PageBody><PersonPage entity={selected} index={index} onBack={() => setSelectedId(null)} /></PageBody>
       </BrainShell>
     )
   }
 
   return (
-    <BrainShell badge={sampleBadge}>
+    <BrainShell actions={shellActions} notice={staleNotice}>
       <PageBody>
         <div className="flex h-full min-h-0 flex-col">
           <HealthStrip snapshot={snapshot} />
@@ -573,7 +627,14 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
               <TabsTrigger value="proposals" className="gap-1.5"><GitMergeIcon className="size-3.5" /> Proposals</TabsTrigger>
             </TabsList>
             <TabsContent value="people" className="min-h-0 flex-1">
-              <ScrollArea className="h-full"><PeopleTable snapshot={snapshot} onSelect={setSelectedId} /></ScrollArea>
+              <div className="flex h-full min-h-0 flex-col">
+                <FilterToolbar
+                  search={<FilterSearch ref={searchRef} aria-label="Search people" placeholder="Search people" value={query} onChange={(event) => setQuery(event.currentTarget.value)} />}
+                  resultCount={filteredPeople}
+                  resultLabel={filteredPeople === 1 ? "person" : "people"}
+                />
+                <ScrollArea className="min-h-0 flex-1"><PeopleTable snapshot={snapshot} query={query} onSelect={setSelectedId} onClear={() => setQuery("")} /></ScrollArea>
+              </div>
             </TabsContent>
             <TabsContent value="followups" className="min-h-0 flex-1">
               <ScrollArea className="h-full">

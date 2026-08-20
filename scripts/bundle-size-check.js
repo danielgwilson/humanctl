@@ -28,9 +28,16 @@ const KB = 1000;
 // redesigned surfaces and the timeline (not one hotspot; ~1 kB gzipped). Initial
 // JS stayed at 557 kB. Raised the initial-CSS ceiling 84 -> 90 kB to keep the
 // prior ~3 kB headroom over the new baseline; the other ceilings are unchanged.
+//
+// Measured 2026-08-19 after adding local Brain people search, explicit snapshot
+// reload, and visible snapshot freshness: 559.48 kB initial JS and 701.56 kB
+// total JS. The committed build immediately before the change measured 559.47
+// kB initial and 698.84 kB total. The 2.72 kB increase is isolated to the lazy
+// Brain route; cold-open JS is unchanged. Raised only the total-JS ceiling from
+// 700 -> 705 kB, leaving 3.44 kB of headroom without weakening the initial gate.
 const BUDGETS = {
   initialJs: 600 * KB,
-  totalJs: 700 * KB,
+  totalJs: 705 * KB,
   initialCss: 90 * KB,
   totalCss: 104 * KB,
   fonts: 120 * KB,

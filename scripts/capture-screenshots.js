@@ -376,6 +376,35 @@ async function assertFoundationBehavior(cdp) {
   log('foundation assertions passed: font, focus, 46px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
 }
 
+async function assertBrainSearchBehavior(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  await dispatchKeyChord(cdp, { code: 'Slash', key: '/', modifiers: 0 });
+  await settle(cdp);
+  const focused = await evalJS(cdp, `document.activeElement?.getAttribute('aria-label')`);
+  assert(focused === 'Search people', `Slash should focus Brain people search, received ${focused}`);
+  await cdp.send('Input.insertText', { text: 'mara sensor' });
+  await settle(cdp);
+  const filtered = await evalJS(cdp, `(() => {
+    const input = document.querySelector('input[aria-label="Search people"]');
+    const rows = [...document.querySelectorAll('table tbody tr')].map((row) => row.textContent || '');
+    return { value: input?.value || '', rows };
+  })()`);
+  assert(filtered.value === 'mara sensor', `Brain search input should retain the query, received ${filtered.value}`);
+  assert(filtered.rows.length === 1, `Brain search should rerender to one row, received ${filtered.rows.length}`);
+  assert(filtered.rows[0].includes('Mara Voss'), `Brain search should retain the matching synthetic person, received ${filtered.rows[0]}`);
+  const countText = await evalJS(cdp, `document.querySelector('[data-slot="filter-toolbar"] [aria-live="polite"]')?.textContent?.trim()`);
+  assert(countText === '1 person', `Brain search should use the correct singular count, received ${countText}`);
+  await evalJS(cdp, `(() => {
+    const input = document.querySelector('input[aria-label="Search people"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (input && setter) { setter.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); }
+    return true;
+  })()`);
+  await settle(cdp);
+  log('Brain assertions passed: Slash focus and live multi-term person filtering');
+}
+
 async function capture(cdp, outDir, filename) {
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const outPath = path.join(outDir, filename);
@@ -422,6 +451,7 @@ async function main() {
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
     await assertFoundationBehavior(cdp);
+    await assertBrainSearchBehavior(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);

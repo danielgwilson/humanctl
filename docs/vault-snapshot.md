@@ -86,6 +86,10 @@ swappable views). The precedent is deliberate.
   capped, and envelope-validated before it reaches the UI. A missing, unreadable,
   malformed, or unsupported-version file degrades to a clear empty state, never a
   crash.
+- The Brain header shows the snapshot generation time and offers an explicit
+  reload. A failed reload keeps the prior snapshot visible with a warning.
+  People search is local to the loaded snapshot and matches rendered names,
+  stable IDs, roles, labels, summaries, sections, evidence, and relationships.
 - In the browser build and screenshots, a fabricated snapshot in the fixture
   adapter stands in for a real producer, so the view is always reviewable without
   any real data.
