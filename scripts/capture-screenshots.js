@@ -19,10 +19,11 @@
 // What it produces: the six views (inbox, metrics, fleet, brain, sessions,
 // settings) x both themes, plus session detail x both themes, plus the
 // chief-of-staff conversation x both themes, plus sidebar and chief-of-staff
-// collapsed and sheet states x both themes, one PNG each, via
+// collapsed and sheet states x both themes, plus a rich Brain person detail
+// in both themes, one PNG each, via
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
 // Its compatibility surface is setTheme, setView, openDetail, and
-// setChiefOfStaff. 22 PNGs
+// setChiefOfStaff. 24 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -272,7 +273,7 @@ function assert(condition, message) {
 }
 
 async function dispatchKeyChord(cdp, { code, key, modifiers }) {
-  const keyCode = key.toUpperCase().charCodeAt(0);
+  const keyCode = { Tab: 9, Enter: 13, Escape: 27 }[key] || key.toUpperCase().charCodeAt(0);
   const base = {
     code,
     key,
@@ -405,6 +406,42 @@ async function assertBrainSearchBehavior(cdp) {
   log('Brain assertions passed: Slash focus and live multi-term person filtering');
 }
 
+async function assertBrainDossierBehavior(cdp) {
+  const input = await evalJS(cdp, `document.querySelector('input[aria-label="Search people"]')?.focus(); true`);
+  assert(input === true, 'Brain person search should be focusable before keyboard navigation');
+  await dispatchKeyChord(cdp, { code: 'Tab', key: 'Tab', modifiers: 0 });
+  await settle(cdp);
+  const focusedId = await evalJS(cdp, `document.activeElement?.getAttribute('data-brain-person-id')`);
+  assert(focusedId === 'person:mara-voss', `Tab should land on the first person row, received ${focusedId}`);
+  await dispatchKeyChord(cdp, { code: 'Enter', key: 'Enter', modifiers: 0 });
+  await settle(cdp);
+  const dossier = await evalJS(cdp, `(() => ({
+    text: document.querySelector('[data-slot="page-frame"]')?.textContent || '',
+    h2: [...document.querySelectorAll('[data-slot="page-frame"] h2')].map((node) => node.textContent || ''),
+    h3: [...document.querySelectorAll('[data-slot="page-frame"] h3')].map((node) => node.textContent || ''),
+    items: [...document.querySelectorAll('[data-slot="page-frame"] li')].map((node) => node.textContent || ''),
+    evidence: document.querySelectorAll('[data-slot="page-frame"] blockquote').length,
+  }))()`);
+  assert(dossier.text.includes('TL;DR') && dossier.text.includes('Next'), `person detail should render the brief and next action, received ${dossier.text.slice(0, 500)}`);
+  assert(dossier.h2.includes('Current state') && dossier.h3.includes('Open decisions'), 'person detail should preserve H2/H3 hierarchy');
+  assert(dossier.items.includes('She owns sensor constraints and pilot acceptance.'), 'person detail should render structured list items');
+  assert(dossier.text.includes('Desmond Ilori'), 'person detail should render a resolved relationship');
+  assert(dossier.text.includes('Aurora Pilot'), 'person detail should resolve a non-person relationship without adding it to People');
+  assert(dossier.evidence === 2, `person detail should render two evidence rows, received ${dossier.evidence}`);
+  await evalJS(cdp, `[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('All people'))?.click(); true`);
+  await settle(cdp);
+  const restoredId = await evalJS(cdp, `document.activeElement?.getAttribute('data-brain-person-id')`);
+  assert(restoredId === 'person:mara-voss', `Back should restore focus to the originating person, received ${restoredId}`);
+  log('Brain dossier assertions passed: keyboard open, hierarchy, list, relation, evidence, and focus restore');
+}
+
+async function openFixtureBrainDossier(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  await evalJS(cdp, `document.querySelector('[data-brain-person-id="person:mara-voss"]')?.click(); true`);
+  await settle(cdp);
+}
+
 async function capture(cdp, outDir, filename) {
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const outPath = path.join(outDir, filename);
@@ -452,6 +489,7 @@ async function main() {
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
     await assertFoundationBehavior(cdp);
     await assertBrainSearchBehavior(cdp);
+    await assertBrainDossierBehavior(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);
@@ -462,6 +500,9 @@ async function main() {
         await settle(cdp);
         await capture(cdp, outDir, `${view}-${theme}.png`);
       }
+
+      await openFixtureBrainDossier(cdp);
+      await capture(cdp, outDir, `brain-person-detail-${theme}.png`);
 
       // Session detail: no id given, so the hook opens the first known
       // fixture session (the product hook's openDetail default).
@@ -501,7 +542,7 @@ async function main() {
       await settle(cdp);
     }
 
-    log(`done: ${(VIEWS.length + 5) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    log(`done: ${(VIEWS.length + 6) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

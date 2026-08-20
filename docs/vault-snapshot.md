@@ -43,8 +43,12 @@ swappable views). The precedent is deliberate.
     "spec": {
       "priority": 92, "lastContactAt": "2026-07-26", "cadenceDays": 14,
       "status": "on-track",                                      // producer-resolved
-      "summary": "Where things were left off.",
-      "sections": [{ "heading": "Open threads", "body": "..." }],
+      "summary": "The 60-second brief: where things were left off.",
+      "nextTouch": "The next concrete action.",
+      "sections": [
+        { "heading": "Open threads", "body": "...", "level": 2 },
+        { "heading": "Decision rights", "level": 3, "items": ["Owns releases", "Escalates scope changes"] }
+      ],
       "evidence": [{ "date": "2026-07-18", "source": "a-note.md", "quote": "..." }]
     },
     "relations": [{ "type": "connected", "targetRef": "person:example-two", "note": "co-investor" }]
@@ -77,6 +81,22 @@ swappable views). The precedent is deliberate.
 6. **Presentation opinion travels as data.** A `views` hint names which keys become
    columns and the default sort, so even the presentation choice lives with the
    producer, not in viewer code.
+
+## Brief versus dossier
+
+`spec.summary` is the short brief. `spec.nextTouch` is the next concrete action.
+Neither replaces the dossier.
+
+`spec.sections` carries the producer's ordered, curated depth. A section has a
+required plain-text `heading`, an optional plain-text `body`, an optional heading
+`level` (`2`, `3`, or `4`), and optional plain-text `items`. This preserves a
+useful hierarchy and lists without sending trusted HTML or requiring humanctl to
+parse a producer's Markdown. Existing `{ heading, body }` sections remain valid.
+
+The producer owns the privacy boundary. It should export only the facts and
+evidence appropriate for this local viewer, remove secrets, and avoid duplicating
+the summary inside the sections. humanctl reads only the configured snapshot; it
+does not inspect the source vault.
 
 ## How humanctl reads it
 

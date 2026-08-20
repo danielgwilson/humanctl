@@ -23,7 +23,9 @@ export interface VaultRelation {
 
 export interface VaultEntitySection {
   heading: string
-  body: string
+  body?: string
+  level?: 2 | 3 | 4
+  items?: string[]
 }
 
 export interface VaultEntityEvidence {

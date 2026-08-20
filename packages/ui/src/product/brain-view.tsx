@@ -90,6 +90,16 @@ function isObject(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
 }
 
+function isScalar(value: unknown): value is string | number | boolean {
+  return typeof value === "string" || typeof value === "number" || typeof value === "boolean"
+}
+
+const OWNED_SPEC_KEYS = ["lastContactAt", "cadenceDays", "status", "summary", "nextTouch", "sections", "evidence"]
+
+function sectionParagraphs(body: unknown): string[] {
+  return typeof body === "string" ? body.split(/\n\s*\n/).map((part) => part.trim()).filter(Boolean) : []
+}
+
 // Resolve a column key against an entity generically: labels first (groupable
 // values), then spec facets. The viewer never hardcodes a domain field name.
 function cellValue(entity: VaultEntity, key: string): unknown {
@@ -223,7 +233,7 @@ function PeopleTable({ snapshot, query, onSelect, onClear }: { snapshot: VaultSn
   const renderColumns = columns.includes("status") ? columns.filter((key) => key !== "lastContactAt") : columns
   const followupIndex = useFollowupIndex(asArray<VaultFollowup>(snapshot.queues?.followups))
   const { entities, maxPriority } = useMemo(() => {
-    const rows = filterVaultEntities(asArray<VaultEntity>(snapshot.entities), query)
+    const rows = filterVaultEntities(asArray<VaultEntity>(snapshot.entities).filter((entity) => entity.kind === "person"), query)
     const sort = view?.sort
     if (sort) {
       const [key, dir] = sort.split(":")
@@ -270,12 +280,23 @@ function PeopleTable({ snapshot, query, onSelect, onClear }: { snapshot: VaultSn
           return (
             <TableRow
               key={entity.id}
-              className="h-[var(--row)] cursor-pointer hover:bg-[var(--overlay-hover)]"
-              onClick={() => onSelect(entity.id)}
+              className="h-[var(--row)] hover:bg-[var(--overlay-hover)]"
             >
               <TableCell className="px-4 py-0">
-                <div className="truncate text-sm font-medium text-ink">{entity.label}</div>
-                {entity.annotations?.role ? <div className="truncate text-xs text-ink-3">{entity.annotations.role}</div> : null}
+                <button
+                  type="button"
+                  data-brain-person-id={entity.id}
+                  onClick={() => onSelect(entity.id)}
+                  onKeyDown={(event) => {
+                    if (event.key !== "Enter") return
+                    event.preventDefault()
+                    onSelect(entity.id)
+                  }}
+                  className="block w-full rounded-sm text-left focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-ring"
+                >
+                  <span className="block truncate text-sm font-medium text-ink">{entity.label}</span>
+                  {entity.annotations?.role ? <span className="block truncate text-xs text-ink-3">{entity.annotations.role}</span> : null}
+                </button>
               </TableCell>
               {renderColumns.map((key) => {
                 if (key === "priority") {
@@ -319,9 +340,15 @@ function PeopleTable({ snapshot, query, onSelect, onClear }: { snapshot: VaultSn
   )
 }
 
-function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map<string, VaultEntity>; onBack: () => void }) {
+function PersonPage({ entity, index, onBack, onSelect }: { entity: VaultEntity; index: Map<string, VaultEntity>; onBack: () => void; onSelect: (id: string) => void }) {
   const spec = isObject(entity.spec) ? entity.spec : {}
   const labels = isObject(entity.labels) ? entity.labels : {}
+  const annotations = isObject(entity.annotations) ? entity.annotations : {}
+  const facts = [
+    ...Object.entries(labels),
+    ...Object.entries(annotations).filter(([key]) => key !== "role"),
+    ...Object.entries(spec).filter(([key, value]) => !OWNED_SPEC_KEYS.includes(key) && isScalar(value)),
+  ].filter((entry): entry is [string, string | number | boolean] => isScalar(entry[1]))
   return (
     <div className="flex h-full min-h-0 flex-col">
       <div className="flex h-[var(--row-decision)] shrink-0 items-center gap-2 border-b border-border px-3">
@@ -332,20 +359,9 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
           <div className="flex items-start gap-3">
             <div className="grid size-11 shrink-0 place-items-center rounded-full bg-accent-soft text-base font-semibold text-ink">{initials(entity.label)}</div>
             <div className="min-w-0 flex-1">
-              <h1 className="m-0 text-xl font-semibold tracking-[-0.01em] text-ink">{entity.label}</h1>
+              <h2 className="m-0 text-xl font-semibold tracking-[-0.01em] text-ink">{entity.label}</h2>
               {entity.annotations?.role ? <p className="m-0 mt-0.5 text-sm text-ink-2">{entity.annotations.role}</p> : null}
-              <div className="mt-2 flex flex-wrap items-center gap-2">
-                {Object.entries(labels).map(([key, value]) => {
-                  const tone = toneFor(key, value, undefined)
-                  return (
-                    <Badge key={key} variant="outline" className="capitalize">
-                      {tone ? <span className={cn("mr-1 size-1.5 rounded-full", tone)} aria-hidden="true" /> : null}
-                      {value}
-                    </Badge>
-                  )
-                })}
-                <StatusText status={spec.status} />
-              </div>
+              <div className="mt-2"><StatusText status={typeof spec.status === "string" ? spec.status : undefined} /></div>
             </div>
             <div className="shrink-0 text-right">
               {spec.lastContactAt ? <><div className="text-xs text-ink-3">Last contact</div><div className="text-sm font-medium tabular-nums text-ink">{formatValue(spec.lastContactAt)}</div></> : null}
@@ -353,33 +369,53 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
             </div>
           </div>
 
-          {spec.summary ? (
-            <div className="mt-4 rounded-md border border-border bg-sunken px-4 py-3">
-              <div className="text-xs font-medium text-ink-3">Where we left off</div>
-              <p className="m-0 mt-1 text-sm leading-5 text-ink-2">{spec.summary}</p>
+          {spec.summary || spec.nextTouch ? (
+            <div className="mt-5 grid border-y border-border bg-sunken/50 md:grid-cols-2">
+              {spec.summary ? <div className="px-4 py-3 md:border-r md:border-border">
+                <div className="text-xs font-medium tracking-wide text-ink-3 uppercase">TL;DR</div>
+                <p className="m-0 mt-1 text-sm leading-5 text-ink-2">{String(spec.summary)}</p>
+              </div> : null}
+              {spec.nextTouch ? <div className="px-4 py-3">
+                <div className="text-xs font-medium tracking-wide text-ink-3 uppercase">Next</div>
+                <p className="m-0 mt-1 text-sm leading-5 font-medium text-ink">{String(spec.nextTouch)}</p>
+              </div> : null}
             </div>
           ) : null}
 
-          {asArray<{ heading?: string; body?: string }>(spec.sections).map((section, i) => (
-            <section key={`${section.heading || "section"}-${i}`} className="mt-4">
-              {section.heading ? <h2 className="m-0 text-sm font-semibold text-ink">{String(section.heading)}</h2> : null}
-              {section.body ? <p className="m-0 mt-1 text-sm leading-6 text-ink-2">{String(section.body)}</p> : null}
-            </section>
-          ))}
+          {facts.length ? (
+            <dl className="mt-5 grid grid-cols-2 border-y border-border sm:grid-cols-3">
+              {facts.map(([key, value]) => <div key={key} className="min-w-0 border-b border-border px-3 py-2.5 last:border-b-0 sm:[&:nth-last-child(-n+3)]:border-b-0">
+                <dt className="truncate text-xs text-ink-3">{humanizeKey(key)}</dt>
+                <dd className="m-0 mt-0.5 break-words text-sm font-medium text-ink">{displayValue(key, value)}</dd>
+              </div>)}
+            </dl>
+          ) : null}
+
+          {asArray(spec.sections).length ? <div className="mt-6 divide-y divide-border border-y border-border">
+            {asArray<{ heading?: string; body?: string; level?: number; items?: unknown }>(spec.sections).map((section, i) => {
+              const level = section.level === 3 || section.level === 4 ? section.level : 2
+              const Heading = level === 4 ? "h4" : level === 3 ? "h3" : "h2"
+              const items = asArray<unknown>(section.items).filter((item): item is string => typeof item === "string" && Boolean(item.trim()))
+              return (
+                <section key={`${section.heading || "section"}-${i}`} className={cn("py-4", level > 2 && "pl-4")}>
+                  {section.heading ? <Heading className={cn("m-0 font-semibold text-ink", level === 2 ? "text-base" : "text-sm")}>{String(section.heading)}</Heading> : null}
+                  {sectionParagraphs(section.body).map((paragraph, paragraphIndex) => <p key={paragraphIndex} className="m-0 mt-2 text-sm leading-6 text-ink-2">{paragraph}</p>)}
+                  {items.length ? <ul className="m-0 mt-2 space-y-1.5 pl-5 text-sm leading-6 text-ink-2">{items.map((item, itemIndex) => <li key={itemIndex}>{item}</li>)}</ul> : null}
+                </section>
+              )
+            })}
+          </div> : null}
 
           {asArray(entity.relations).length ? (
             <section className="mt-5">
               <h2 className="m-0 flex items-center gap-2 text-xs font-medium tracking-wide text-ink-3 uppercase"><UsersIcon className="size-3.5" /> Connected</h2>
-              <div className="mt-2 flex flex-wrap gap-2">
+              <div className="mt-2 divide-y divide-border border-y border-border">
                 {asArray<{ targetRef?: string; note?: string; type?: string }>(entity.relations).map((relation, i) => {
                   const ref = String(relation.targetRef || "")
                   const target = resolveRef(index, ref)
-                  return (
-                    <span key={i} className="inline-flex items-center gap-1.5 rounded-full bg-sunken px-2.5 py-1 text-xs text-ink-2">
-                      <span className="font-medium text-ink">{target?.label || ref}</span>
-                      <span className="text-ink-3">{String(relation.note || relation.type || "")}</span>
-                    </span>
-                  )
+                  const content = <><span className="font-medium text-ink">{target?.label || ref}</span><span className="text-xs text-ink-3">{String(relation.note || relation.type || "")}</span></>
+                  return target?.kind === "person" ? <button key={i} type="button" onClick={() => onSelect(target.id)} className="flex w-full items-center justify-between gap-3 px-1 py-2 text-left hover:bg-[var(--overlay-hover)] focus-visible:outline-2 focus-visible:outline-ring">{content}</button>
+                    : <div key={i} className="flex items-center justify-between gap-3 px-1 py-2">{content}</div>
                 })}
               </div>
             </section>
@@ -390,13 +426,13 @@ function PersonPage({ entity, index, onBack }: { entity: VaultEntity; index: Map
               <h2 className="m-0 flex items-center gap-2 text-xs font-medium tracking-wide text-ink-3 uppercase"><FileTextIcon className="size-3.5" /> Evidence</h2>
               <div className="mt-2 space-y-2">
                 {asArray<{ quote?: string; date?: string; source?: string }>(spec.evidence).map((item, i) => (
-                  <div key={i} className="border-l-2 border-border pl-3">
-                    <p className="m-0 text-sm leading-5 text-ink-2">&ldquo;{String(item.quote || "")}&rdquo;</p>
+                  <blockquote key={i} className="m-0 border-l-2 border-border pl-3">
+                    <p className="m-0 text-sm leading-5 text-ink-2">{String(item.quote || "")}</p>
                     <div className="mt-0.5 flex items-center gap-2 text-xs text-ink-3">
                       {item.date ? <span className="tabular-nums">{String(item.date)}</span> : null}
                       {item.source ? <span className="font-mono">{String(item.source)}</span> : null}
                     </div>
-                  </div>
+                  </blockquote>
                 ))}
               </div>
             </section>
@@ -510,12 +546,13 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [query, setQuery] = useState("")
   const searchRef = useRef<HTMLInputElement>(null)
+  const restoreFocusId = useRef<string | null>(null)
   const resource = model.resources.brain
   const snapshot = resource.data
   const index = useEntityIndex(snapshot?.entities || [])
   const selected = selectedId && snapshot ? snapshot.entities.find((entity) => entity.id === selectedId) || null : null
   const sampleBadge = model.mode === "fixture" ? <Badge variant="outline">Sample vault</Badge> : null
-  const filteredPeople = snapshot ? filterVaultEntities(snapshot.entities, query).length : 0
+  const filteredPeople = snapshot ? filterVaultEntities(snapshot.entities.filter((entity) => entity.kind === "person"), query).length : 0
   const generatedAt = snapshot?.generatedAt ? new Date(snapshot.generatedAt) : null
   const generatedLabel = generatedAt && !Number.isNaN(generatedAt.getTime())
     ? `Snapshot ${generatedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
@@ -548,6 +585,17 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
     window.addEventListener("keydown", keydown)
     return () => window.removeEventListener("keydown", keydown)
   }, [])
+
+  useEffect(() => {
+    const id = restoreFocusId.current
+    if (selectedId || !id) return
+    const button = Array.from(document.querySelectorAll<HTMLButtonElement>("[data-brain-person-id]"))
+      .find((candidate) => candidate.dataset.brainPersonId === id)
+    if (button) {
+      button.focus()
+      restoreFocusId.current = null
+    }
+  }, [query, selectedId, snapshot])
 
   // Treat idle like loading: the load is dispatched from an effect after the
   // first paint, so showing skeletons (not the onboarding state) until the
@@ -610,7 +658,10 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
   if (selected) {
     return (
       <BrainShell actions={shellActions} notice={staleNotice}>
-        <PageBody><PersonPage entity={selected} index={index} onBack={() => setSelectedId(null)} /></PageBody>
+        <PageBody><PersonPage entity={selected} index={index} onSelect={setSelectedId} onBack={() => {
+          restoreFocusId.current = selected.id
+          setSelectedId(null)
+        }} /></PageBody>
       </BrainShell>
     )
   }

@@ -176,6 +176,12 @@ lazy Brain route; no dependency or cold-open payload was added. The total-JS
 ceiling moved from 700 to 705 kB to retain 3.44 kB of measured headroom while
 the 600 kB initial ceiling remains unchanged.
 
+The 2026-08-19 rich person-dossier renderer measured 557.87 kB initial JS and
+702.43 kB total JS. The additive section hierarchy, fact ledger, next action,
+relationship navigation, and evidence rendering stay in the lazy Brain chunk.
+Trimming redundant secondary fixture prose more than offset the cold-entry
+fixture growth, so neither budget changed.
+
 The 2026-07-15 foundation correction split the prior single CSS ceiling into
 initial and total ceilings. The measured build was 80.95 kB initial CSS and
 99.90 kB total CSS after restoring the full Registry Sidebar and Typeset.

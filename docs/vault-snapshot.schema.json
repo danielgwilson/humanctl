@@ -85,11 +85,13 @@
               "type": "array",
               "items": {
                 "type": "object",
-                "required": ["heading", "body"],
+                "required": ["heading"],
                 "additionalProperties": true,
                 "properties": {
                   "heading": { "type": "string" },
-                  "body": { "type": "string" }
+                  "body": { "type": "string" },
+                  "level": { "type": "integer", "enum": [2, 3, 4], "description": "Heading depth inside the selected entity dossier." },
+                  "items": { "type": "array", "items": { "type": "string" }, "description": "Plain-text list items shown under the heading." }
                 }
               }
             },

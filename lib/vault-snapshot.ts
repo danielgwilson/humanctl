@@ -20,8 +20,8 @@ export const SUPPORTED_VAULT_API_VERSIONS: ReadonlyArray<string> = [
   CURRENT_VAULT_API_VERSION,
 ];
 
-// Curated snapshots are small by construction (the producer drops bodies and
-// evidence text it does not need). Cap the read so a runaway or wrong-file path
+// Curated snapshots are bounded by construction: the producer emits selected
+// dossiers, not raw vault files. Cap the read so a runaway or wrong-file path
 // can never hand the main/reader process an unbounded parse.
 export const MAX_VAULT_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
@@ -33,7 +33,9 @@ export interface VaultRelation {
 
 export interface VaultEntitySection {
   heading: string;
-  body: string;
+  body?: string;
+  level?: 2 | 3 | 4;
+  items?: string[];
 }
 
 export interface VaultEntityEvidence {

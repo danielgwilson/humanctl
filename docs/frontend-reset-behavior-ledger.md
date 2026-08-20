@@ -140,6 +140,7 @@ active refresh without replacing the resource data.
 | FLEET-01 | Fleet owns distribution by state, harness, and tier. It does not become a second session list. | Fleet fixture. |
 | BRAIN-01 | Brain People search matches rendered person names, roles, labels, summaries, sections, evidence, and relationships without producer-specific vocabulary. Slash focuses search. | `npm run ui:derivations:selftest` plus both-theme Brain screenshots. |
 | BRAIN-02 | Brain shows snapshot generation time and reloads the configured snapshot explicitly without changing producer data. | Runtime command spy plus both-theme Brain screenshots. |
+| BRAIN-03 | Person detail renders the producer's ordered dossier without flattening heading hierarchy, lists, next actions, generic facts, relationships, or evidence. | Reader pass-through test, derivation selftest, keyboard interaction assertion, and both-theme person-detail screenshots. |
 | STATUS-01 | The global status band shows a compact fleet digest plus one quota digest per harness. Detailed windows remain in Metrics. | Ownership review and screenshot. |
 | SETTINGS-01 | Settings persists light, dark, and system theme; summary engine; and daily summary budget through the state command. | State round-trip test. |
 | SETTINGS-02 | Budget clamps to at least USD 0.10, commits on blur or Enter, and shows today's spend and paused state honestly. Clean drafts never overwrite newer external state. | `npm run ui:budget:selftest` plus the Settings interaction fixture. |

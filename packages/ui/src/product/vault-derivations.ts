@@ -12,6 +12,14 @@ function scalarValues(value: unknown): string[] {
     .map(String)
 }
 
+function sectionValues(value: unknown): string[] {
+  const section = record(value)
+  const items = Array.isArray(section.items)
+    ? section.items.filter((item) => typeof item === "string").map(String)
+    : []
+  return [section.heading, section.body, ...items].filter((item): item is string => typeof item === "string")
+}
+
 export function vaultEntitySearchText(entity: VaultEntity): string {
   const spec = record(entity.spec)
   const annotations = record(entity.annotations)
@@ -23,12 +31,9 @@ export function vaultEntitySearchText(entity: VaultEntity): string {
     entity.id,
     entity.kind,
     ...scalarValues(entity.labels),
-    annotations.role,
-    spec.summary,
-    spec.status,
-    spec.lastContactAt,
-    spec.cadenceDays,
-    ...sections.flatMap(scalarValues),
+    ...scalarValues(annotations),
+    ...scalarValues(spec),
+    ...sections.flatMap(sectionValues),
     ...evidence.flatMap(scalarValues),
     ...relations.flatMap(scalarValues),
   ].filter(Boolean).join(" ").toLowerCase()

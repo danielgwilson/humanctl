@@ -275,7 +275,17 @@ async function main(): Promise<void> {
   const snapshotPath = path.join(HOME, 'vault-snapshot.json');
   fs.writeFileSync(snapshotPath, JSON.stringify({
     apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
-    entities: [{ kind: 'person', id: 'person:x', label: 'X Person' }],
+    entities: [{
+      kind: 'person',
+      id: 'person:x',
+      label: 'X Person',
+      spec: {
+        sections: [
+          { heading: 'Current state', body: 'Pilot is active', level: 2, items: ['Ship the bounded slice'] },
+          { heading: 'Decision rights', level: 3 },
+        ],
+      },
+    }],
   }));
 
   await checkAsync('brain.snapshot with no path resolves ok with a null snapshot (onboarding, not an error)', async () => {
@@ -287,8 +297,11 @@ async function main(): Promise<void> {
   await checkAsync('brain.snapshot reads and validates a real file, returning the parsed snapshot', async () => {
     const r = await request(rendererPort2, 'brain.snapshot', { path: snapshotPath });
     assert.strictEqual(r.ok, true);
-    const snap = (r.result as { snapshot: { entities: Array<{ id: string }> } }).snapshot;
+    const snap = (r.result as { snapshot: { entities: Array<{ id: string; spec?: { sections?: Array<{ level?: number; items?: string[] }> } }> } }).snapshot;
     assert.strictEqual(snap.entities[0].id, 'person:x');
+    assert.strictEqual(snap.entities[0].spec?.sections?.[0].level, 2, 'section heading depth passes through the reader unchanged');
+    assert.deepStrictEqual(snap.entities[0].spec?.sections?.[0].items, ['Ship the bounded slice'], 'section list items pass through the reader unchanged');
+    assert.strictEqual(snap.entities[0].spec?.sections?.[1].level, 3, 'heading-only nested sections remain valid');
   });
 
   await checkAsync('brain.snapshot on a missing file throws, surfacing as an honest ok:false', async () => {

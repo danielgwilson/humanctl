@@ -1,5 +1,6 @@
 import type { HumanctlInboxThread, HumanctlSession, HumanctlSessionState } from "./contracts"
 import { filterVaultEntities } from "./vault-derivations"
+import type { VaultEntity } from "./vault-snapshot"
 import {
   filterInboxThreads,
   filterSessions,
@@ -208,14 +209,21 @@ equal(filterInboxThreads({
   lastReadTs: {},
 }).map((row) => row.threadId), ["session:general-updates", "general-updates"], "escaped session threads retain raw-session pin ordering")
 
-const vaultEntities = [
+const vaultEntities: VaultEntity[] = [
   {
     kind: "person",
     id: "person:mara-voss",
     label: "Mara Voss",
     labels: { group: "inner" },
-    annotations: { role: "Climate sensor founder" },
-    spec: { summary: "Preparing a reference architecture", sections: [{ heading: "Open threads", body: "Pilot design partners" }] },
+    annotations: { role: "Climate sensor founder", relationship: "Trusted collaborator" },
+    spec: {
+      summary: "Preparing a reference architecture",
+      nextTouch: "Send the deployment sequence",
+      sections: [
+        { heading: "Open threads", body: "Pilot design partners", level: 2 },
+        { heading: "Decision rights", level: 3, items: ["Owns sensor acceptance", "Escalates deployment exceptions"] },
+      ],
+    },
   },
   {
     kind: "person",
@@ -228,6 +236,9 @@ const vaultEntities = [
 equal(filterVaultEntities(vaultEntities, "mara").map((entity) => entity.id), ["person:mara-voss"], "vault search matches a person name")
 equal(filterVaultEntities(vaultEntities, "sensor founder").map((entity) => entity.id), ["person:mara-voss"], "vault search matches role terms")
 equal(filterVaultEntities(vaultEntities, "pilot partners").map((entity) => entity.id), ["person:mara-voss"], "vault search matches person-page section terms")
+equal(filterVaultEntities(vaultEntities, "trusted collaborator").map((entity) => entity.id), ["person:mara-voss"], "vault search matches generic annotations")
+equal(filterVaultEntities(vaultEntities, "deployment sequence").map((entity) => entity.id), ["person:mara-voss"], "vault search matches the next action")
+equal(filterVaultEntities(vaultEntities, "sensor acceptance").map((entity) => entity.id), ["person:mara-voss"], "vault search matches structured section list items")
 equal(filterVaultEntities(vaultEntities, "observability").map((entity) => entity.id), ["person:desmond-ilori"], "vault search matches summary terms")
 equal(filterVaultEntities(vaultEntities, "missing person").map((entity) => entity.id), [], "vault search returns an honest empty result")
 
