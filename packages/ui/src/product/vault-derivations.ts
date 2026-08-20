@@ -1,5 +1,23 @@
 import type { VaultEntity } from "./vault-snapshot"
 
+const DATE_ONLY_RE = /^\d{4}-\d{2}-\d{2}$/
+const DATE_PREFIX_RE = /^\d{4}-\d{2}-\d{2}/
+
+export function formatVaultDate(
+  text: string,
+  locale?: Intl.LocalesArgument,
+): string | null {
+  if (!DATE_PREFIX_RE.test(text)) return null
+  const dateOnly = DATE_ONLY_RE.test(text)
+  const date = new Date(dateOnly ? `${text}T00:00:00Z` : text)
+  if (Number.isNaN(date.getTime())) return null
+  return date.toLocaleDateString(locale, {
+    month: "short",
+    day: "numeric",
+    ...(dateOnly ? { timeZone: "UTC" } : {}),
+  })
+}
+
 function record(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>

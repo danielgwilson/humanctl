@@ -1,5 +1,5 @@
 import type { HumanctlInboxThread, HumanctlSession, HumanctlSessionState } from "./contracts"
-import { filterVaultEntities } from "./vault-derivations"
+import { filterVaultEntities, formatVaultDate } from "./vault-derivations"
 import type { VaultEntity } from "./vault-snapshot"
 import {
   filterInboxThreads,
@@ -17,6 +17,9 @@ import {
 } from "./helpers"
 
 const NOW = 1_750_000_000_000
+
+equal(formatVaultDate("2026-08-18", "en-US"), "Aug 18", "date-only values retain their calendar day")
+equal(formatVaultDate("not-a-date", "en-US"), null, "non-date values are not formatted")
 
 function equal(actual: unknown, expected: unknown, label: string) {
   const received = JSON.stringify(actual)

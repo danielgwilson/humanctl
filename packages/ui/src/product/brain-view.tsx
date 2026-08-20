@@ -25,7 +25,7 @@ import { cn } from "@humanctl/ui/lib/cn"
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { ResourceNotice, RowSkeletons, SectionHeading } from "./shared"
 import { isModalOpen } from "./use-workloop-keys"
-import { filterVaultEntities } from "./vault-derivations"
+import { filterVaultEntities, formatVaultDate } from "./vault-derivations"
 import type { VaultEntity, VaultFollowup, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
 
 // Generic palette roles a producer's `views.labelTones` hint may name, mapped to
@@ -63,18 +63,12 @@ function humanizeKey(key: string): string {
   return spaced.charAt(0).toUpperCase() + spaced.slice(1)
 }
 
-const DATE_RE = /^\d{4}-\d{2}-\d{2}/
-
 function formatValue(value: unknown): string {
   if (value == null) return ""
   if (typeof value === "number") return String(value)
   const text = String(value)
-  if (DATE_RE.test(text)) {
-    const date = new Date(text)
-    if (!Number.isNaN(date.getTime())) {
-      return date.toLocaleDateString(undefined, { month: "short", day: "numeric" })
-    }
-  }
+  const formattedDate = formatVaultDate(text)
+  if (formattedDate) return formattedDate
   return text
 }
 
