@@ -14,6 +14,8 @@
     ".agents/skills/humanctl/agents/openai.yaml",
     "dist/bin/humanctl.js",
     "dist/lib/commands.js",
+    "dist/lib/hub.js",
+    "dist/lib/hub-page.js",
     "dist/lib/pulse.js",
     "README.md",
     "LICENSE"
@@ -54,6 +56,7 @@
     "quota:selftest": "tsx lib/claude-quota.selftest.ts",
     "reader-service:selftest": "tsx electron/reader-service.selftest.ts",
     "span:selftest": "tsx lib/span.selftest.ts",
+    "hub:selftest": "tsx lib/hub.selftest.ts",
     "perf:selftest": "npm run build:lib && npm run build:renderer-vite && node scripts/perf-selftest/run.js",
     "perf:eventloop": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js",
     "perf:eventloop:selfcheck": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js --selfcheck",

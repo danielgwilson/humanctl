@@ -31,6 +31,14 @@ Operator notes for agents working in this repo. Start with `README.md` for what
   AI-summary dollar-budget tracker. `*.selftest.ts` files run directly via
   `tsx` (no build step needed for the fast dev loop; CI also builds and
   `node --check`s the compiled output).
+- `lib/hub.ts`, `lib/hub-store.ts`, `lib/hub-server.ts`, and `lib/hub-page.ts`
+  are the hub (`docs/hub.md`): the folded store under `~/.humanctl/hub/`, the
+  two HTTP listeners (page + API on the trusted network; ingest-only behind
+  a token), the push client and digest, and the self-contained page. All
+  Electron-free; `lib/hub.selftest.ts` runs a real server on an ephemeral
+  loopback port. `bin/hub-commands.ts` owns `humanctl hub ...` and the
+  hub-facing halves of `note` / `ask` / `artifact`; `bin/cli-util.ts` holds
+  the helpers both CLI files share.
 - `bin/humanctl.ts` is the CLI, compiled to `dist/bin/humanctl.js` (the
   package's `bin` entry: `npm i -g humanctl` ships compiled JS, never runtime
   TypeScript). `docs/` holds the deeper design and desktop docs
@@ -41,8 +49,8 @@ Operator notes for agents working in this repo. Start with `README.md` for what
   `npm run build:lib` (tsup) is the compile step. Both are CI-required (see
   `.github/workflows/ci.yml`), alongside `npm run lint`, the renderer's own
   lint and typecheck, `node --check` over every compiled `dist/` output, the
-  six `*.selftest.ts` suites (`pulse`, `reader`, `commands`, `claude-quota`,
-  `reader-service`, `span`),
+  seven `*.selftest.ts` suites (`pulse`, `reader`, `commands`, `claude-quota`,
+  `reader-service`, `span`, `hub`),
   `npm run perf:logic-selftest`, `npm run bundle:check`, and a separate
   secret-scan job.
 
@@ -299,6 +307,7 @@ automation split, and `PATH` is emptied for the whole run so it never spawns
 a real `gh`:
 
     npm run span:selftest         # daily codex/claude/notes counts + span.jsonl upsert
+    npm run hub:selftest          # hub fold + a real loopback server: ingest, answer, trust model (docs/hub.md)
 
 The Claude subscription-quota read (`lib/claude-quota.ts`, behind the
 `quota.claude` command) parses the Claude Code CLI's non-interactive `/usage`

@@ -18,6 +18,8 @@ keep the supporting context attached, and resume as soon as the answer lands.
   and Claude Code session transcripts
 - a CLI: the agent-facing inbox plus the durable ask / artifact / watch
   object model under `.humanctl/`
+- a hub: one self-hosted inbox across every machine you run agents on, with
+  a phone-first page that answers "what needs me?" (see below)
 
 ## The desktop app
 
@@ -108,10 +110,43 @@ Everything is plain files plus an append-only event log, so future sessions
 resume from durable state instead of chat-history reconstruction. Prefer
 `--json` when another agent or script consumes the result.
 
+## The hub
+
+Agents do not run on one machine. The hub is the transport: every `note`,
+`ask`, and `artifact put` can also land on one self-hosted endpoint, every
+machine can push a session digest, and one mobile-first page shows what
+needs you across all of them and lets you answer once. The agent that asked
+polls for the answer and resumes.
+
+```bash
+humanctl hub serve --bind <private-address> --trust-network   # on the always-on box
+humanctl hub config --url http://<hub-address>:4187            # on every other machine
+humanctl hub push --every 120                                   # optional: the fleet digest
+```
+
+An ask that can be answered with one tap carries a default and a reason, and
+brings its own evidence:
+
+```bash
+humanctl ask create --title "Ship the pricing page as drafted?" \
+  --prompt "Draft renders both plans; the annual toggle is new." \
+  --option "ship|Ship it|Merge and deploy" --option "hold|Hold|Leave the PR open" \
+  --recommended ship --reason "copy and layout match the spec" \
+  --unblocks "merge, deploy, close the ticket" --attach ./pricing-preview.html
+humanctl ask get ship-the-pricing-page-as-drafted --wait
+```
+
+The hub renders the attached HTML in a sandboxed frame; its own chrome is the
+queue and the answer strip. It trusts its network (loopback by default, an
+explicit flag for anything else), scopes sender tokens to a host, and never
+receives transcript bodies. See [docs/hub.md](./docs/hub.md).
+
 ## Docs
 
 Current:
 
+- [docs/hub.md](./docs/hub.md): the hub, one inbox across every machine
+  (information hierarchy, the ask contract, protocol, trust model)
 - [docs/desktop.md](./docs/desktop.md): the desktop control room reference
 - [docs/pulse.md](./docs/pulse.md): the pulse reconciliation reference (lanes,
   join token, config, degradation semantics)

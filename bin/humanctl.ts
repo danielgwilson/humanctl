@@ -8,6 +8,54 @@ import os from 'os';
 import path from 'path';
 import { URL } from 'url';
 
+import {
+  type FlagValue,
+  type Flags,
+  type OptionSpec,
+  appendWorkspaceEvent,
+  artifactDirectory,
+  artifactEntryName,
+  artifactManifestPath,
+  askDirectory,
+  askManifestPath,
+  booleanFlag,
+  ensureDir,
+  ensureObjectExists,
+  ensureWorkspaceExists,
+  flagValue,
+  hasFlag,
+  listDirectoryIds,
+  multiFlagValues,
+  nowIso,
+  outputResult,
+  parseFlags,
+  parseIdList,
+  parseOptionSpec,
+  readJson,
+  renderTypeForPath,
+  safeReadFile,
+  slugify,
+  titleFromId,
+  updateUiState,
+  watchDirectory,
+  watchManifestPath,
+  workspaceDirFor,
+  writeJson,
+} from './cli-util';
+import {
+  closeAsk,
+  hubSend,
+  hubUsage,
+  originForWorkspace,
+  pushArtifact,
+  pushAsk,
+  pushNote,
+  recordAnswer,
+  reportHubOutcome,
+  runHubCommand,
+  waitForAnswer,
+} from './hub-commands';
+
 // Global cross-repo inbox: agents post short aside/BTW messages to the human
 // here; the desktop app surfaces them. One file across all repos on purpose.
 // The write itself is the registered note.post command (lib/commands.ts), so
@@ -17,8 +65,6 @@ function globalDir(): string {
   return path.join(os.homedir(), '.humanctl');
 }
 
-export type FlagValue = string | boolean;
-export type Flags = Record<string, FlagValue | FlagValue[]>;
 
 const NOTE_LEVELS = new Set(['fyi', 'review', 'blocked', 'done']);
 async function appendNote(message: string, flags: Flags): Promise<void> {
@@ -49,12 +95,16 @@ async function appendNote(message: string, flags: Flags): Promise<void> {
   if (skippedImages && skippedImages.length) {
     for (const s of skippedImages) console.error(`humanctl note: skipped image ${s.path} (${s.reason})`);
   }
-  const note = result.note as { level: string; message: string; attachments?: string[] };
-  if (hasFlag(flags, 'json')) console.log(JSON.stringify(note));
+  const note = result.note as { id: string; ts: string; level: string; message: string; cwd: string; repo: string; session: string; agent: string; attachments?: string[] };
+  // With a hub configured the note (and its images, as artifacts) also land
+  // there; the local notes.jsonl write above is the durable record either way.
+  const hubOutcome = await pushNote(note, flags);
+  if (hasFlag(flags, 'json')) console.log(JSON.stringify({ ...note, hub: hubOutcome }));
   else {
     const attTxt = note.attachments && note.attachments.length ? ` [${note.attachments.length} image${note.attachments.length === 1 ? '' : 's'}]` : '';
     console.log(`noted (${note.level}): ${note.message}${attTxt}`);
   }
+  reportHubOutcome(hubOutcome, flags);
 }
 
 // Span of control: the computation lives in lib/span.ts (shared with the
@@ -134,10 +184,18 @@ Usage:
     verified. Config at ~/.humanctl/pulse.json (see docs/pulse.md)
 
   humanctl ask create [--workspace dir] --title text --prompt text [--summary text] [--artifact id]
-    [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
-    [--escalation ask] [--why-now text] [--if-ignored text] [--status open] [--json]
+    [--attach file ...] [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
+    [--reason text] [--unblocks text] [--escalation ask] [--why-now text] [--if-ignored text]
+    [--status open] [--session id] [--agent name] [--no-hub] [--require-hub] [--json]
+    a decision for the human. With a hub configured (humanctl hub config) the ask and
+    its artifacts are pushed after the local write. --recommended plus --reason is what
+    puts an ask in the hub's one-tap Decide group; without them it waits for words.
   humanctl ask list [--workspace dir] [--json]
-  humanctl ask get <id> [--workspace dir] [--json]
+  humanctl ask get <id> [--workspace dir] [--wait] [--timeout 540] [--no-hub] [--json]
+    --wait polls the local manifest, then the hub, until an answer exists (exit 0),
+    the ask is closed (exit 4), or --timeout seconds pass (exit 3; run it again to keep waiting)
+  humanctl ask close <id> [--workspace dir] [--status withdrawn|expired] [--proceeded-with choice-id] [--note text] [--json]
+    the agent withdrew the ask or proceeded without an answer; the hub moves it to Recent
   humanctl ask update <id> [--workspace dir] [--title text] [--prompt text] [--summary text]
     [--artifact id] [--watch id] [--option "choice-id|Label|Description"] [--recommended choice-id]
     [--escalation ask] [--status open] [--why-now text] [--if-ignored text] [--clear-answer] [--json]
@@ -172,302 +230,9 @@ Usage:
     still answer from disk when the app is not running (source cli-direct);
     actions need the running app.
 
+${hubUsage()}
   humanctl serve [dir] [--port 4173]
 `);
-}
-
-function nowIso(): string {
-  return new Date().toISOString();
-}
-
-function eventId(): string {
-  return `evt_${randomUUID().slice(0, 8)}`;
-}
-
-function ensureDir(dirPath: string): void {
-  fs.mkdirSync(dirPath, { recursive: true });
-}
-
-function writeJson(filePath: string, value: unknown): void {
-  const tempPath = `${filePath}.${process.pid}.tmp`;
-  fs.writeFileSync(tempPath, `${JSON.stringify(value, null, 2)}\n`, 'utf8');
-  fs.renameSync(tempPath, filePath);
-}
-
-function readJson(filePath: string): any {
-  return JSON.parse(fs.readFileSync(filePath, 'utf8'));
-}
-
-function safeReadFile(filePath: string): string {
-  try {
-    return fs.readFileSync(filePath, 'utf8');
-  } catch {
-    return '';
-  }
-}
-
-function workspaceDirFor(baseDir: string): string {
-  return path.resolve(baseDir, '.humanctl');
-}
-
-function ensureWorkspaceExists(baseDir: string): string {
-  const workspaceDir = workspaceDirFor(baseDir);
-  if (!fs.existsSync(workspaceDir)) {
-    console.error(`No .humanctl workspace found in ${path.resolve(baseDir)}`);
-    process.exit(1);
-  }
-
-  return workspaceDir;
-}
-
-function askDirectory(workspaceDir: string, askId: string): string {
-  return path.join(workspaceDir, 'asks', askId);
-}
-
-function askManifestPath(workspaceDir: string, askId: string): string {
-  return path.join(askDirectory(workspaceDir, askId), 'manifest.json');
-}
-
-function artifactDirectory(workspaceDir: string, artifactId: string): string {
-  return path.join(workspaceDir, 'artifacts', artifactId);
-}
-
-function artifactManifestPath(workspaceDir: string, artifactId: string): string {
-  return path.join(artifactDirectory(workspaceDir, artifactId), 'manifest.json');
-}
-
-function watchDirectory(workspaceDir: string, watchId: string): string {
-  return path.join(workspaceDir, 'watches', watchId);
-}
-
-function watchManifestPath(workspaceDir: string, watchId: string): string {
-  return path.join(watchDirectory(workspaceDir, watchId), 'manifest.json');
-}
-
-function parseFlags(argv: string[]): { positionals: string[]; flags: Flags } {
-  const positionals: string[] = [];
-  const flags: Flags = {};
-
-  for (let index = 0; index < argv.length; index += 1) {
-    const token = argv[index];
-
-    if (!token.startsWith('--')) {
-      positionals.push(token);
-      continue;
-    }
-
-    const name = token.slice(2);
-    const next = argv[index + 1];
-    const value: FlagValue = next && !next.startsWith('--') ? next : true;
-
-    if (value !== true) {
-      index += 1;
-    }
-
-    if (Object.prototype.hasOwnProperty.call(flags, name)) {
-      const existing = flags[name];
-      flags[name] = Array.isArray(existing) ? [...existing, value] : [existing as FlagValue, value];
-      continue;
-    }
-
-    flags[name] = value;
-  }
-
-  return { positionals, flags };
-}
-
-function hasFlag(flags: Flags, name: string): boolean {
-  return Object.prototype.hasOwnProperty.call(flags, name);
-}
-
-function flagValue(flags: Flags, name: string, fallback?: FlagValue): FlagValue | undefined {
-  const value = flags[name];
-
-  if (Array.isArray(value)) {
-    return value[value.length - 1];
-  }
-
-  if (value === undefined) {
-    return fallback;
-  }
-
-  return value;
-}
-
-function multiFlagValues(flags: Flags, name: string): FlagValue[] {
-  const value = flags[name];
-
-  if (value === undefined) {
-    return [];
-  }
-
-  return Array.isArray(value) ? value : [value];
-}
-
-function booleanFlag(flags: Flags, name: string, fallback = false): boolean {
-  if (!hasFlag(flags, name)) {
-    return fallback;
-  }
-
-  const value = flagValue(flags, name, true);
-
-  if (value === true) {
-    return true;
-  }
-
-  const normalized = String(value).trim().toLowerCase();
-  if (['1', 'true', 'yes', 'on'].includes(normalized)) {
-    return true;
-  }
-  if (['0', 'false', 'no', 'off'].includes(normalized)) {
-    return false;
-  }
-
-  return fallback;
-}
-
-function slugify(value: unknown): string {
-  return String(value)
-    .toLowerCase()
-    .trim()
-    .replace(/[^a-z0-9]+/g, '-')
-    .replace(/^-+|-+$/g, '')
-    .slice(0, 64);
-}
-
-function titleFromId(value: unknown): string {
-  return String(value)
-    .split(/[-_]/g)
-    .filter(Boolean)
-    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
-    .join(' ');
-}
-
-function parseIdList(flags: Flags, name: string): string[] {
-  return multiFlagValues(flags, name)
-    .flatMap((value) => String(value).split(','))
-    .map((value) => value.trim())
-    .filter(Boolean);
-}
-
-function appendEvent(workspaceDir: string, event: Record<string, unknown>): void {
-  const eventsPath = path.join(workspaceDir, 'inbox', 'events.jsonl');
-  fs.appendFileSync(eventsPath, `${JSON.stringify(event)}\n`, 'utf8');
-}
-
-function appendWorkspaceEvent(workspaceDir: string, kind: string, targetType: string, targetId: string, actor: string, payload: Record<string, unknown>): void {
-  appendEvent(workspaceDir, {
-    id: eventId(),
-    ts: nowIso(),
-    kind,
-    target: {
-      type: targetType,
-      id: targetId,
-    },
-    actor,
-    payload,
-  });
-}
-
-function renderTypeForPath(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-
-  switch (ext) {
-    case '.html':
-      return 'html';
-    case '.md':
-      return 'markdown';
-    case '.png':
-    case '.jpg':
-    case '.jpeg':
-    case '.gif':
-    case '.webp':
-    case '.svg':
-      return 'image';
-    default:
-      return 'file';
-  }
-}
-
-function artifactEntryName(filePath: string): string {
-  const ext = path.extname(filePath).toLowerCase();
-  return `content${ext || '.txt'}`;
-}
-
-interface OptionSpec {
-  id: string;
-  label: string;
-  description: string;
-}
-
-function parseOptionSpec(spec: unknown): OptionSpec {
-  const [id, label, ...descriptionParts] = String(spec).split('|');
-  const choiceLabel = label?.trim();
-
-  if (!choiceLabel) {
-    throw new Error(`Invalid --option "${spec}". Use "choice-id|Label|Description".`);
-  }
-
-  return {
-    id: id?.trim() ? id.trim() : slugify(choiceLabel),
-    label: choiceLabel,
-    description: descriptionParts.join('|').trim() || choiceLabel,
-  };
-}
-
-function updateUiState(workspaceDir: string, nextState: Record<string, unknown>): void {
-  const uiStatePath = path.join(workspaceDir, 'state', 'ui.json');
-  let existing: Record<string, unknown> = {};
-
-  if (fs.existsSync(uiStatePath)) {
-    try {
-      existing = readJson(uiStatePath);
-    } catch {
-      existing = {};
-    }
-  }
-
-  writeJson(uiStatePath, {
-    ...existing,
-    ...nextState,
-  });
-}
-
-function outputResult(value: unknown, flags: Flags, formatter?: (value: any) => void): void {
-  if (booleanFlag(flags, 'json', false)) {
-    console.log(JSON.stringify(value, null, 2));
-    return;
-  }
-
-  if (formatter) {
-    formatter(value);
-    return;
-  }
-
-  if (typeof value === 'string') {
-    console.log(value);
-    return;
-  }
-
-  console.log(JSON.stringify(value, null, 2));
-}
-
-function listDirectoryIds(dirPath: string): string[] {
-  if (!fs.existsSync(dirPath)) {
-    return [];
-  }
-
-  return fs
-    .readdirSync(dirPath, { withFileTypes: true })
-    .filter((entry) => entry.isDirectory())
-    .map((entry) => entry.name);
-}
-
-function ensureObjectExists(dirPath: string, label: string, objectId: string): void {
-  if (!fs.existsSync(dirPath)) {
-    console.error(`${label} ${objectId} not found.`);
-    process.exit(1);
-  }
 }
 
 function askStatusRank(status: string): number {
@@ -689,7 +454,56 @@ function normalizeAskOptions(flags: Flags, existingOptions: OptionSpec[]): (Opti
   }));
 }
 
-function createAsk(baseDir: string, flags: Flags): void {
+const PLACEHOLDER_OPTIONS = [
+  { id: 'looks-good', label: 'Looks good', description: 'Proceed with this direction.', recommended: true },
+  { id: 'revise', label: 'Needs revision', description: 'Adjust the work and bring back another pass.', recommended: false },
+];
+
+// --attach <file> is sugar for `artifact put` plus a link to the ask: the
+// common case ("here is the evidence, decide") is one command. Up to four;
+// ids are derived from the ask so two asks never fight over one artifact.
+function attachFiles(workspaceDir: string, askId: string, title: string, flags: Flags): string[] {
+  const files = multiFlagValues(flags, 'attach').map(String);
+  if (files.length > 4) {
+    console.error('--attach accepts up to 4 files');
+    process.exit(1);
+  }
+  return files.map((file, index) => {
+    const resolved = path.resolve(file);
+    if (!fs.existsSync(resolved)) {
+      console.error(`--attach: ${resolved} not found`);
+      process.exit(1);
+    }
+    const id = slugify(`${askId}-${index + 1}-${path.basename(resolved, path.extname(resolved))}`) || `${askId}-${index + 1}`;
+    storeArtifact(workspaceDir, resolved, { id, title, kind: 'preview' });
+    return id;
+  });
+}
+
+// Says, once, what an ask is missing to be answerable with one tap. This is
+// the incentive docs/hub.md describes: vague asks are accepted, and wait.
+function warnAskShape(askId: string, manifest: { reason?: unknown; artifactIds: string[]; response: { recommendedBy: string } }, flags: Flags): void {
+  if (booleanFlag(flags, 'json', false)) return;
+  const missing: string[] = [];
+  if (manifest.response.recommendedBy !== 'agent') missing.push('--recommended');
+  if (!manifest.reason) missing.push('--reason');
+  if (missing.length) console.error(`ask ${askId}: no ${missing.join(' or ')}; on the hub this waits for words instead of one tap`);
+  if (!manifest.artifactIds.length) console.error(`ask ${askId}: no artifact attached; the human will answer from the prompt alone (--attach <file>)`);
+}
+
+function applyRecommended(options: (OptionSpec & { recommended?: boolean })[], flags: Flags, askId: string): { options: (OptionSpec & { recommended: boolean })[]; explicit: boolean } {
+  const recommendedFlag = flagValue(flags, 'recommended');
+  if (typeof recommendedFlag !== 'string') {
+    return { options: options.map((o, i) => ({ ...o, recommended: o.recommended !== undefined ? o.recommended : i === 0 })), explicit: false };
+  }
+  if (!options.some((o) => o.id === recommendedFlag)) {
+    console.error(`--recommended ${recommendedFlag} is not an option of ask ${askId}: ${options.map((o) => o.id).join(', ')}`);
+    process.exit(1);
+  }
+  return { options: options.map((o) => ({ ...o, recommended: o.id === recommendedFlag })), explicit: true };
+}
+
+async function createAsk(baseDir: string, flags: Flags): Promise<void> {
   const workspaceDir = ensureWorkspaceExists(baseDir);
   const title = flagValue(flags, 'title');
   const prompt = flagValue(flags, 'prompt');
@@ -704,18 +518,16 @@ function createAsk(baseDir: string, flags: Flags): void {
   const askDir = askDirectory(workspaceDir, askId);
   const manifestPath = askManifestPath(workspaceDir, askId);
   const existingManifest = fs.existsSync(manifestPath) ? readJson(manifestPath) : undefined;
-  const options = normalizeAskOptions(flags, existingManifest?.response?.options ?? []);
-  const normalizedOptions =
-    options.length > 0
-      ? options
-      : [
-          { id: 'looks-good', label: 'Looks good', description: 'Proceed with this direction.', recommended: true },
-          { id: 'revise', label: 'Needs revision', description: 'Adjust the work and bring back another pass.', recommended: false },
-        ];
+  const baseOptions = normalizeAskOptions(flags, existingManifest?.response?.options ?? []);
+  const { options: normalizedOptions, explicit } = applyRecommended(baseOptions.length > 0 ? baseOptions : PLACEHOLDER_OPTIONS, flags, askId);
+  // Only an explicit --recommended counts as the agent's default; the
+  // placeholder or index-0 fallback is a convenience, not a decision.
+  const recommendedBy = explicit || (existingManifest?.response?.recommendedBy === 'agent' && !hasFlag(flags, 'option')) ? 'agent' : 'implicit';
   const escalation = flagValue(flags, 'escalation', existingManifest?.escalation || 'ask');
   const status = flagValue(flags, 'status', escalation === 'block' ? 'blocked' : 'open');
-  const artifactIds = parseIdList(flags, 'artifact');
+  const artifactIds = [...parseIdList(flags, 'artifact'), ...attachFiles(workspaceDir, askId, String(title), flags)];
   const watchIds = parseIdList(flags, 'watch');
+  const keepOrigin = existingManifest?.origin && !hasFlag(flags, 'session') && !hasFlag(flags, 'agent');
 
   ensureDir(askDir);
   const manifest = {
@@ -725,14 +537,18 @@ function createAsk(baseDir: string, flags: Flags): void {
     status,
     escalation,
     prompt,
+    reason: flagValue(flags, 'reason', existingManifest?.reason),
+    unblocks: flagValue(flags, 'unblocks', existingManifest?.unblocks),
     whyNow: flagValue(flags, 'why-now', existingManifest?.whyNow),
     ifIgnored: flagValue(flags, 'if-ignored', existingManifest?.ifIgnored),
     artifactIds,
     watchIds: watchIds.length > 0 ? watchIds : undefined,
     response: {
       type: 'single-select',
+      recommendedBy,
       options: normalizedOptions,
     },
+    origin: keepOrigin ? existingManifest.origin : originForWorkspace(workspaceDir, flags),
     createdAt: existingManifest?.createdAt || createdAt,
     updatedAt: createdAt,
   };
@@ -747,21 +563,25 @@ function createAsk(baseDir: string, flags: Flags): void {
     route: `/app?ask=${askId}`,
     selectedAskId: askId,
   });
+  warnAskShape(askId, manifest, flags);
 
+  const hubOutcome = await pushAsk(workspaceDir, manifest, flags);
   outputResult(
     {
       ok: true,
-      ask: manifest,
+      ask: readJson(manifestPath),
       path: askDir,
+      hub: hubOutcome,
     },
     flags,
     () => {
       console.log(`Ask ${askId} -> ${path.join('.humanctl', 'asks', askId)}`);
     }
   );
+  reportHubOutcome(hubOutcome, flags);
 }
 
-function updateAsk(baseDir: string, askId: string, flags: Flags): void {
+async function updateAsk(baseDir: string, askId: string, flags: Flags): Promise<void> {
   const workspaceDir = ensureWorkspaceExists(baseDir);
   const manifestPath = askManifestPath(workspaceDir, askId);
   ensureObjectExists(manifestPath, 'Ask', askId);
@@ -769,17 +589,10 @@ function updateAsk(baseDir: string, askId: string, flags: Flags): void {
   const existing = readJson(manifestPath);
   const updatedAt = nowIso();
   const nextOptions = normalizeAskOptions(flags, existing.response.options);
-  const recommendedId = flagValue(flags, 'recommended');
-  const normalizedOptions = nextOptions.map((option, index) => ({
-    ...option,
-    recommended:
-      recommendedId !== undefined
-        ? option.id === recommendedId
-        : option.recommended !== undefined
-          ? option.recommended
-          : index === 0,
-  }));
-  const artifactIds = hasFlag(flags, 'artifact') ? parseIdList(flags, 'artifact') : existing.artifactIds;
+  const { options: normalizedOptions, explicit } = applyRecommended(nextOptions, flags, askId);
+  const recommendedBy = explicit ? 'agent' : hasFlag(flags, 'option') ? 'implicit' : existing.response.recommendedBy || 'implicit';
+  const attached = attachFiles(workspaceDir, askId, String(flagValue(flags, 'title', existing.title)), flags);
+  const artifactIds = [...(hasFlag(flags, 'artifact') ? parseIdList(flags, 'artifact') : existing.artifactIds || []), ...attached];
   const watchIds = hasFlag(flags, 'watch') ? parseIdList(flags, 'watch') : existing.watchIds;
   const nextAsk = {
     ...existing,
@@ -788,17 +601,22 @@ function updateAsk(baseDir: string, askId: string, flags: Flags): void {
     status: flagValue(flags, 'status', existing.status),
     escalation: flagValue(flags, 'escalation', existing.escalation),
     prompt: flagValue(flags, 'prompt', existing.prompt),
+    reason: flagValue(flags, 'reason', existing.reason),
+    unblocks: flagValue(flags, 'unblocks', existing.unblocks),
     whyNow: flagValue(flags, 'why-now', existing.whyNow),
     ifIgnored: flagValue(flags, 'if-ignored', existing.ifIgnored),
     artifactIds,
     watchIds: watchIds && watchIds.length > 0 ? watchIds : undefined,
     response: {
       ...existing.response,
+      recommendedBy,
       options: normalizedOptions,
       answer: booleanFlag(flags, 'clear-answer', false) ? undefined : existing.response.answer,
     },
+    origin: existing.origin || originForWorkspace(workspaceDir, flags),
     updatedAt,
   };
+  if (booleanFlag(flags, 'clear-answer', false)) { nextAsk.status = hasFlag(flags, 'status') ? nextAsk.status : 'open'; delete nextAsk.close; }
 
   writeJson(manifestPath, nextAsk);
   appendWorkspaceEvent(workspaceDir, 'updated', 'ask', askId, 'agent', {
@@ -809,75 +627,66 @@ function updateAsk(baseDir: string, askId: string, flags: Flags): void {
     route: `/app?ask=${askId}`,
     selectedAskId: askId,
   });
+  warnAskShape(askId, nextAsk, flags);
 
+  const hubOutcome = await pushAsk(workspaceDir, nextAsk, flags);
   outputResult(
     {
       ok: true,
-      ask: nextAsk,
+      ask: readJson(manifestPath),
       path: askDirectory(workspaceDir, askId),
+      hub: hubOutcome,
     },
     flags,
     () => {
       console.log(`Ask ${askId} updated.`);
     }
   );
+  reportHubOutcome(hubOutcome, flags);
 }
 
-function answerAskCommand(baseDir: string, askId: string, flags: Flags): void {
+// The write itself is recordAnswer (bin/hub-commands.ts), shared with the
+// hub write-back in `ask get --wait`, so both paths leave the same manifest,
+// the same workspace event, and the same UI-state nudge. A local answer is
+// then pushed so the hub's copy stops asking.
+async function answerAskCommand(baseDir: string, askId: string, flags: Flags): Promise<void> {
   const workspaceDir = ensureWorkspaceExists(baseDir);
-  const manifestPath = askManifestPath(workspaceDir, askId);
-  ensureObjectExists(manifestPath, 'Ask', askId);
-
-  const manifest = readJson(manifestPath);
-  const choiceId = flagValue(flags, 'choice') as string | undefined;
-  const note = flagValue(flags, 'note') as string | undefined;
-  const cleanedNote = note?.trim() ? note.trim() : undefined;
-  const resolvedChoiceId = choiceId?.trim() ? choiceId.trim() : '__note__';
-
-  if (!choiceId?.trim() && !cleanedNote) {
-    console.error(`Ask ${askId} requires either --choice or --note.`);
+  let manifest: Record<string, any>;
+  try {
+    manifest = recordAnswer(workspaceDir, askId, {
+      choiceId: flagValue(flags, 'choice') as string | undefined,
+      note: flagValue(flags, 'note') as string | undefined,
+      via: 'local',
+    });
+  } catch (err) {
+    console.error((err as Error).message);
     process.exit(1);
   }
-
-  if (choiceId?.trim() && !manifest.response.options.find((option: OptionSpec) => option.id === resolvedChoiceId)) {
-    console.error(`Choice ${resolvedChoiceId} is not valid for ask ${askId}.`);
-    process.exit(1);
-  }
-
-  const answeredAt = nowIso();
-  manifest.status = 'answered';
-  manifest.updatedAt = answeredAt;
-  manifest.response.answer = {
-    choiceId: resolvedChoiceId,
-    note: cleanedNote,
-    answeredAt,
+  const answer = manifest.response.answer;
+  const origin = manifest.origin || originForWorkspace(workspaceDir, flags);
+  const hubOutcome = await hubSend('ask.answer', origin, {
+    askId,
+    choiceId: answer.choiceId === '__note__' ? undefined : answer.choiceId,
+    note: answer.note,
     actor: 'human',
-  };
-
-  writeJson(manifestPath, manifest);
-  appendWorkspaceEvent(workspaceDir, 'answered', 'ask', askId, 'human', {
-    choiceId: resolvedChoiceId,
-    note: cleanedNote,
-  });
-  updateUiState(workspaceDir, {
-    route: `/app?ask=${askId}`,
-    selectedAskId: askId,
-  });
+  }, flags);
 
   outputResult(
     {
       ok: true,
       ask: manifest,
-      answer: manifest.response.answer,
+      answer,
+      hub: hubOutcome,
     },
     flags,
     () => {
       console.log(`Ask ${askId} answered.`);
     }
   );
+  reportHubOutcome(hubOutcome, flags);
 }
 
-function deleteAsk(baseDir: string, askId: string, flags: Flags): void {
+async function deleteAsk(baseDir: string, askId: string, flags: Flags): Promise<void> {
   const workspaceDir = ensureWorkspaceExists(baseDir);
   const askDir = askDirectory(workspaceDir, askId);
   const manifestPath = askManifestPath(workspaceDir, askId);
@@ -891,6 +700,8 @@ function deleteAsk(baseDir: string, askId: string, flags: Flags): void {
   updateUiState(workspaceDir, {
     route: '/app',
   });
+  // The hub keeps its copy as a closed item in Recent rather than a live ask.
+  const hubOutcome = await hubSend('ask.close', existing.origin || originForWorkspace(workspaceDir, flags), { askId, status: 'deleted' }, flags);
 
   outputResult(
     {
@@ -899,12 +710,14 @@ function deleteAsk(baseDir: string, askId: string, flags: Flags): void {
         type: 'ask',
         id: askId,
       },
+      hub: hubOutcome,
     },
     flags,
     () => {
       console.log(`Ask ${askId} deleted.`);
     }
   );
+  reportHubOutcome(hubOutcome, flags);
 }
 
 function listArtifacts(baseDir: string, flags: Flags): void {
@@ -931,24 +744,26 @@ function getArtifact(baseDir: string, artifactId: string, flags: Flags): void {
   });
 }
 
-function putArtifact(baseDir: string, sourceFile: string, flags: Flags): void {
-  const workspaceDir = ensureWorkspaceExists(baseDir);
-  const resolvedSource = path.resolve(sourceFile);
+interface StoreArtifactOpts {
+  id: string;
+  kind?: unknown;
+  title?: unknown;
+  summary?: unknown;
+  status?: unknown;
+  labels?: string[];
+  pinned?: boolean;
+}
 
-  if (!fs.existsSync(resolvedSource)) {
-    console.error(`Artifact source not found: ${resolvedSource}`);
-    process.exit(1);
-  }
-
+// Copies a file into the workspace as an artifact and writes its manifest.
+// Shared by `artifact put` and `ask create --attach`.
+function storeArtifact(workspaceDir: string, resolvedSource: string, opts: StoreArtifactOpts): Record<string, any> {
+  const artifactId = opts.id;
   const renderType = renderTypeForPath(resolvedSource);
-  const defaultId = slugify(path.basename(resolvedSource, path.extname(resolvedSource))) || 'artifact';
-  const artifactId = slugify(flagValue(flags, 'id', defaultId));
   const createdAt = nowIso();
   const artifactDir = artifactDirectory(workspaceDir, artifactId);
   const manifestPath = artifactManifestPath(workspaceDir, artifactId);
   const entry = artifactEntryName(resolvedSource);
   const existingManifest = fs.existsSync(manifestPath) ? readJson(manifestPath) : undefined;
-  const labels = parseIdList(flags, 'label');
 
   ensureDir(artifactDir);
   if (existingManifest?.render?.entry && existingManifest.render.entry !== entry) {
@@ -958,12 +773,12 @@ function putArtifact(baseDir: string, sourceFile: string, flags: Flags): void {
 
   const manifest = {
     id: artifactId,
-    kind: flagValue(flags, 'kind', existingManifest?.kind || 'preview'),
-    title: flagValue(flags, 'title', existingManifest?.title || titleFromId(artifactId)),
-    summary: flagValue(flags, 'summary', existingManifest?.summary || `Published from ${path.basename(resolvedSource)}`),
-    status: flagValue(flags, 'status', existingManifest?.status || 'active'),
-    labels: labels.length > 0 ? labels : existingManifest?.labels,
-    pinned: booleanFlag(flags, 'pin', existingManifest?.pinned || false),
+    kind: opts.kind ?? existingManifest?.kind ?? 'preview',
+    title: opts.title ?? existingManifest?.title ?? titleFromId(artifactId),
+    summary: opts.summary ?? existingManifest?.summary ?? `Published from ${path.basename(resolvedSource)}`,
+    status: opts.status ?? existingManifest?.status ?? 'active',
+    labels: opts.labels && opts.labels.length > 0 ? opts.labels : existingManifest?.labels,
+    pinned: opts.pinned ?? existingManifest?.pinned ?? false,
     render: {
       type: renderType,
       entry,
@@ -976,22 +791,50 @@ function putArtifact(baseDir: string, sourceFile: string, flags: Flags): void {
   appendWorkspaceEvent(workspaceDir, existingManifest ? 'updated' : 'published', 'artifact', artifactId, 'agent', {
     source: resolvedSource,
   });
+  return manifest;
+}
+
+async function putArtifact(baseDir: string, sourceFile: string, flags: Flags): Promise<void> {
+  const workspaceDir = ensureWorkspaceExists(baseDir);
+  const resolvedSource = path.resolve(sourceFile);
+
+  if (!fs.existsSync(resolvedSource)) {
+    console.error(`Artifact source not found: ${resolvedSource}`);
+    process.exit(1);
+  }
+
+  const defaultId = slugify(path.basename(resolvedSource, path.extname(resolvedSource))) || 'artifact';
+  const artifactId = slugify(flagValue(flags, 'id', defaultId));
+  const labels = parseIdList(flags, 'label');
+  const manifest = storeArtifact(workspaceDir, resolvedSource, {
+    id: artifactId,
+    kind: flagValue(flags, 'kind'),
+    title: flagValue(flags, 'title'),
+    summary: flagValue(flags, 'summary'),
+    status: flagValue(flags, 'status'),
+    labels,
+    pinned: hasFlag(flags, 'pin') ? booleanFlag(flags, 'pin', false) : undefined,
+  });
+  const artifactDir = artifactDirectory(workspaceDir, artifactId);
   updateUiState(workspaceDir, {
     route: `/app?artifact=${artifactId}`,
     selectedArtifactId: artifactId,
   });
+  const hubOutcome = await pushArtifact(workspaceDir, artifactId, originForWorkspace(workspaceDir, flags), flags);
 
   outputResult(
     {
       ok: true,
       artifact: manifest,
       path: artifactDir,
+      hub: hubOutcome,
     },
     flags,
     () => {
       console.log(`Artifact ${artifactId} -> ${path.join('.humanctl', 'artifacts', artifactId)}`);
     }
   );
+  reportHubOutcome(hubOutcome, flags);
 }
 
 function deleteArtifact(baseDir: string, artifactId: string, flags: Flags): void {
@@ -1436,6 +1279,16 @@ if (command === 'init') {
   process.exit(0);
 }
 
+// Async commands return from main() and let the event loop drain, so a hub
+// push or a --wait poll finishes and process.exitCode (not process.exit) is
+// what ends the process. A rejection is the one thing that must not vanish.
+function runAsync(work: Promise<void>): void {
+  work.catch((err: unknown) => {
+    console.error(err instanceof Error ? err.message : String(err));
+    process.exitCode = 1;
+  });
+}
+
 function main(): void {
 if (command === 'note' || command === 'btw') {
   const { positionals, flags } = parseFlags(args.slice(1));
@@ -1445,7 +1298,7 @@ if (command === 'note' || command === 'btw') {
     process.exit(1);
   }
   // async: the note routes through the command registry; no hard exit here.
-  appendNote(message, flags);
+  runAsync(appendNote(message, flags));
   return;
 }
 
@@ -1496,8 +1349,8 @@ if (command === 'artifact') {
       process.exit(1);
     }
 
-    putArtifact(String(flagValue(flags, 'workspace', '.')), sourceFile, flags);
-    process.exit(0);
+    runAsync(putArtifact(String(flagValue(flags, 'workspace', '.')), sourceFile, flags));
+    return;
   }
 
   if (subcommand === 'list') {
@@ -1533,8 +1386,8 @@ if (command === 'ask') {
   const { positionals, flags } = parseFlags(args.slice(2));
 
   if (subcommand === 'create') {
-    createAsk(String(flagValue(flags, 'workspace', '.')), flags);
-    process.exit(0);
+    runAsync(createAsk(String(flagValue(flags, 'workspace', '.')), flags));
+    return;
   }
 
   if (subcommand === 'list') {
@@ -1549,6 +1402,10 @@ if (command === 'ask') {
       process.exit(1);
     }
 
+    if (booleanFlag(flags, 'wait', false)) {
+      runAsync(waitForAnswer(String(flagValue(flags, 'workspace', '.')), askId, flags));
+      return;
+    }
     getAsk(String(flagValue(flags, 'workspace', '.')), askId, flags);
     process.exit(0);
   }
@@ -1560,8 +1417,8 @@ if (command === 'ask') {
       process.exit(1);
     }
 
-    updateAsk(String(flagValue(flags, 'workspace', '.')), askId, flags);
-    process.exit(0);
+    runAsync(updateAsk(String(flagValue(flags, 'workspace', '.')), askId, flags));
+    return;
   }
 
   if (subcommand === 'answer') {
@@ -1571,8 +1428,19 @@ if (command === 'ask') {
       process.exit(1);
     }
 
-    answerAskCommand(String(flagValue(flags, 'workspace', '.')), askId, flags);
-    process.exit(0);
+    runAsync(answerAskCommand(String(flagValue(flags, 'workspace', '.')), askId, flags));
+    return;
+  }
+
+  if (subcommand === 'close') {
+    const askId = positionals[0];
+    if (!askId) {
+      console.error('humanctl ask close requires an ask id');
+      process.exit(1);
+    }
+
+    runAsync(closeAsk(String(flagValue(flags, 'workspace', '.')), askId, flags));
+    return;
   }
 
   if (subcommand === 'delete') {
@@ -1582,9 +1450,15 @@ if (command === 'ask') {
       process.exit(1);
     }
 
-    deleteAsk(String(flagValue(flags, 'workspace', '.')), askId, flags);
-    process.exit(0);
+    runAsync(deleteAsk(String(flagValue(flags, 'workspace', '.')), askId, flags));
+    return;
   }
+}
+
+if (command === 'hub') {
+  // serve | config | push | status | token; see bin/hub-commands.ts and docs/hub.md.
+  runAsync(runHubCommand(args.slice(1), parseFlags));
+  return;
 }
 
 if (command === 'watch') {

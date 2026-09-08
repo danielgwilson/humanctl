@@ -23,6 +23,12 @@ export default defineConfig([
       // this entry, dist/lib/vault-snapshot.js is never emitted and the
       // utilityProcess crash-loops on boot, failing every reader read.
       'lib/vault-snapshot.ts',
+      // The hub (docs/hub.md): store + server + client + page, required at a
+      // relative path from the compiled CLI (bin/hub-commands.ts requires
+      // '../lib/hub' and '../lib/hub-page'), so both need their own dist entry
+      // and both ship in the npm package (see package.json "files").
+      'lib/hub.ts',
+      'lib/hub-page.ts',
     ],
     outDir: 'dist/lib',
     format: ['cjs'],

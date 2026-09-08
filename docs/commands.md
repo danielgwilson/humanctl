@@ -57,6 +57,10 @@ writing:
 | `atlas.ask` | action | no | `question*, engine` |
 | `app.open-external` | action | no | `url*` |
 | `app.open-path` | action | no | `path*` |
+| `hub.ingest` | action | yes | `kind*, origin*, payload*, id, dir` (server side of `POST /api/ingest`; see docs/hub.md) |
+| `hub.send` | action | yes | `kind*, origin*, payload*, id, url, token` (one client push; a failed push is reported, not thrown) |
+| `hub.digest` | action | yes | `limit, maxAgeH, titles, url, token, host` (build + push this machine's session digest) |
+| `hub.wait` | observation | yes | `askId*, outcome*, via, waitedSeconds` (the outcome of one `ask get --wait`) |
 
 `*` marks a required param. `kind: action` mutates durable state or spawns a
 process; `kind: observation` only reads. `direct: yes` means the command is
