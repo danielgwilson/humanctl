@@ -60,7 +60,7 @@ jobs:
       # package contents for personal home paths and credential shapes.
       - run: npm run package:check
       - run: npm run publish:check
-      - run: node --check dist/lib/sessions.js && node --check dist/lib/pulse.js && node --check dist/lib/commands.js && node --check dist/lib/span.js && node --check dist/lib/pricing.js && node --check dist/lib/harness-icons.js && node --check dist/lib/summary-budget.js && node --check dist/lib/claude-quota.js && node --check dist/bin/humanctl.js && node --check dist/electron/main.js && node --check dist/electron/preload.js && node --check dist/electron/reader-service.js
+      - run: node --check dist/lib/sessions.js && node --check dist/lib/pulse.js && node --check dist/lib/commands.js && node --check dist/lib/span.js && node --check dist/lib/pricing.js && node --check dist/lib/harness-icons.js && node --check dist/lib/summary-budget.js && node --check dist/lib/claude-quota.js && node --check dist/lib/hub.js && node --check dist/lib/hub-page.js && node --check dist/bin/humanctl.js && node --check dist/electron/main.js && node --check dist/electron/preload.js && node --check dist/electron/reader-service.js
       - run: npm run pulse:selftest
       - run: npm run reader:selftest
       - run: npm run commands:selftest
@@ -76,6 +76,12 @@ jobs:
       # by level, missing-source-is-null contract) and the span.jsonl upsert.
       # Empties PATH for its own process so it never spawns a real `gh`.
       - run: npm run span:selftest
+      # lib/hub.ts, lib/hub-store.ts, lib/hub-server.ts (docs/hub.md): the fold,
+      # a real server on an ephemeral loopback port (ingest, answer, ack, close,
+      # artifact serving, path traversal, cross-site and token rejection), the
+      # host-scoped token store, harness inference, and the client push. Temp
+      # HOME, no network beyond loopback.
+      - run: npm run hub:selftest
       # Pure-logic perf checks only (watcher filter, budget math, icon-path
       # resolution, PR-chip cache contract): CI has no display server, so the
       # real perf:selftest (a live Electron + CDP gate) is LOCAL-only, run

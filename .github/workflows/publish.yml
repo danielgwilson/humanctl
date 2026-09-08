@@ -52,6 +52,7 @@ jobs:
       - run: npm run quota:selftest
       - run: npm run reader-service:selftest
       - run: npm run span:selftest
+      - run: npm run hub:selftest
       - run: npm run perf:logic-selftest
       - run: npm run bundle:check
       - run: npm run tokens:check

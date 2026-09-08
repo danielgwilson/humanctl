@@ -406,6 +406,27 @@ async function run(): Promise<void> {
     assert.strictEqual(isInboxRelevantChange('events.1.jsonl'), false);
   });
 
+  check('isInboxRelevantChange: the hub\'s files are never relevant (docs/hub.md, write/watch separation)', () => {
+    assert.strictEqual(isInboxRelevantChange('hub.json'), false);
+    assert.strictEqual(isInboxRelevantChange('hub'), false);
+    assert.strictEqual(isInboxRelevantChange('hub/ingest.jsonl'), false);
+    assert.strictEqual(isInboxRelevantChange('hub/digests/laptop.json'), false);
+    assert.strictEqual(isInboxRelevantChange('hub/artifacts/laptop/app-1a2b3c/preview/content.html'), false);
+    assert.strictEqual(isInboxRelevantChange('hub/tokens.json'), false);
+    assert.strictEqual(isInboxRelevantChange('hub/serve.lock'), false);
+  });
+
+  check('hub.* commands are declared with the kinds docs/hub.md promises', () => {
+    const byName = new Map(COMMANDS.map((c) => [c.name, c]));
+    for (const [name, kind] of [['hub.ingest', 'action'], ['hub.send', 'action'], ['hub.digest', 'action'], ['hub.wait', 'observation']] as const) {
+      const decl = byName.get(name);
+      assert.ok(decl, `${name} is declared`);
+      assert.strictEqual(decl!.kind, kind);
+      assert.strictEqual(decl!.direct, true, `${name} answers without the desktop app`);
+    }
+    assert.deepStrictEqual(byName.get('hub.wait')!.params!.outcome.enum, ['answered', 'timed-out', 'closed', 'error']);
+  });
+
   check('isInboxRelevantChange: other registry-owned top-level outputs are not relevant', () => {
     assert.strictEqual(isInboxRelevantChange('atlas.jsonl'), false);
     assert.strictEqual(isInboxRelevantChange('pulse.json'), false);

@@ -256,6 +256,34 @@ export const COMMANDS: CommandDecl[] = [
     desc: 'open an http(s)/linear URL externally',
     params: { url: { type: 'string', required: true } },
   },
+  // ---- hub: one inbox across every machine (docs/hub.md) ----
+  // hub.ingest is the server side: every event the hub accepts over HTTP is
+  // appended through this command, so the hub's own durable writes are one
+  // line in events.jsonl like every other mutation. hub.send is the client
+  // side: one push of a note, ask, artifact, or answer. hub.digest builds and
+  // pushes the session digest. hub.wait records the outcome of an
+  // `ask get --wait` (a cross-session observation that then writes the
+  // answer into the local manifest).
+  {
+    name: 'hub.ingest', kind: 'action', direct: true,
+    desc: 'append one event to the hub store (server side of POST /api/ingest)',
+    params: { kind: { type: 'string', required: true }, origin: { type: 'object', required: true }, payload: { type: 'object', required: true }, id: { type: 'string' }, dir: { type: 'string' } },
+  },
+  {
+    name: 'hub.send', kind: 'action', direct: true,
+    desc: 'push one event (note, ask.upsert, ask.answer, ask.close, artifact.put) to the configured hub',
+    params: { kind: { type: 'string', required: true }, origin: { type: 'object', required: true }, payload: { type: 'object', required: true }, id: { type: 'string' }, url: { type: 'string' }, token: { type: 'string' } },
+  },
+  {
+    name: 'hub.digest', kind: 'action', direct: true,
+    desc: 'build this machine\'s session digest (titles and states, never transcript bodies) and push it to the hub',
+    params: { limit: { type: 'number' }, maxAgeH: { type: 'number' }, titles: { type: 'boolean' }, url: { type: 'string' }, token: { type: 'string' }, host: { type: 'string' } },
+  },
+  {
+    name: 'hub.wait', kind: 'observation', direct: true,
+    desc: 'record the outcome of one `ask get --wait` (answered, timed out, or closed) for the event log',
+    params: { askId: { type: 'string', required: true }, outcome: { type: 'string', required: true, enum: ['answered', 'timed-out', 'closed', 'error'] }, via: { type: 'string' }, waitedSeconds: { type: 'number' } },
+  },
   {
     name: 'app.open-path', kind: 'action',
     desc: 'open a local file in its default app',
@@ -675,7 +703,10 @@ export async function answerAsk(p: AskAnswerParams, deps: AskAnswerDeps): Promis
 // future addition), this allowlists the two inputs the Inbox actually reads:
 // notes.jsonl (note.post) and asks/<sessionId>.jsonl (appendAskLog). Anything
 // else under ~/.humanctl -- present today or added later -- is ignored here
-// by construction, not by omission.
+// by construction, not by omission. The hub's files (hub/ingest.jsonl,
+// hub/digests/, hub/artifacts/, hub/tokens.json, and hub.json next to them;
+// see docs/hub.md) are the newest such outputs and are pinned excluded by
+// the selftest.
 export function isInboxRelevantChange(filename: string | null | undefined): boolean {
   if (!filename) return true; // some platforms report a null filename; treat as "maybe relevant"
   const norm = String(filename).split(path.sep).join('/');
@@ -886,6 +917,29 @@ const DIRECT_HANDLERS: Record<string, CommandHandler> = {
     const { readClaudeQuota } = require('./claude-quota') as typeof import('./claude-quota');
     return { ok: true, quota: await readClaudeQuota() };
   },
+  'hub.ingest': (p) => {
+    const hub = require('./hub') as typeof import('./hub');
+    return hub.ingestIntoStore(hub.getHubStore(p.dir), p);
+  },
+  'hub.send': async (p) => {
+    const hub = require('./hub') as typeof import('./hub');
+    const cfg = p.url ? { url: String(p.url).replace(/\/+$/, ''), token: p.token } : hub.readHubConfig();
+    if (!cfg) return { ok: true, pushed: false, error: 'no hub configured (humanctl hub config --url ...)' };
+    const r = await hub.pushEvent(cfg, { kind: p.kind, origin: p.origin, payload: p.payload, id: p.id });
+    // A failed push is reported, not thrown: the local file is the durable
+    // record and the caller decides whether the push was required.
+    return { ok: true, pushed: r.ok, status: r.status, error: r.error, url: cfg.url, response: r.json };
+  },
+  'hub.digest': async (p) => {
+    const hub = require('./hub') as typeof import('./hub');
+    const cfg = p.url ? { url: String(p.url).replace(/\/+$/, ''), token: p.token } : hub.readHubConfig();
+    if (!cfg) return { ok: false, error: 'no hub configured (humanctl hub config --url ...)' };
+    const titles = typeof p.titles === 'boolean' ? p.titles : hub.isPrivateHubUrl(cfg.url);
+    const built = hub.buildDigest({ limit: p.limit, maxAgeH: p.maxAgeH, titles, origin: p.host ? { host: p.host } : undefined });
+    const r = await hub.pushEvent(cfg, { kind: 'digest', origin: built.origin, payload: built.payload });
+    return { ok: r.ok, pushed: r.ok, status: r.status, error: r.error, url: cfg.url, host: built.origin.host, sessions: (built.payload.sessions as unknown[]).length, titles };
+  },
+  'hub.wait': (p) => ({ ok: true, askId: p.askId, outcome: p.outcome, via: p.via, waitedSeconds: p.waitedSeconds }),
 };
 
 export interface RegistryInvokeCtx {
