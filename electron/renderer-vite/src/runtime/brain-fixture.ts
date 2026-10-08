@@ -7,7 +7,9 @@ import type { VaultSnapshotModel } from './contracts';
  * stands in for a real producer so the Brain view is fully reviewable without
  * any real data, and it exercises the exact generic shape a real exporter must
  * emit (labels/annotations/spec/relations, pre-resolved status, queues, and a
- * views hint). Dates are fixed so screenshots are deterministic.
+ * views hint). Contact dates are fixed so screenshots are deterministic; the
+ * snapshot and ingest times are rebased to the load time by
+ * fixtureVaultSnapshot below, because the view renders them as ages.
  */
 export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
   apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
@@ -231,3 +233,58 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
     ],
   },
 };
+
+export type FixtureBrainVariant = 'healthy' | 'stale';
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+function isoAt(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+/**
+ * The fixture snapshot as a producer would write it at `now`.
+ *
+ * - healthy: written minutes ago, every source current.
+ * - stale: written minutes ago (the producer still runs on schedule), but one
+ *   source stopped ingesting 16 days ago and another is blocked. This is the
+ *   failure a fresh snapshot timestamp alone hides, so the browser loop and
+ *   screenshots can review the warning path. Select it with `?brain=stale`.
+ */
+export function fixtureVaultSnapshot(variant: FixtureBrainVariant = 'healthy', now: number = Date.now()): VaultSnapshotModel {
+  const base = JSON.parse(JSON.stringify(FIXTURE_VAULT_SNAPSHOT)) as VaultSnapshotModel;
+  if (variant === 'stale') {
+    const behind = isoAt(now - 16 * DAY_MS);
+    const written = isoAt(now - 40 * MINUTE_MS);
+    return {
+      ...base,
+      generatedAt: written,
+      vitals: {
+        entities: 82,
+        canonPages: 61,
+        lastIngest: behind,
+        ingestOk: false,
+        notice: 'Meeting log ingest is 16 days behind. Last-contact dates after that are unverified.',
+        sources: [
+          { label: 'Meeting log', status: 'partial', lastSuccessAt: behind, dataThrough: behind, note: '4 items waiting to be ingested' },
+          { label: 'Message archive', status: 'blocked', lastSuccessAt: isoAt(now - 5 * DAY_MS), note: 'sign-in expired' },
+          { label: 'Notes folder', status: 'ok', lastSuccessAt: written, dataThrough: written },
+        ],
+      },
+    };
+  }
+  const lastIngest = isoAt(now - 2 * HOUR_MS);
+  return {
+    ...base,
+    generatedAt: isoAt(now - 12 * MINUTE_MS),
+    vitals: {
+      entities: 82,
+      canonPages: 61,
+      lastIngest,
+      ingestOk: true,
+      sources: ['Meeting log', 'Message archive', 'Notes folder'].map((label) => ({ label, status: 'ok', lastSuccessAt: lastIngest, dataThrough: lastIngest })),
+    },
+  };
+}

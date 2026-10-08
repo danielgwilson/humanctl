@@ -20,10 +20,11 @@
 // settings) x both themes, plus session detail x both themes, plus the
 // chief-of-staff conversation x both themes, plus sidebar and chief-of-staff
 // collapsed and sheet states x both themes, plus a rich Brain person detail
-// in both themes, one PNG each, via
+// in both themes, plus the Brain list and person page loaded with the stale
+// fixture snapshot (`?brain=stale`) in both themes, one PNG each, via
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
 // Its compatibility surface is setTheme, setView, openDetail, and
-// setChiefOfStaff. 24 PNGs
+// setChiefOfStaff. 28 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -435,6 +436,50 @@ async function assertBrainDossierBehavior(cdp) {
   log('Brain dossier assertions passed: keyboard open, hierarchy, list, relation, evidence, and focus restore');
 }
 
+async function brainFreshnessState(cdp) {
+  return evalJS(cdp, `(() => {
+    const banner = document.querySelector('[data-brain-freshness]');
+    const tile = document.querySelector('[data-brain-vital="Last ingest"]');
+    const age = document.querySelector('[data-brain-snapshot-age]');
+    return {
+      banner: banner ? banner.textContent || '' : null,
+      sources: banner ? banner.querySelectorAll('li').length : 0,
+      tile: tile ? tile.textContent || '' : null,
+      age: age ? { state: age.getAttribute('data-brain-snapshot-age'), text: age.textContent || '' } : null,
+    };
+  })()`);
+}
+
+// Healthy fixture: no banner, an ISO last-ingest rendered as date plus age,
+// and a fresh snapshot age in the header.
+async function assertBrainHealthyFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const state = await brainFreshnessState(cdp);
+  assert(state.banner === null, `healthy Brain snapshot should show no stale banner, received ${state.banner}`);
+  assert(state.tile && /ago · clean/.test(state.tile), `healthy Last ingest tile should read "<age> ago · clean", received ${state.tile}`);
+  assert(state.age && state.age.state === 'fresh' && / ago$/.test(state.age.text.trim()), `header should show a fresh snapshot age, received ${JSON.stringify(state.age)}`);
+  log('Brain freshness assertions passed: healthy snapshot shows no banner, a dated ingest, and a fresh age');
+}
+
+// Stale fixture (?brain=stale): the banner carries the producer notice and the
+// two sources that are not current, on both the list and the person page.
+async function assertBrainStaleFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const list = await brainFreshnessState(cdp);
+  assert(list.banner && list.banner.includes('16 days behind'), `stale Brain snapshot should show the producer notice, received ${list.banner}`);
+  assert(list.sources === 2, `stale banner should list the two sources that are not current, received ${list.sources}`);
+  assert(list.banner.includes('data through') && list.banner.includes('16d ago'), `stale banner should show the data-through age, received ${list.banner}`);
+  assert(list.tile && /16d ago · stale/.test(list.tile), `stale Last ingest tile should read "16d ago · stale", received ${list.tile}`);
+  await openFixtureBrainDossier(cdp);
+  const person = await brainFreshnessState(cdp);
+  assert(person.banner && person.banner.includes('16 days behind'), `person page should repeat the stale banner, received ${person.banner}`);
+  await evalJS(cdp, `[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('All people'))?.click(); true`);
+  await settle(cdp);
+  log('Brain freshness assertions passed: stale banner, source list, stale tile, and person-page banner');
+}
+
 async function openFixtureBrainDossier(cdp) {
   await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
   await settle(cdp);
@@ -490,6 +535,7 @@ async function main() {
     await assertFoundationBehavior(cdp);
     await assertBrainSearchBehavior(cdp);
     await assertBrainDossierBehavior(cdp);
+    await assertBrainHealthyFreshness(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);
@@ -542,7 +588,29 @@ async function main() {
       await settle(cdp);
     }
 
-    log(`done: ${(VIEWS.length + 6) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    // Stale Brain pass: reload the same bundle with the stale fixture snapshot
+    // so the warning path is captured and asserted, not just the healthy one.
+    await cdp.send('Page.navigate', { url: `${url}?brain=stale` });
+    let staleBooted = false;
+    for (let i = 0; i < BOOT_POLL_ATTEMPTS; i++) {
+      await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
+      const ready = await evalJS(cdp, `location.search === '?brain=stale' && !!(window.__humanctlPerf && window.__humanctlPerf.setTheme)`);
+      if (ready) { staleBooted = true; break; }
+    }
+    if (!staleBooted) throw new Error('renderer never booted with ?brain=stale');
+    await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+    await assertBrainStaleFreshness(cdp);
+    for (const theme of THEMES) {
+      await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); window.__humanctlPerf.setView('inbox'); true`);
+      await settle(cdp);
+      await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+      await settle(cdp);
+      await capture(cdp, outDir, `brain-stale-${theme}.png`);
+      await openFixtureBrainDossier(cdp);
+      await capture(cdp, outDir, `brain-person-stale-${theme}.png`);
+    }
+
+    log(`done: ${(VIEWS.length + 8) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

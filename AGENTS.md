@@ -179,7 +179,8 @@ serves the renderer's browser bundle, drives it headless over CDP (system
 Chrome, not Electron -- see the script's header), and captures all six
 views in both themes, session detail in both themes, and the chief-of-staff
 and sidebar collapsed and sheet states in both themes, plus a rich Brain
-person detail in both themes, 24 PNGs, on fixture
+person detail in both themes, plus the Brain list and person page on the
+stale fixture snapshot in both themes, 28 PNGs, on fixture
 data only. It never touches real session data or `~/.humanctl`. One command,
 one-shot: every timeout inside it bounds a single script run and nothing it
 starts survives the process exiting. The component catalog is not part of the

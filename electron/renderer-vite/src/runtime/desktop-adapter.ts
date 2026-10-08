@@ -1,5 +1,5 @@
 import type { HumanctlAdapter } from './adapter';
-import { createFixtureAdapter } from './fixture-adapter';
+import { createFixtureAdapter, type FixtureAdapterOptions } from './fixture-adapter';
 
 type DesktopBridge = Omit<HumanctlAdapter, 'mode'>;
 type DesktopWindow = Window & { humanctl?: DesktopBridge };
@@ -8,7 +8,18 @@ type DesktopWindow = Window & { humanctl?: DesktopBridge };
 export function createEnvironmentAdapter(): HumanctlAdapter {
   if (typeof window === 'undefined') return createFixtureAdapter();
   const bridge = (window as DesktopWindow).humanctl;
-  return bridge ? createDesktopAdapter(bridge) : createFixtureAdapter();
+  return bridge ? createDesktopAdapter(bridge) : createFixtureAdapter(fixtureOptionsFromLocation());
+}
+
+// Browser fixture mode only: `?brain=stale` serves the stale Brain snapshot so
+// the warning path is reviewable in the dev loop and in screenshots. The
+// desktop build always has the bridge and never reaches this.
+function fixtureOptionsFromLocation(): FixtureAdapterOptions {
+  try {
+    return new URLSearchParams(window.location.search).get('brain') === 'stale' ? { brain: 'stale' } : {};
+  } catch {
+    return {};
+  }
 }
 
 export function createDesktopAdapter(bridge: DesktopBridge): HumanctlAdapter {

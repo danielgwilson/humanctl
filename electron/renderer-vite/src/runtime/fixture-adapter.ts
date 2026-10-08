@@ -1,5 +1,5 @@
 import type { HumanctlAdapter } from './adapter';
-import { FIXTURE_VAULT_SNAPSHOT } from './brain-fixture';
+import { fixtureVaultSnapshot, type FixtureBrainVariant } from './brain-fixture';
 import {
   DEFAULT_APP_STATE,
   type AppState,
@@ -62,7 +62,12 @@ function makeTimeline(session: SessionRow, older = false): TimelinePage {
  * Public-safe synthetic transport for browser development and screenshots.
  * The staggered one-shot delays make independent loading states observable.
  */
-export function createFixtureAdapter(): HumanctlAdapter {
+export interface FixtureAdapterOptions {
+  /** Which synthetic Brain snapshot to serve. Defaults to the healthy one. */
+  brain?: FixtureBrainVariant;
+}
+
+export function createFixtureAdapter(options: FixtureAdapterOptions = {}): HumanctlAdapter {
   const epoch = Date.now();
   let appState: AppState = clone(DEFAULT_APP_STATE as AppState);
 
@@ -265,7 +270,7 @@ export function createFixtureAdapter(): HumanctlAdapter {
       // build and screenshots render a fully populated Brain view. The path
       // argument is ignored here; only the desktop adapter reads a real file.
       await wait(70);
-      return { ok: true, snapshot: clone(FIXTURE_VAULT_SNAPSHOT) };
+      return { ok: true, snapshot: fixtureVaultSnapshot(options.brain) };
     },
     async getSummaryBudget(opts) {
       await wait(30);

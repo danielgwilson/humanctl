@@ -223,8 +223,16 @@ class FakeAdapter implements HumanctlAdapter {
   async markThreadRead(): Promise<BridgeResult> { return { ok: true }; }
   async markAllThreadsRead(): Promise<BridgeResult> { return { ok: true }; }
   async aggregateSkills() { return { ok: true, agg: { skills: { test: 2 }, sessionsWithSkills: 1, totalInvocations: 2 } }; }
+  // When brainHold is set, each Brain read waits until the test releases it,
+  // so overlapping reload requests are observable.
+  brainHold = false;
+  brainPending: Array<() => void> = [];
+  releaseBrain(): void {
+    this.brainPending.splice(0).forEach((release) => release());
+  }
   async getBrain(arg?: { path?: string }) {
     this.brainArgs.push(arg ? clone(arg) : undefined);
+    if (this.brainHold) await new Promise<void>((release) => { this.brainPending.push(release); });
     if (!arg?.path) return { ok: true, snapshot: null };
     return { ok: true, snapshot: { apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1', entities: [{ kind: 'person', id: 'person:test', label: 'Test Person' }] } };
   }
@@ -396,6 +404,8 @@ async function run(): Promise<void> {
   equal(adapter.hotArgs[adapter.hotArgs.length - 1], null, 'stop clears hot session and fixture append timers');
 
   await testQuotaCoalescing();
+  await testBrainLoadCoalescing();
+  await testFixtureBrainVariants();
   await testTimelineCap();
   await testFixtureStatusCounts();
 
@@ -604,6 +614,70 @@ async function testQuotaCoalescing(): Promise<void> {
   equal(runtime.getSnapshot().resources.quota.data?.at, 200, 'newest quota generation wins');
   assert(!committedQuotaTimestamps.includes(100), 'superseded quota generation never commits stale data');
   release();
+}
+
+// The Brain view rereads its snapshot on view entry, on window focus, and on
+// the Reload button. Overlapping requests for the same path must share one
+// read; a request for a different path must not be swallowed by the old one.
+async function testBrainLoadCoalescing(): Promise<void> {
+  const adapter = new FakeAdapter();
+  adapter.resolveState();
+  adapter.resolveSessions();
+  adapter.resolveCore();
+  adapter.resolveQuota();
+  const runtime = createHumanctlRuntime(adapter, { clock: new FakeClock() });
+  const release = runtime.start();
+  await settle();
+  const patched = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: '/fixtures/a.json' } });
+  assert(patched.ok, 'brain path patch succeeds');
+  adapter.brainHold = true;
+
+  const first = runtime.dispatch({ type: 'brain.load' });
+  const joined = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 1, 'a Brain reload requested while one is in flight joins it');
+  equal(runtime.getSnapshot().operations['brain.load']?.status, 'pending', 'the in-flight Brain read is visible as a pending operation');
+  adapter.releaseBrain();
+  const [firstOutcome, joinedOutcome] = await Promise.all([first, joined]);
+  assert(firstOutcome.ok && joinedOutcome.ok, 'joined Brain reloads both succeed');
+  equal(joinedOutcome, firstOutcome, 'a joined Brain reload receives the same outcome');
+  equal(runtime.getSnapshot().resources.brain.status, 'ready', 'Brain snapshot is committed');
+
+  const later = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 2, 'a reload after the previous read settles reads the file again');
+  const moved = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: '/fixtures/b.json' } });
+  assert(moved.ok, 'second brain path patch succeeds');
+  const otherPath = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 3, 'a reload for a different path does not join the in-flight read');
+  equal(adapter.brainArgs[2]?.path, '/fixtures/b.json', 'the new read uses the new path');
+  adapter.releaseBrain();
+  const [laterOutcome, otherOutcome] = await Promise.all([later, otherPath]);
+  assert(laterOutcome.ok && otherOutcome.ok, 'both reads settle');
+  adapter.brainHold = false;
+  const next = await runtime.dispatch({ type: 'brain.load' });
+  assert(next.ok, 'reads resume after overlapping requests settle');
+  equal(adapter.brainArgs.length, 4, 'no Brain read is left joined to a settled request');
+  release();
+}
+
+// The fixture serves a healthy and a stale Brain snapshot so the browser loop
+// and screenshots can review both. The stale one must carry the full freshness
+// shape a producer is expected to write.
+async function testFixtureBrainVariants(): Promise<void> {
+  const healthy = (await createFixtureAdapter().getBrain()).snapshot;
+  assert(healthy, 'fixture serves a healthy snapshot by default');
+  equal(healthy.vitals?.ingestOk, true, 'default fixture snapshot reports healthy ingest');
+  assert(Date.now() - Date.parse(healthy.generatedAt || '') < 60 * 60_000, 'healthy fixture snapshot is rebased to minutes ago');
+  assert(!Number.isNaN(Date.parse(healthy.vitals?.lastIngest || '')), 'healthy fixture lastIngest is ISO');
+
+  const stale = (await createFixtureAdapter({ brain: 'stale' }).getBrain()).snapshot;
+  assert(stale, 'fixture serves the stale snapshot on request');
+  equal(stale.vitals?.ingestOk, false, 'stale fixture reports failed ingest');
+  assert(typeof stale.vitals?.notice === 'string' && stale.vitals.notice.length > 0, 'stale fixture carries a producer notice');
+  const lastIngest = Date.parse(stale.vitals?.lastIngest || '');
+  assert(Date.now() - lastIngest > 7 * 24 * 60 * 60_000, 'stale fixture lastIngest is days old');
+  const notOk = (stale.vitals?.sources || []).filter((source) => source.status !== 'ok');
+  equal(notOk.length, 2, 'stale fixture has two sources that are not current');
+  assert(Date.now() - Date.parse(stale.generatedAt || '') < 60 * 60_000, 'stale fixture snapshot itself is recent, so only vitals expose the staleness');
 }
 
 async function testTimelineCap(): Promise<void> {
