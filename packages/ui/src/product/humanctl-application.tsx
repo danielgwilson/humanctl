@@ -434,6 +434,7 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
   const skillsRequested = useRef(false)
   const budgetRequested = useRef(false)
   const brainRequestedPath = useRef<string | null | undefined>(null)
+  const brainPreviousView = useRef<HumanctlView | null>(null)
   const answeredIds = useRef<Set<string>>(new Set())
 
   useEffect(() => {
@@ -454,11 +455,28 @@ export function HumanctlApplication({ model, dispatch, version }: HumanctlApplic
       budgetRequested.current = true
       void dispatch({ type: "settings.loadBudget", dailyBudgetUSD: state.summaryBudgetUSD ?? 1 })
     }
-    if (state.view === "brain" && (model.resources.brain.status === "idle" || brainRequestedPath.current !== state.brainSnapshotPath)) {
+    // The Brain snapshot is a file another process rewrites, so every entry
+    // into the Brain view rereads it instead of trusting the in-memory copy.
+    // Only the transition into "brain" (or a path change) dispatches, so a
+    // resource status change caused by the load itself never re-triggers it.
+    // The runtime coalesces a load that is already in flight for the same path.
+    const enteredBrain = state.view === "brain" && brainPreviousView.current !== "brain"
+    brainPreviousView.current = state.view
+    if (state.view === "brain" && (enteredBrain || model.resources.brain.status === "idle" || brainRequestedPath.current !== state.brainSnapshotPath)) {
       brainRequestedPath.current = state.brainSnapshotPath
       void dispatch({ type: "brain.load" })
     }
   }, [dispatch, model.resources.brain.status, model.resources.budget.status, model.resources.skills.status, state.brainSnapshotPath, state.summaryBudgetUSD, state.view])
+
+  // Returning to the window while Brain is open rereads the snapshot too. This
+  // is an event listener, not a timer: it fires only on a real focus change,
+  // never at idle, and an unchanged snapshot commits as a no-op.
+  useEffect(() => {
+    if (state.view !== "brain") return
+    const reload = () => { void dispatch({ type: "brain.load" }) }
+    window.addEventListener("focus", reload)
+    return () => window.removeEventListener("focus", reload)
+  }, [dispatch, state.view])
 
   useEffect(() => {
     function keydown(event: KeyboardEvent) {

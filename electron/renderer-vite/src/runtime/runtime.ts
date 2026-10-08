@@ -183,6 +183,7 @@ export class HumanctlRuntime {
   private quotaInFlight: Promise<void> | null = null;
   private quotaQueued = false;
   private quotaGeneration = 0;
+  private brainInFlight: { path: string | undefined; promise: Promise<DispatchOutcome<RuntimeResources['brain']['data']>> } | null = null;
   private stateHydrated = false;
   private preHydrationPatch: Partial<AppState> = {};
   private timelineGeneration = 0;
@@ -569,10 +570,18 @@ export class HumanctlRuntime {
     });
   }
 
-  private async loadBrain(): Promise<DispatchOutcome<RuntimeResources['brain']['data']>> {
-    this.beginResource('brain');
+  /**
+   * Brain reloads are requested from several places (entering the view, window
+   * focus, the Reload button). A request for the same path while one is in
+   * flight joins it instead of issuing a second read; a different path starts
+   * its own read.
+   */
+  private loadBrain(): Promise<DispatchOutcome<RuntimeResources['brain']['data']>> {
     const path = this.snapshot.resources.appState.data.brainSnapshotPath;
-    return this.execute('brain.load', () => this.adapter.getBrain({ path }), (result) => {
+    const inFlight = this.brainInFlight;
+    if (inFlight && inFlight.path === path) return inFlight.promise;
+    this.beginResource('brain');
+    const request = this.execute('brain.load', () => this.adapter.getBrain({ path }), (result) => {
       const data = 'snapshot' in result ? result.snapshot || null : null;
       this.commitResource('brain', data);
       return data;
@@ -580,6 +589,11 @@ export class HumanctlRuntime {
       if (!outcome.ok) this.failResource('brain', outcome.error);
       return outcome;
     });
+    const tracked = request.finally(() => {
+      if (this.brainInFlight?.promise === tracked) this.brainInFlight = null;
+    });
+    this.brainInFlight = { path, promise: tracked };
+    return tracked;
   }
 
   private async loadBudget(dailyBudgetUSD: number): Promise<DispatchOutcome<RuntimeResources['budget']['data']>> {
