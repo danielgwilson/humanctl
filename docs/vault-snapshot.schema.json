@@ -13,7 +13,7 @@
       "const": "humanctl.dev/vaultsnapshot/v1alpha1"
     },
     "generatedAt": {
-      "description": "When the producer wrote this snapshot (ISO 8601).",
+      "description": "When the producer wrote this snapshot (ISO 8601). Carry 'Z' or a UTC offset; a value without one is read as the viewer's local time.",
       "type": "string"
     },
     "source": {
@@ -30,8 +30,9 @@
         "lastIngest": { "type": "string", "description": "ISO 8601 (preferred) or a short relative label like '2h'. An ISO value renders as a date plus its age." },
         "ingestOk": { "type": "boolean", "description": "The producer's measured verdict that its sources are current. false shows a warning banner; omitted renders as 'unknown', never as healthy. Compute it from a measurement, never a constant." },
         "notice": { "type": "string", "description": "One sentence the producer writes when ingestOk is false. It becomes the banner text. Omit it when healthy." },
+        "staleAfter": { "type": "string", "description": "ISO 8601 instant after which the viewer treats this snapshot as stale (warning header, banner, 'unverified' tile) even when ingestOk is true. The producer sets it from its own cadence. When absent, the viewer falls back to 24 hours after generatedAt." },
         "sources": {
-          "description": "Optional per-source ingest health, one entry per producer input. Entries whose status is not 'ok' (or 'healthy') are listed under the banner.",
+          "description": "Optional per-source ingest health, one entry per producer input. Entries with affectsIngest true whose status is not 'ok' (or 'healthy') reach the banner (at most three, one line each) and the Last ingest hint; every entry that is not current is listed in a collapsed source detail.",
           "type": "array",
           "items": { "$ref": "#/$defs/source" }
         }
@@ -65,9 +66,10 @@
       "properties": {
         "label": { "type": "string", "description": "Generic display name for the input, e.g. 'Notes folder'. Never a path." },
         "status": { "type": "string", "description": "'ok' (or 'healthy') when current; otherwise a short state such as 'stale' | 'partial' | 'blocked' | 'error', shown as-is." },
-        "lastSuccessAt": { "type": "string", "description": "ISO 8601 time of the last successful ingest run for this source." },
-        "dataThrough": { "type": "string", "description": "ISO 8601 date or time of the newest item this source has ingested. Shown as 'data through <date>, <age>'." },
-        "note": { "type": "string", "description": "One short, non-identifying line on why the source is not current." }
+        "lastSuccessAt": { "type": "string", "description": "ISO 8601 time of the last successful ingest run for this source. Carry 'Z' or a UTC offset." },
+        "dataThrough": { "type": "string", "description": "ISO 8601 date or time of the newest item this source has ingested. Shown as 'data through <date>, <age>'; a date-only value ages in whole local calendar days." },
+        "note": { "type": "string", "description": "One short, non-identifying line on why the source is not current." },
+        "affectsIngest": { "type": "boolean", "description": "true when this source feeds ingestOk. Only these reach the banner and the Last ingest hint; others stay in the collapsed source detail. When no source in the list declares it, every source counts for the banner and the hint stays off." }
       }
     },
     "entity": {

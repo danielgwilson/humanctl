@@ -15,6 +15,7 @@ import type {
   SessionRow,
   TimelineEvent,
 } from './contracts';
+import type { FixtureBrainVariant } from './brain-fixture';
 import { createFixtureAdapter } from './fixture-adapter';
 import { createHumanctlRuntime, FLEET_POLL_MS, type RuntimeClock } from './runtime';
 import {
@@ -659,25 +660,48 @@ async function testBrainLoadCoalescing(): Promise<void> {
   release();
 }
 
-// The fixture serves a healthy and a stale Brain snapshot so the browser loop
-// and screenshots can review both. The stale one must carry the full freshness
+// The fixture serves one Brain snapshot per freshness path so the browser loop
+// and screenshots can review each. Every variant must carry the full freshness
 // shape a producer is expected to write.
 async function testFixtureBrainVariants(): Promise<void> {
-  const healthy = (await createFixtureAdapter().getBrain()).snapshot;
-  assert(healthy, 'fixture serves a healthy snapshot by default');
-  equal(healthy.vitals?.ingestOk, true, 'default fixture snapshot reports healthy ingest');
-  assert(Date.now() - Date.parse(healthy.generatedAt || '') < 60 * 60_000, 'healthy fixture snapshot is rebased to minutes ago');
-  assert(!Number.isNaN(Date.parse(healthy.vitals?.lastIngest || '')), 'healthy fixture lastIngest is ISO');
+  const HOUR = 60 * 60_000;
+  const read = async (brain?: FixtureBrainVariant) => {
+    const snapshot = (await createFixtureAdapter(brain ? { brain } : {}).getBrain()).snapshot;
+    assert(snapshot, `fixture serves the ${brain || 'default'} snapshot`);
+    const sources = snapshot.vitals?.sources || [];
+    assert(sources.length > 0 && sources.every((source) => typeof source.affectsIngest === 'boolean'), `${brain || 'default'} fixture marks every source with affectsIngest`);
+    equal(Date.parse(snapshot.vitals?.staleAfter || '') - Date.parse(snapshot.generatedAt || ''), 3 * HOUR, `${brain || 'default'} fixture declares staleAfter three hours after generatedAt`);
+    return { snapshot, notOk: sources.filter((source) => source.status !== 'ok') };
+  };
 
-  const stale = (await createFixtureAdapter({ brain: 'stale' }).getBrain()).snapshot;
-  assert(stale, 'fixture serves the stale snapshot on request');
-  equal(stale.vitals?.ingestOk, false, 'stale fixture reports failed ingest');
-  assert(typeof stale.vitals?.notice === 'string' && stale.vitals.notice.length > 0, 'stale fixture carries a producer notice');
-  const lastIngest = Date.parse(stale.vitals?.lastIngest || '');
-  assert(Date.now() - lastIngest > 7 * 24 * 60 * 60_000, 'stale fixture lastIngest is days old');
-  const notOk = (stale.vitals?.sources || []).filter((source) => source.status !== 'ok');
-  equal(notOk.length, 2, 'stale fixture has two sources that are not current');
-  assert(Date.now() - Date.parse(stale.generatedAt || '') < 60 * 60_000, 'stale fixture snapshot itself is recent, so only vitals expose the staleness');
+  const healthy = await read();
+  equal(healthy.snapshot.vitals?.ingestOk, true, 'default fixture snapshot reports healthy ingest');
+  assert(Date.now() - Date.parse(healthy.snapshot.generatedAt || '') < 60 * 60_000, 'healthy fixture snapshot is rebased to minutes ago');
+  assert(!Number.isNaN(Date.parse(healthy.snapshot.vitals?.lastIngest || '')), 'healthy fixture lastIngest is ISO');
+  assert(Date.parse(healthy.snapshot.vitals?.staleAfter || '') > Date.now(), 'healthy fixture is inside its refresh window');
+  equal(healthy.notOk.length, 0, 'healthy fixture has every source current');
+
+  const stale = await read('stale');
+  equal(stale.snapshot.vitals?.ingestOk, false, 'stale fixture reports failed ingest');
+  assert(typeof stale.snapshot.vitals?.notice === 'string' && stale.snapshot.vitals.notice.length > 0, 'stale fixture carries a producer notice');
+  assert(Date.now() - Date.parse(stale.snapshot.vitals?.lastIngest || '') > 7 * 24 * HOUR, 'stale fixture lastIngest is days old');
+  equal(stale.notOk.filter((source) => source.affectsIngest).length, 4, 'stale fixture has four ingest sources not current, one more than the banner cap');
+  equal(stale.notOk.filter((source) => !source.affectsIngest).length, 1, 'stale fixture also has a background source not current');
+  assert(Date.now() - Date.parse(stale.snapshot.generatedAt || '') < 60 * 60_000, 'stale fixture snapshot itself is recent, so only vitals expose the staleness');
+
+  const other = await read('partial-other');
+  equal(other.snapshot.vitals?.ingestOk, true, 'partial-other fixture reports healthy ingest');
+  equal(JSON.stringify(other.notOk.map((source) => [source.status, source.affectsIngest])), JSON.stringify([['partial', false]]), 'partial-other fixture has exactly one background source partial');
+
+  const ingest = await read('partial-ingest');
+  equal(ingest.snapshot.vitals?.ingestOk, true, 'partial-ingest fixture reports healthy ingest');
+  equal(JSON.stringify(ingest.notOk.map((source) => [source.status, source.affectsIngest])), JSON.stringify([['partial', true]]), 'partial-ingest fixture has exactly one ingest source partial');
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(ingest.notOk[0]?.dataThrough || ''), 'the partial calendar source reports a date-only dataThrough');
+
+  const expired = await read('expired');
+  equal(expired.snapshot.vitals?.ingestOk, true, 'expired fixture still claims healthy ingest');
+  assert(Date.parse(expired.snapshot.vitals?.staleAfter || '') < Date.now(), 'expired fixture is past its staleAfter');
+  equal(expired.notOk.length, 0, 'expired fixture has every source current, so only staleAfter exposes it');
 }
 
 async function testTimelineCap(): Promise<void> {

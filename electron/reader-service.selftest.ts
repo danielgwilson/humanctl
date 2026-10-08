@@ -277,7 +277,11 @@ async function main(): Promise<void> {
     ingestOk: false,
     lastIngest: '2026-09-22T12:00:00Z',
     notice: 'One source is behind.',
-    sources: [{ label: 'Notes folder', status: 'partial', lastSuccessAt: '2026-09-22T12:00:00Z', dataThrough: '2026-09-22', note: 'items waiting' }],
+    staleAfter: '2026-09-22T08:00:00-07:00',
+    sources: [
+      { label: 'Notes folder', status: 'partial', lastSuccessAt: '2026-09-22T12:00:00Z', dataThrough: '2026-09-22', note: 'items waiting', affectsIngest: true },
+      { label: 'Message archive', status: 'blocked', affectsIngest: false },
+    ],
   };
   fs.writeFileSync(snapshotPath, JSON.stringify({
     apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
@@ -309,7 +313,7 @@ async function main(): Promise<void> {
     assert.strictEqual(snap.entities[0].spec?.sections?.[0].level, 2, 'section heading depth passes through the reader unchanged');
     assert.deepStrictEqual(snap.entities[0].spec?.sections?.[0].items, ['Ship the bounded slice'], 'section list items pass through the reader unchanged');
     assert.strictEqual(snap.entities[0].spec?.sections?.[1].level, 3, 'heading-only nested sections remain valid');
-    assert.deepStrictEqual((r.result as { snapshot: { vitals?: unknown } }).snapshot.vitals, freshnessVitals, 'freshness vitals (notice, sources) pass through the reader unchanged');
+    assert.deepStrictEqual((r.result as { snapshot: { vitals?: unknown } }).snapshot.vitals, freshnessVitals, 'freshness vitals (notice, staleAfter, sources with affectsIngest) pass through the reader unchanged');
   });
 
   await checkAsync('brain.snapshot on a missing file throws, surfacing as an honest ok:false', async () => {

@@ -32,13 +32,14 @@ swappable views). The precedent is deliberate.
 ```jsonc
 {
   "apiVersion": "humanctl.dev/vaultsnapshot/v1alpha1",   // version lives IN the doc
-  "generatedAt": "2026-08-02T09:00:00Z",
+  "generatedAt": "2026-08-02T09:00:00-07:00",               // carry an offset (or Z)
   "vitals": {
     "entities": 82, "canonPages": 61,
-    "lastIngest": "2026-08-02T07:00:00Z", "ingestOk": true,     // measured, never a constant
+    "lastIngest": "2026-08-02T07:00:00-07:00", "ingestOk": true, // measured, never a constant
     "notice": "One sentence, only when ingestOk is false.",
-    "sources": [{ "label": "Notes folder", "status": "ok",
-                  "lastSuccessAt": "2026-08-02T08:50:00Z", "dataThrough": "2026-08-02T08:40:00Z" }]
+    "staleAfter": "2026-08-02T12:00:00-07:00",                 // producer's refresh deadline
+    "sources": [{ "label": "Notes folder", "status": "ok", "affectsIngest": true,
+                  "lastSuccessAt": "2026-08-02T08:50:00-07:00", "dataThrough": "2026-08-02" }]
   },
   "entities": [{
     "kind": "person",
@@ -113,24 +114,44 @@ All of these fields are optional and additive under `v1alpha1`.
 
 | Field | Meaning |
 |---|---|
+| `generatedAt` | When the producer wrote the snapshot. Write it with `Z` or a UTC offset. A value with no offset is read as the viewer's local time, which is only right when producer and viewer share a timezone. |
 | `vitals.ingestOk` | The producer's measured verdict that its sources are current. Compute it from a measurement (for example, newest ingested item versus now, against the producer's own threshold). A hardcoded value is worse than omitting it. |
 | `vitals.lastIngest` | When data last arrived. ISO 8601 is preferred; a short relative label like `"2h"` is still accepted and shown as-is. |
 | `vitals.notice` | One sentence the producer writes when `ingestOk` is `false`, saying what is behind and what that means for the data. Omit it when healthy. |
-| `vitals.sources[]` | One entry per producer input: `label` and `status` (required), plus optional `lastSuccessAt`, `dataThrough` (ISO 8601), and `note`. `status` is `ok` (or `healthy`) when current; any other value, such as `stale`, `partial`, `blocked`, or `error`, is shown as written. |
+| `vitals.staleAfter` | ISO 8601 instant after which the viewer treats this snapshot as stale, even when `ingestOk` is `true`. The producer sets it from its own cadence, for example write time plus a few runs. When it is absent, the viewer falls back to 24 hours after `generatedAt`. |
+| `vitals.sources[]` | One entry per producer input: `label` and `status` (required), plus optional `lastSuccessAt`, `dataThrough` (ISO 8601), `note`, and `affectsIngest`. `status` is `ok` (or `healthy`) when current; any other value, such as `stale`, `partial`, `blocked`, or `error`, is shown as written. |
+| `vitals.sources[].affectsIngest` | `true` when this source feeds `ingestOk`. Only these sources reach the banner and the Last ingest hint. A source marked `false`, or left unmarked while another source is marked, is background: it is listed only in the collapsed source detail. When no source declares the field, every source counts for the banner, as it did before the field existed, and the hint stays off. |
+
+Times follow one rule everywhere: a date-only value (`YYYY-MM-DD`) is that
+calendar day in the viewer's timezone and ages in whole days from local
+midnight ("today", "yesterday", "3d ago"), never in hours. A date-time with
+`Z` or an offset is that exact instant; one without an offset is local time.
 
 What the Brain view does with them:
 
 - **`ingestOk: false`** shows a warning banner above the People list and on
   every person page. Its text is `vitals.notice`, falling back to "Sources are
-  stale since <date>." Under it, each source whose status is not `ok` is
-  listed with its label, status, and data-through age.
-- **The Last ingest tile** shows an ISO `lastIngest` as a date plus its age,
-  in the warning tone when `ingestOk` is `false`. A missing `ingestOk` reads
-  `unknown`, never `clean`.
-- **The header** shows `generatedAt` with its age. When the snapshot is older
-  than 24 hours the header turns to the warning tone and the banner appears
-  even if `ingestOk` is `true`: a producer that stopped running cannot report
-  that it stopped. This is the one freshness rule the viewer applies itself,
+  stale since <date>." Under it, up to three ingest-affecting sources that are
+  not `ok` are listed, one line each, most severe first (`blocked` and `error`,
+  then `stale`, then `partial`, then anything else; ties keep the producer's
+  order). A "+N more" line counts the rest.
+- **`ingestOk: true` with an ingest-affecting source not `ok`** raises no
+  banner. The Last ingest tile names it instead of reading `clean`, for
+  example "1 source partial", in a quieter notice tone.
+- **The source detail** is a collapsed "N sources not current" line under the
+  health strip on the People list. It lists every source that is not `ok`,
+  ingest-affecting ones first, with full notes. It is the only place
+  background sources appear.
+- **The Last ingest tile** shows an ISO `lastIngest` as a date plus its age.
+  It turns to the warning tone and reads `stale` when `ingestOk` is `false`,
+  and `unverified` when the snapshot is past its refresh time. A missing
+  `ingestOk` reads `unknown`, never `clean`.
+- **The header** shows `generatedAt` with its age. Once the snapshot is past
+  `vitals.staleAfter` (or older than 24 hours when the producer gives none),
+  the header turns to the warning tone and the banner appears even if
+  `ingestOk` is `true`: a producer that stopped running cannot report that it
+  stopped. That banner lists no sources, because they are not why it fires.
+  The 24 hour fallback is the one freshness rule the viewer applies itself,
   and it is a presentation threshold, not a domain rule.
 
 ## How humanctl reads it
@@ -150,8 +171,10 @@ What the Brain view does with them:
   stable IDs, roles, labels, summaries, sections, evidence, and relationships.
 - In the browser build and screenshots, a fabricated snapshot in the fixture
   adapter stands in for a real producer, so the view is always reviewable without
-  any real data. Add `?brain=stale` to the dev-server URL to load the stale
-  variant and review the warning path.
+  any real data. Add `?brain=<variant>` to the dev-server URL to review a
+  freshness path: `stale` (ingest behind), `partial-other` (a background source
+  partial), `partial-ingest` (an ingest source partial while `ingestOk` is
+  `true`), or `expired` (past `staleAfter`).
 
 ## The one guarantee
 

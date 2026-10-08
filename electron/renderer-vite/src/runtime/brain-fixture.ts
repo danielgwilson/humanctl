@@ -234,7 +234,9 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
   },
 };
 
-export type FixtureBrainVariant = 'healthy' | 'stale';
+export type FixtureBrainVariant = 'healthy' | 'stale' | 'partial-other' | 'partial-ingest' | 'expired';
+
+export const FIXTURE_BRAIN_VARIANTS: ReadonlyArray<FixtureBrainVariant> = ['healthy', 'stale', 'partial-other', 'partial-ingest', 'expired'];
 
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
@@ -244,47 +246,77 @@ function isoAt(ms: number): string {
   return new Date(ms).toISOString();
 }
 
+// A local calendar day, the way a producer writes a date-only value.
+function localDay(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The fixture producer's inputs: [label, affectsIngest]. The first four feed
+// its ingest verdict; the last two are background sources that never do.
+const FIXTURE_SOURCES: ReadonlyArray<[string, boolean]> = [
+  ['Meeting log', true], ['Calendar', true], ['Notes folder', true], ['Task tracker', true],
+  ['Message archive', false], ['Chat export', false],
+];
+
+// Per variant, the sources that are not current: label -> [status, note].
+const FIXTURE_ISSUES: Record<FixtureBrainVariant, Record<string, [string, string]>> = {
+  healthy: {},
+  stale: {
+    'Meeting log': ['stale', '4 items waiting to be ingested'],
+    Calendar: ['blocked', 'sign-in expired'],
+    'Notes folder': ['partial', '2 of 3 folders read'],
+    'Task tracker': ['partial', 'export timed out after 30 seconds'],
+    'Message archive': ['blocked', 'export paused by its owner'],
+  },
+  'partial-other': { 'Message archive': ['partial', '2 of 3 mailboxes read'] },
+  'partial-ingest': { Calendar: ['partial', '1 of 2 accounts read'] },
+  expired: {},
+};
+
 /**
- * The fixture snapshot as a producer would write it at `now`.
+ * The fixture snapshot as a producer would write it at `now`. Every variant
+ * declares `staleAfter` three hours after `generatedAt` and marks which
+ * sources affect ingest. Select one in the browser with `?brain=<variant>`.
  *
  * - healthy: written minutes ago, every source current.
- * - stale: written minutes ago (the producer still runs on schedule), but one
- *   source stopped ingesting 16 days ago and another is blocked. This is the
- *   failure a fresh snapshot timestamp alone hides, so the browser loop and
- *   screenshots can review the warning path. Select it with `?brain=stale`.
+ * - stale: written minutes ago (the producer still runs on schedule), but the
+ *   meeting log stopped ingesting 16 days ago and four ingest sources are not
+ *   current: the failure a fresh snapshot timestamp alone hides.
+ * - partial-other: healthy, except one background source is partial.
+ * - partial-ingest: ingestOk is true, but one ingest source is partial.
+ * - expired: written five hours ago, so it is past its own staleAfter even
+ *   though its vitals still claim health.
  */
 export function fixtureVaultSnapshot(variant: FixtureBrainVariant = 'healthy', now: number = Date.now()): VaultSnapshotModel {
   const base = JSON.parse(JSON.stringify(FIXTURE_VAULT_SNAPSHOT)) as VaultSnapshotModel;
-  if (variant === 'stale') {
-    const behind = isoAt(now - 16 * DAY_MS);
-    const written = isoAt(now - 40 * MINUTE_MS);
-    return {
-      ...base,
-      generatedAt: written,
-      vitals: {
-        entities: 82,
-        canonPages: 61,
-        lastIngest: behind,
-        ingestOk: false,
-        notice: 'Meeting log ingest is 16 days behind. Last-contact dates after that are unverified.',
-        sources: [
-          { label: 'Meeting log', status: 'partial', lastSuccessAt: behind, dataThrough: behind, note: '4 items waiting to be ingested' },
-          { label: 'Message archive', status: 'blocked', lastSuccessAt: isoAt(now - 5 * DAY_MS), note: 'sign-in expired' },
-          { label: 'Notes folder', status: 'ok', lastSuccessAt: written, dataThrough: written },
-        ],
-      },
-    };
-  }
-  const lastIngest = isoAt(now - 2 * HOUR_MS);
+  const stale = variant === 'stale';
+  const written = now - (variant === 'expired' ? 5 * HOUR_MS : stale ? 40 * MINUTE_MS : 12 * MINUTE_MS);
+  const ingested = stale ? now - 16 * DAY_MS : written - 2 * HOUR_MS;
+  const issues = FIXTURE_ISSUES[variant];
   return {
     ...base,
-    generatedAt: isoAt(now - 12 * MINUTE_MS),
+    generatedAt: isoAt(written),
     vitals: {
       entities: 82,
       canonPages: 61,
-      lastIngest,
-      ingestOk: true,
-      sources: ['Meeting log', 'Message archive', 'Notes folder'].map((label) => ({ label, status: 'ok', lastSuccessAt: lastIngest, dataThrough: lastIngest })),
+      lastIngest: isoAt(ingested),
+      ingestOk: !stale,
+      ...(stale ? { notice: 'Meeting log ingest is 16 days behind. Last-contact dates after that are unverified.' } : {}),
+      staleAfter: isoAt(written + 3 * HOUR_MS),
+      sources: FIXTURE_SOURCES.map(([label, affectsIngest]) => {
+        const [status, note] = issues[label] || ['ok', ''];
+        const through = label === 'Meeting log' ? ingested : status === 'blocked' ? now - 5 * DAY_MS : written - 20 * MINUTE_MS;
+        return {
+          label,
+          status,
+          affectsIngest,
+          lastSuccessAt: isoAt(through),
+          // The calendar reports whole days, so it exercises date-only aging.
+          dataThrough: label === 'Calendar' ? localDay(through) : isoAt(through),
+          ...(note ? { note } : {}),
+        };
+      }),
     },
   };
 }

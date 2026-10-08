@@ -1,4 +1,5 @@
 import type { HumanctlAdapter } from './adapter';
+import { FIXTURE_BRAIN_VARIANTS, type FixtureBrainVariant } from './brain-fixture';
 import { createFixtureAdapter, type FixtureAdapterOptions } from './fixture-adapter';
 
 type DesktopBridge = Omit<HumanctlAdapter, 'mode'>;
@@ -11,12 +12,14 @@ export function createEnvironmentAdapter(): HumanctlAdapter {
   return bridge ? createDesktopAdapter(bridge) : createFixtureAdapter(fixtureOptionsFromLocation());
 }
 
-// Browser fixture mode only: `?brain=stale` serves the stale Brain snapshot so
-// the warning path is reviewable in the dev loop and in screenshots. The
-// desktop build always has the bridge and never reaches this.
+// Browser fixture mode only: `?brain=<variant>` (for example `?brain=stale`)
+// serves that Brain fixture snapshot so each freshness path is reviewable in
+// the dev loop and in screenshots. The desktop build always has the bridge and
+// never reaches this.
 function fixtureOptionsFromLocation(): FixtureAdapterOptions {
   try {
-    return new URLSearchParams(window.location.search).get('brain') === 'stale' ? { brain: 'stale' } : {};
+    const brain = new URLSearchParams(window.location.search).get('brain') as FixtureBrainVariant | null;
+    return brain && FIXTURE_BRAIN_VARIANTS.includes(brain) ? { brain } : {};
   } catch {
     return {};
   }

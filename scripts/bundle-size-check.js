@@ -44,9 +44,19 @@ const KB = 1000;
 // +1.53 kB is cold-entry reload wiring plus the stale fixture snapshot. No
 // dependency was added. Raised only the total-JS ceiling from 705 -> 710 kB,
 // leaving 2.73 kB of headroom; the initial ceiling is unchanged.
+//
+// Measured 2026-10-08 after scoping Brain freshness to ingest-affecting
+// sources (offset-aware time parsing, calendar-day ages for date-only values,
+// the staleAfter rule, a capped one-line banner, the collapsed source detail,
+// and four fixture variants): 559.97 kB initial JS and 711.22 kB total JS,
+// versus 559.40 kB initial and 707.27 kB total for the parent commit built the
+// same way. +3.38 kB is the lazy Brain chunk; +0.57 kB is the fixture variants
+// in cold entry. No dependency was added. Raised only the total-JS ceiling
+// from 710 -> 715 kB, leaving 3.78 kB of headroom; the initial ceiling is
+// unchanged.
 const BUDGETS = {
   initialJs: 600 * KB,
-  totalJs: 710 * KB,
+  totalJs: 715 * KB,
   initialCss: 90 * KB,
   totalCss: 104 * KB,
   fonts: 120 * KB,

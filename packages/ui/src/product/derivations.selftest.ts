@@ -1,5 +1,5 @@
 import type { HumanctlInboxThread, HumanctlSession, HumanctlSessionState } from "./contracts"
-import { deriveVaultFreshness, filterVaultEntities, formatVaultAge, formatVaultDate, parseVaultInstant } from "./vault-derivations"
+import { deriveVaultFreshness, filterVaultEntities, formatVaultAge, formatVaultDate, formatVaultValueAge, parseVaultInstant } from "./vault-derivations"
 import type { VaultEntity, VaultSnapshot } from "./vault-snapshot"
 import {
   filterInboxThreads,
@@ -263,15 +263,32 @@ equal(nextNeedsAttentionId(advanceRows, "a", new Set(["c"])), undefined, "advanc
 
 // Freshness: a stale snapshot must never render as healthy. Times sit at UTC
 // noon so the formatted calendar day is the same in every common timezone.
+// Cases about local calendar days build their instants in local time, so they
+// hold in any timezone the suite runs in.
 const FRESH_NOW = Date.parse("2026-10-08T12:00:00Z")
 const HOUR = 3_600_000
 const DAY = 24 * HOUR
+const pad = (n: number) => String(n).padStart(2, "0")
+// A naive (offset-free) ISO date-time for an instant, in the runner's timezone.
+function naiveLocal(ms: number): string {
+  const d = new Date(ms)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`
+}
 
 equal(parseVaultInstant("2026-10-08T10:00:00Z"), FRESH_NOW - 2 * HOUR, "ISO date-times parse to epoch ms")
-equal(parseVaultInstant("2026-10-08"), Date.parse("2026-10-08T00:00:00Z"), "date-only values parse as UTC midnight")
+equal(parseVaultInstant("2026-10-08T14:57:10-07:00"), Date.UTC(2026, 9, 8, 21, 57, 10), "a UTC offset is honored exactly")
+equal(parseVaultInstant("2026-10-08T14:57:10.123456-07:00"), Date.UTC(2026, 9, 8, 21, 57, 10, 123), "microsecond fractions with an offset parse to the millisecond")
+equal(parseVaultInstant("2026-10-08T14:57:10+0530"), Date.UTC(2026, 9, 8, 9, 27, 10), "a colon-free offset is honored")
+equal(parseVaultInstant("2026-10-08T14:57:10"), new Date(2026, 9, 8, 14, 57, 10).getTime(), "a naive date-time is read as viewer-local time")
+equal(parseVaultInstant("2026-10-08 14:57:10"), new Date(2026, 9, 8, 14, 57, 10).getTime(), "a space separator is read like T")
+equal(parseVaultInstant("2026-10-08"), new Date(2026, 9, 8).getTime(), "date-only values parse as local midnight")
 equal(parseVaultInstant("2h"), null, "relative labels are not instants")
 equal(parseVaultInstant(undefined), null, "missing values are not instants")
 equal(parseVaultInstant("2026-13-45"), null, "impossible dates are not instants")
+equal(parseVaultInstant("2026-02-30"), null, "out-of-range days are not rolled into the next month")
+equal(parseVaultInstant("2026-10-08T25:00:00"), null, "impossible times are not instants")
+equal(parseVaultInstant("2026-10-08T10:00:00+25:00"), null, "impossible offsets are not instants")
+equal(parseVaultInstant("2026-10-08 · recording"), null, "a date followed by free text is not an instant")
 
 equal(formatVaultAge(FRESH_NOW - 20_000, FRESH_NOW), "just now", "ages under a minute read just now")
 equal(formatVaultAge(FRESH_NOW - 5 * 60_000, FRESH_NOW), "5m ago", "minute ages")
@@ -279,15 +296,27 @@ equal(formatVaultAge(FRESH_NOW - 2 * HOUR - 59 * 60_000, FRESH_NOW), "2h ago", "
 equal(formatVaultAge(FRESH_NOW - 16 * DAY - 3 * HOUR, FRESH_NOW), "16d ago", "day ages")
 equal(formatVaultAge(FRESH_NOW + HOUR, FRESH_NOW), "just now", "future instants (clock skew) read just now")
 
+// Date-only values age in local calendar days from local midnight, never hours.
+const LOCAL_AFTERNOON = new Date(2026, 9, 8, 14, 59).getTime()
+const LOCAL_EARLY = new Date(2026, 9, 8, 0, 30).getTime()
+equal(formatVaultValueAge("2026-10-08", LOCAL_AFTERNOON), "today", "a date-only value for today reads today, not hours since midnight")
+equal(formatVaultValueAge("2026-10-08", LOCAL_EARLY), "today", "a date-only value is today right after local midnight")
+equal(formatVaultValueAge("2026-10-07", LOCAL_EARLY), "yesterday", "yesterday's date reads yesterday half an hour after midnight")
+equal(formatVaultValueAge("2026-09-22", LOCAL_AFTERNOON), "16d ago", "older dates read whole local days")
+equal(formatVaultValueAge("2026-10-09", LOCAL_AFTERNOON), "today", "a future date (clock or zone skew) reads today")
+equal(formatVaultValueAge("2026-10-30", new Date(2026, 10, 2, 12).getTime()), "3d ago", "calendar-day ages ignore daylight-saving shifts")
+equal(formatVaultValueAge("2026-10-08T12:59:00Z", Date.parse("2026-10-08T14:59:00Z")), "2h ago", "date-times still age in hours")
+equal(formatVaultValueAge("2h", FRESH_NOW), null, "relative labels have no age")
+
 function freshnessSnapshot(vitals: Record<string, unknown> | undefined, generatedAt = "2026-10-08T11:20:00Z"): VaultSnapshot {
   return { apiVersion: "humanctl.dev/vaultsnapshot/v1alpha1", generatedAt, vitals, entities: [] }
 }
 
 const unknownIngest = deriveVaultFreshness(freshnessSnapshot({ entities: 3, lastIngest: "2h" }), FRESH_NOW, "en-US")
 equal(unknownIngest.ingestState, "unknown", "a missing ingestOk is unknown, never clean")
-equal(unknownIngest.lastIngest, { value: "2h", hint: "unknown", warn: false }, "relative lastIngest labels render as-is with the unknown hint")
+equal(unknownIngest.lastIngest, { value: "2h", hint: "unknown", tone: null }, "relative lastIngest labels render as-is with the unknown hint")
 equal(unknownIngest.banner, null, "unknown ingest alone does not raise the banner")
-equal(deriveVaultFreshness(freshnessSnapshot(undefined), FRESH_NOW, "en-US").lastIngest, { value: "n/a", hint: "unknown", warn: false }, "missing vitals read n/a and unknown")
+equal(deriveVaultFreshness(freshnessSnapshot(undefined), FRESH_NOW, "en-US").lastIngest, { value: "n/a", hint: "unknown", tone: null }, "missing vitals read n/a and unknown")
 
 const healthy = deriveVaultFreshness(freshnessSnapshot({
   lastIngest: "2026-10-08T10:00:00Z",
@@ -295,13 +324,15 @@ const healthy = deriveVaultFreshness(freshnessSnapshot({
   sources: [{ label: "Notes folder", status: "ok" }, { label: "Meeting log", status: "healthy" }],
 }), FRESH_NOW, "en-US")
 equal(healthy.ingestState, "clean", "ingestOk true is clean")
-equal(healthy.lastIngest, { value: "Oct 8", hint: "2h ago · clean", warn: false }, "an ISO lastIngest renders as a date plus its age")
+equal(healthy.lastIngest, { value: "Oct 8", hint: "2h ago · clean", tone: null }, "an ISO lastIngest renders as a date plus its age")
 equal(healthy.snapshot?.age, "40m ago", "the header carries the snapshot age")
 equal(healthy.snapshot?.stale, false, "a recent snapshot is not flagged")
+equal(healthy.sources, [], "current sources are not issues")
 equal(healthy.banner, null, "a healthy snapshot shows no banner")
 
+// A producer that predates affectsIngest: every source counts toward ingest.
 const staleSources = [
-  { label: "Meeting log", status: "partial", lastSuccessAt: "2026-09-22T12:00:00Z", dataThrough: "2026-09-22T12:00:00Z", note: "4 items waiting" },
+  { label: "Meeting log", status: "partial", lastSuccessAt: "2026-09-22T12:00:00Z", dataThrough: "2026-09-22T12:00:00Z", note: "4 items\n   waiting" },
   { label: "Message archive", status: "blocked", lastSuccessAt: "2026-10-03T12:00:00Z" },
   { label: "Notes folder", status: "ok", dataThrough: "2026-10-08T11:00:00Z" },
   { status: "error" },
@@ -315,21 +346,91 @@ const stale = deriveVaultFreshness(freshnessSnapshot({
   sources: staleSources,
 }), FRESH_NOW, "en-US")
 equal(stale.ingestState, "stale", "ingestOk false is stale")
-equal(stale.lastIngest, { value: "Sep 22", hint: "16d ago · stale", warn: true }, "a stale tile shows the date, the age, and the warning tone")
+equal(stale.lastIngest, { value: "Sep 22", hint: "16d ago · stale", tone: "warn" }, "a stale tile shows the date, the age, and the warning tone")
 equal(stale.banner?.message, "Meeting log ingest is 16 days behind.", "the banner text is the producer notice")
 equal(stale.banner?.sources, [
-  { label: "Meeting log", status: "partial", through: "data through Sep 22, 16d ago", note: "4 items waiting" },
-  { label: "Message archive", status: "blocked", through: "last success Oct 3, 5d ago", note: null },
-  { label: "Unnamed source", status: "error", through: null, note: null },
-], "the banner lists only sources that are not ok, with their data-through age, and skips malformed entries")
+  { label: "Message archive", status: "blocked", through: "last success Oct 3, 5d ago", note: null, affectsIngest: true },
+  { label: "Unnamed source", status: "error", through: null, note: null, affectsIngest: true },
+  { label: "Meeting log", status: "partial", through: "data through Sep 22, 16d ago", note: "4 items waiting", affectsIngest: true },
+], "without affectsIngest every source counts; broken sources sort first, notes collapse to one line, malformed entries are skipped")
+equal(stale.banner?.more, 0, "nothing is left out under the cap")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true, lastIngest: "2026-10-08T10:00:00Z", sources: staleSources }), FRESH_NOW, "en-US").lastIngest, { value: "Oct 8", hint: "2h ago · clean", tone: null }, "without affectsIngest marks a healthy verdict stays clean on the tile")
 
-equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, lastIngest: "2026-09-22T12:00:00Z" }), FRESH_NOW, "en-US").banner, { message: "Sources are stale since Sep 22.", sources: [] }, "without a notice the banner falls back to the stale-since date")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, lastIngest: "2026-09-22T12:00:00Z" }), FRESH_NOW, "en-US").banner, { message: "Sources are stale since Sep 22.", sources: [], more: 0 }, "without a notice the banner falls back to the stale-since date")
 equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, lastIngest: "3d" }), FRESH_NOW, "en-US").banner?.message, "Sources are stale. Last ingest: 3d.", "a relative lastIngest still yields an honest fallback")
 equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false }), FRESH_NOW, "en-US").banner?.message, "Sources are stale.", "a stale snapshot with no lastIngest still raises the banner")
-equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, notice: "   ", sources: "bad" }), FRESH_NOW, "en-US").banner, { message: "Sources are stale.", sources: [] }, "blank notices and malformed sources degrade to the fallback")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, notice: "   ", sources: "bad" }), FRESH_NOW, "en-US").banner, { message: "Sources are stale.", sources: [], more: 0 }, "blank notices and malformed sources degrade to the fallback")
+
+// affectsIngest: only sources that feed the verdict reach the banner and hint.
+const mixedSources = [
+  { label: "Archive A", status: "blocked", note: "sign-in expired", affectsIngest: false },
+  { label: "Feed B", status: "partial", dataThrough: "2026-10-08T09:00:00Z", affectsIngest: true },
+  { label: "Feed C", status: "stale", affectsIngest: true },
+  { label: "Feed D", status: "lagging", affectsIngest: true },
+  { label: "Feed E", status: "error", affectsIngest: true },
+  { label: "Archive F", status: "partial" },
+  { label: "Feed G", status: "ok", affectsIngest: true },
+]
+const capped = deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, notice: "Feed C is behind.", lastIngest: "2026-10-08T09:00:00Z", sources: mixedSources }), FRESH_NOW, "en-US")
+equal(capped.banner?.sources.map((source) => source.label), ["Feed E", "Feed C", "Feed B"], "the banner lists at most three ingest-affecting sources, most severe first")
+equal(capped.banner?.more, 1, "the banner counts the ingest-affecting sources it left out")
+equal(capped.sources.map((source) => `${source.label}:${source.affectsIngest}`), ["Feed E:true", "Feed C:true", "Feed B:true", "Feed D:true", "Archive A:false", "Archive F:false"], "the source detail keeps every issue, affecting ones first; an unmarked source does not affect ingest once any source declares it")
+
+const otherOnly = deriveVaultFreshness(freshnessSnapshot({
+  lastIngest: "2026-10-08T10:00:00Z",
+  ingestOk: true,
+  sources: [{ label: "Feed B", status: "ok", affectsIngest: true }, { label: "Archive A", status: "partial", note: "2 of 3 folders read", affectsIngest: false }],
+}), FRESH_NOW, "en-US")
+equal(otherOnly.banner, null, "a source that does not affect ingest never raises the banner")
+equal(otherOnly.lastIngest, { value: "Oct 8", hint: "2h ago · clean", tone: null }, "a source that does not affect ingest leaves the tile clean")
+equal(otherOnly.sources, [{ label: "Archive A", status: "partial", through: null, note: "2 of 3 folders read", affectsIngest: false }], "it still reaches the collapsed source detail")
+
+const ingestPartial = deriveVaultFreshness(freshnessSnapshot({
+  lastIngest: "2026-10-08T10:00:00Z",
+  ingestOk: true,
+  sources: [{ label: "Feed B", status: "partial", note: "1 of 2 accounts read", affectsIngest: true }, { label: "Archive A", status: "blocked", affectsIngest: false }],
+}), FRESH_NOW, "en-US")
+equal(ingestPartial.banner, null, "an ingest-affecting source that is not current while ingestOk is true does not raise the banner")
+equal(ingestPartial.lastIngest, { value: "Oct 8", hint: "2h ago · 1 source partial", tone: "notice" }, "but the tile hint names it in the notice tone instead of reading clean")
+equal(deriveVaultFreshness(freshnessSnapshot({
+  lastIngest: "2026-10-08T10:00:00Z",
+  ingestOk: true,
+  sources: [{ label: "Feed B", status: "partial", affectsIngest: true }, { label: "Feed C", status: "blocked", affectsIngest: true }],
+}), FRESH_NOW, "en-US").lastIngest.hint, "2h ago · 2 sources not current", "mixed statuses summarize as not current")
+
+// Date-only values: the tile and the banner age the same day the same way.
+const dateOnly = deriveVaultFreshness(freshnessSnapshot({
+  lastIngest: "2026-10-08",
+  ingestOk: false,
+  notice: "Feed B is partial.",
+  sources: [{ label: "Feed B", status: "partial", dataThrough: "2026-10-08", affectsIngest: true }],
+}, naiveLocal(LOCAL_AFTERNOON - 20 * 60_000)), LOCAL_AFTERNOON, "en-US")
+equal(dateOnly.lastIngest, { value: "Oct 8", hint: "today · stale", tone: "warn" }, "a date-only last ingest ages in calendar days on the tile")
+equal(dateOnly.banner?.sources[0]?.through, "data through Oct 8, today", "the banner ages the same date-only value the same way")
+
+// generatedAt: an offset is exact; a naive value is local time.
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true }, "2026-10-08T04:57:10-07:00"), FRESH_NOW, "en-US").snapshot?.age, "2m ago", "a generatedAt with a UTC offset ages from that exact instant")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true }, naiveLocal(FRESH_NOW - 40 * 60_000)), FRESH_NOW, "en-US").snapshot?.age, "40m ago", "a naive generatedAt is read as local time")
+
+// staleAfter: the producer's own refresh deadline, with a 24 h fallback.
+const expired = deriveVaultFreshness(freshnessSnapshot({
+  lastIngest: "2026-10-08T10:00:00Z",
+  ingestOk: true,
+  staleAfter: "2026-10-08T01:00:00-07:00",
+  sources: [{ label: "Feed B", status: "partial", affectsIngest: true }],
+}, "2026-10-07T22:00:00-07:00"), FRESH_NOW, "en-US")
+equal(expired.snapshot?.stale, true, "a snapshot past staleAfter is flagged in the header even when ingestOk is true")
+equal(expired.banner, { message: "This snapshot is 7h old and past its refresh time. The producer may have stopped running.", sources: [], more: 0 }, "past staleAfter raises the banner without a source list")
+equal(expired.lastIngest, { value: "Oct 8", hint: "2h ago · unverified", tone: "warn" }, "past staleAfter the tile reads unverified in the warning tone, never clean")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true, staleAfter: "2026-10-08T15:00:00Z" }, "2026-10-05T12:00:00Z"), FRESH_NOW, "en-US").banner, null, "a future staleAfter overrides the 24 h fallback")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true, staleAfter: "soon" }, "2026-10-05T12:00:00Z"), FRESH_NOW, "en-US").snapshot?.stale, true, "a malformed staleAfter falls back to 24 h")
+equal(deriveVaultFreshness(freshnessSnapshot({ ingestOk: true, staleAfter: "2026-10-08T11:00:00Z" }, ""), FRESH_NOW, "en-US").banner?.message, "This snapshot is past its refresh time. The producer may have stopped running.", "past staleAfter without generatedAt still raises the banner")
+const expiredAndStale = deriveVaultFreshness(freshnessSnapshot({ ingestOk: false, notice: "Feed B is behind.", staleAfter: "2026-10-08T11:00:00Z", sources: [{ label: "Feed B", status: "stale", affectsIngest: true }] }), FRESH_NOW, "en-US")
+equal([expiredAndStale.banner?.message, expiredAndStale.banner?.sources.length, expiredAndStale.lastIngest.hint], ["Feed B is behind.", 1, "stale"], "a stale ingest keeps its own notice and sources when the snapshot is also past staleAfter")
 
 const oldSnapshot = deriveVaultFreshness(freshnessSnapshot({ ingestOk: true, lastIngest: "2026-10-05T12:00:00Z" }, "2026-10-05T12:00:00Z"), FRESH_NOW, "en-US")
-equal(oldSnapshot.snapshot?.stale, true, "a snapshot older than a day is flagged in the header")
-equal(oldSnapshot.banner?.message, "This snapshot is 3d old. The producer has not written a new one since Oct 5.", "an old snapshot raises the banner even when its vitals claim health")
+equal(oldSnapshot.snapshot?.stale, true, "without staleAfter a snapshot older than a day is flagged in the header")
+equal(oldSnapshot.banner?.message, "This snapshot is 3d old and past its refresh time. The producer may have stopped running.", "an old snapshot raises the banner even when its vitals claim health")
+equal(oldSnapshot.lastIngest.tone, "warn", "an old snapshot never reads clean on the tile")
 
 console.log("derivations.selftest: ok")

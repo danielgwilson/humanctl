@@ -91,13 +91,16 @@ export interface VaultView {
 
 // One producer input, reported by the producer. `status` is free text: "ok"
 // (or "healthy") means current, and any other value ("stale", "partial",
-// "blocked", "error") is surfaced to the human as-is.
+// "blocked", "error") is surfaced to the human as-is. `affectsIngest` marks the
+// inputs that feed `ingestOk`; only those reach the banner and the Last ingest
+// hint, and the rest stay in a collapsed detail.
 export interface VaultSource {
   label: string;
   status: string;
   lastSuccessAt?: string;
   dataThrough?: string;
   note?: string;
+  affectsIngest?: boolean;
 }
 
 export interface VaultVitals {
@@ -106,6 +109,8 @@ export interface VaultVitals {
   lastIngest?: string;
   ingestOk?: boolean;
   notice?: string;
+  /** ISO 8601 instant after which the viewer treats this snapshot as stale. */
+  staleAfter?: string;
   sources?: VaultSource[];
   [key: string]: unknown;
 }

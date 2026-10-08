@@ -4,6 +4,7 @@ import {
   ArrowLeftIcon,
   BrainIcon,
   CheckIcon,
+  ChevronRightIcon,
   ClockIcon,
   FileTextIcon,
   GitMergeIcon,
@@ -28,7 +29,7 @@ import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
 import { operationPending } from "./helpers"
 import { ResourceNotice, RowSkeletons, SectionHeading } from "./shared"
 import { isModalOpen } from "./use-workloop-keys"
-import { deriveVaultFreshness, filterVaultEntities, formatVaultDate, type VaultFreshness } from "./vault-derivations"
+import { deriveVaultFreshness, filterVaultEntities, formatVaultDate, type VaultFreshness, type VaultSourceIssue } from "./vault-derivations"
 import type { VaultEntity, VaultFollowup, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
 
 // Generic palette roles a producer's `views.labelTones` hint may name, mapped to
@@ -200,7 +201,7 @@ function HealthStrip({ snapshot, freshness }: { snapshot: VaultSnapshot; freshne
   const vitals = isObject(snapshot.vitals) ? snapshot.vitals : {}
   const followups = asArray(snapshot.queues?.followups).length
   const proposals = asArray(snapshot.queues?.proposals).length
-  const tiles: Array<{ label: string; value: string; hint?: string; warn?: boolean }> = [
+  const tiles: Array<{ label: string; value: string; hint?: string; tone?: "warn" | "notice" | null }> = [
     { label: "Entities", value: String(vitals.entities ?? snapshot.entities.length), hint: "people + orgs" },
     { label: "Canon pages", value: vitals.canonPages != null ? String(vitals.canonPages) : "n/a", hint: "promoted" },
     { label: "Follow-ups due", value: String(followups), hint: "past cadence" },
@@ -210,13 +211,14 @@ function HealthStrip({ snapshot, freshness }: { snapshot: VaultSnapshot; freshne
   return (
     <div className="grid grid-cols-5 border-b border-border max-[900px]:grid-cols-3">
       {tiles.map((tile, i) => (
-        <div key={tile.label} data-brain-vital={tile.label} className={cn("min-w-0 px-4 py-3", i < tiles.length - 1 && "border-r border-border", i === 2 && "max-[900px]:border-r-0")}>
+        <div key={tile.label} data-brain-vital={tile.label} data-brain-vital-tone={tile.tone || undefined} className={cn("min-w-0 px-4 py-3", i < tiles.length - 1 && "border-r border-border", i === 2 && "max-[900px]:border-r-0")}>
           <div className="text-xs font-medium text-ink-3">{tile.label}</div>
           <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5">
-            <span className={cn("shrink-0 text-[22px] leading-7 font-semibold tabular-nums", tile.warn ? "text-need" : "text-ink")}>{tile.value}</span>
+            <span className={cn("shrink-0 text-[22px] leading-7 font-semibold tabular-nums", tile.tone === "warn" ? "text-need" : "text-ink")}>{tile.value}</span>
             {tile.hint ? (
-              <span className={cn("inline-flex min-w-0 items-center gap-1 truncate text-xs tabular-nums", tile.warn ? "text-need" : "text-ink-3")}>
-                {tile.warn ? <AlertTriangleIcon className="size-3 shrink-0" aria-hidden="true" /> : null}
+              <span title={tile.hint} className={cn("inline-flex min-w-0 items-center gap-1 truncate text-xs tabular-nums", tile.tone === "warn" ? "text-need" : tile.tone === "notice" ? "text-ink-2" : "text-ink-3")}>
+                {tile.tone === "warn" ? <AlertTriangleIcon className="size-3 shrink-0" aria-hidden="true" /> : null}
+                {tile.tone === "notice" ? <span className="size-1.5 shrink-0 rounded-full bg-need" aria-hidden="true" /> : null}
                 <span className="truncate">{tile.hint}</span>
               </span>
             ) : null}
@@ -227,30 +229,77 @@ function HealthStrip({ snapshot, freshness }: { snapshot: VaultSnapshot; freshne
   )
 }
 
+// One source as "label · status · data through ...", shared by the banner
+// digest and the source detail.
+function SourceFacts({ source }: { source: VaultSourceIssue }) {
+  return (
+    <>
+      <span className="font-medium text-ink">{source.label}</span>
+      <span className="text-ink-2"> · {source.status}</span>
+      {source.through ? <span className="tabular-nums text-ink-2"> · {source.through}</span> : null}
+    </>
+  )
+}
+
 // One owner for "this snapshot may be out of date": shown above the People
 // list and on every person page. The message and per-source detail come from
 // the producer (vitals.notice, vitals.sources); the viewer adds only the
-// generic fallback wording and the old-snapshot rule in deriveVaultFreshness.
+// generic fallback wording and the refresh-time rule in deriveVaultFreshness.
+// It is a digest: at most three ingest-affecting sources, one line each. Full
+// notes and every other source live in SourceDetail.
 function FreshnessBanner({ banner }: { banner: NonNullable<VaultFreshness["banner"]> }) {
   return (
     <Alert variant="need" className="border-t-0" data-brain-freshness="stale">
       <AlertTriangleIcon />
       <AlertTitle>{banner.message}</AlertTitle>
       {banner.sources.length ? (
-        <AlertDescription>
+        <AlertDescription className="min-w-0">
           <ul aria-label="Sources not current" className="m-0 list-none space-y-0.5 p-0">
             {banner.sources.map((source, i) => (
-              <li key={`${source.label}-${i}`} className="text-sm leading-5">
-                <span className="font-medium text-ink">{source.label}</span>
-                <span className="text-ink-2"> · {source.status}</span>
-                {source.through ? <span className="tabular-nums text-ink-2"> · {source.through}</span> : null}
+              <li key={`${source.label}-${i}`} data-brain-banner-source="" title={source.note || undefined} className="truncate text-sm leading-5">
+                <SourceFacts source={source} />
                 {source.note ? <span className="text-ink-3"> · {source.note}</span> : null}
               </li>
             ))}
+            {banner.more ? <li data-brain-banner-more="" className="text-sm leading-5 text-ink-3">+{banner.more} more {banner.more === 1 ? "source" : "sources"} not current</li> : null}
           </ul>
         </AlertDescription>
       ) : null}
     </Alert>
+  )
+}
+
+// One owner for per-source detail on the People list: every source the
+// producer reports as not current, with its full note. Collapsed by default,
+// so sources that do not affect ingest stay out of the banner and the tile.
+function SourceDetail({ sources }: { sources: VaultSourceIssue[] }) {
+  const affecting = sources.filter((source) => source.affectsIngest)
+  const groups = [
+    { heading: "Affects ingest", items: affecting },
+    { heading: "Other sources", items: sources.filter((source) => !source.affectsIngest) },
+  ].filter((group) => group.items.length)
+  return (
+    <details data-brain-source-detail="" className="group shrink-0 border-b border-border">
+      <summary className="flex min-h-7 cursor-pointer list-none items-center gap-1.5 px-4 py-1 text-xs text-ink-3 outline-none select-none hover:text-ink-2 focus-visible:outline-2 focus-visible:-outline-offset-2 focus-visible:outline-[var(--ring)] [&::-webkit-details-marker]:hidden">
+        <ChevronRightIcon className="size-3 shrink-0 transition-transform group-open:rotate-90" aria-hidden="true" />
+        {sources.length} {affecting.length ? "" : "other "}{sources.length === 1 ? "source" : "sources"} not current
+      </summary>
+      <div className="space-y-2 pt-1 pr-4 pb-3 pl-8.5">
+        {groups.map((group) => (
+          <div key={group.heading}>
+            {groups.length > 1 ? <div className="text-xs font-medium text-ink-3">{group.heading}</div> : null}
+            <ul aria-label={group.heading} className="m-0 list-none space-y-1 p-0">
+              {group.items.map((source, i) => (
+                <li key={`${source.label}-${i}`} className="text-sm leading-5">
+                  <SourceFacts source={source} />
+                  {source.note ? <div className="text-ink-3">{source.note}</div> : null}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+    </details>
   )
 }
 
@@ -708,6 +757,7 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
       <PageBody>
         <div className="flex h-full min-h-0 flex-col">
           {freshness ? <HealthStrip snapshot={snapshot} freshness={freshness} /> : null}
+          {freshness?.sources.length ? <SourceDetail sources={freshness.sources} /> : null}
           <Tabs defaultValue="people" className="flex min-h-0 flex-1 flex-col gap-0">
             <TabsList className="h-auto shrink-0 justify-start rounded-none border-b border-border bg-transparent px-4 py-0">
               <TabsTrigger value="people" className="gap-1.5"><UsersIcon className="size-3.5" /> People</TabsTrigger>

@@ -191,6 +191,15 @@ chunk; the reload wiring and the stale fixture snapshot add 1.53 kB to cold
 entry. No dependency was added. The total-JS ceiling moved from 705 to 710 kB,
 leaving 2.73 kB of headroom; the 600 kB initial ceiling is unchanged.
 
+The follow-up that scopes Brain freshness to ingest-affecting sources
+(offset-aware time parsing, calendar-day ages for date-only values, the
+`staleAfter` rule, a capped one-line banner, the collapsed source detail, and
+four fixture variants) measured 559.97 kB initial JS and 711.22 kB total JS,
+versus 559.40 kB initial and 707.27 kB total for its parent commit built the
+same way. The lazy Brain chunk grew 3.38 kB and cold entry 0.57 kB (the fixture
+variants). No dependency was added. The total-JS ceiling moved from 710 to
+715 kB, leaving 3.78 kB of headroom; the 600 kB initial ceiling is unchanged.
+
 The 2026-07-15 foundation correction split the prior single CSS ceiling into
 initial and total ceilings. The measured build was 80.95 kB initial CSS and
 99.90 kB total CSS after restoring the full Registry Sidebar and Typeset.
