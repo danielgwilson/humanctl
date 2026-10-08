@@ -79,11 +79,24 @@ export interface VaultView {
   labelTones?: Record<string, Record<string, string>>
 }
 
+// One producer input, reported by the producer. `status` is free text: "ok"
+// (or "healthy") means current, and any other value ("stale", "partial",
+// "blocked", "error") is surfaced to the human as-is.
+export interface VaultSource {
+  label: string
+  status: string
+  lastSuccessAt?: string
+  dataThrough?: string
+  note?: string
+}
+
 export interface VaultVitals {
   entities?: number
   canonPages?: number
   lastIngest?: string
   ingestOk?: boolean
+  notice?: string
+  sources?: VaultSource[]
   [key: string]: unknown
 }
 

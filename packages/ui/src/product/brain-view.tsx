@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react"
 import {
+  AlertTriangleIcon,
   ArrowLeftIcon,
   BrainIcon,
   CheckIcon,
@@ -13,6 +14,7 @@ import {
 
 import { FilterSearch, FilterToolbar } from "@humanctl/ui/blocks/filter-toolbar"
 import { PageActions, PageBody, PageDescription, PageFrame, PageHeader, PageHeading, PageTitle } from "@humanctl/ui/blocks/page-frame"
+import { Alert, AlertDescription, AlertTitle } from "@humanctl/ui/components/alert"
 import { Badge } from "@humanctl/ui/components/badge"
 import { Button } from "@humanctl/ui/components/button"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@humanctl/ui/components/empty"
@@ -23,9 +25,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@humanctl/ui/component
 import { cn } from "@humanctl/ui/lib/cn"
 
 import type { HumanctlApplicationModel, HumanctlDispatch } from "./contracts"
+import { operationPending } from "./helpers"
 import { ResourceNotice, RowSkeletons, SectionHeading } from "./shared"
 import { isModalOpen } from "./use-workloop-keys"
-import { filterVaultEntities, formatVaultDate } from "./vault-derivations"
+import { deriveVaultFreshness, filterVaultEntities, formatVaultDate, type VaultFreshness } from "./vault-derivations"
 import type { VaultEntity, VaultFollowup, VaultProposal, VaultSnapshot, VaultView } from "./vault-snapshot"
 
 // Generic palette roles a producer's `views.labelTones` hint may name, mapped to
@@ -193,29 +196,61 @@ function StatusText({ status }: { status?: string }) {
   )
 }
 
-function HealthStrip({ snapshot }: { snapshot: VaultSnapshot }) {
+function HealthStrip({ snapshot, freshness }: { snapshot: VaultSnapshot; freshness: VaultFreshness }) {
   const vitals = isObject(snapshot.vitals) ? snapshot.vitals : {}
   const followups = asArray(snapshot.queues?.followups).length
   const proposals = asArray(snapshot.queues?.proposals).length
-  const tiles: Array<{ label: string; value: string; hint?: string }> = [
+  const tiles: Array<{ label: string; value: string; hint?: string; warn?: boolean }> = [
     { label: "Entities", value: String(vitals.entities ?? snapshot.entities.length), hint: "people + orgs" },
     { label: "Canon pages", value: vitals.canonPages != null ? String(vitals.canonPages) : "n/a", hint: "promoted" },
     { label: "Follow-ups due", value: String(followups), hint: "past cadence" },
     { label: "Proposals", value: String(proposals), hint: "to review" },
-    { label: "Last ingest", value: vitals.lastIngest || "n/a", hint: vitals.ingestOk === false ? "stale" : "clean" },
+    { label: "Last ingest", ...freshness.lastIngest },
   ]
   return (
     <div className="grid grid-cols-5 border-b border-border max-[900px]:grid-cols-3">
       {tiles.map((tile, i) => (
-        <div key={tile.label} className={cn("px-4 py-3", i < tiles.length - 1 && "border-r border-border", i === 2 && "max-[900px]:border-r-0")}>
+        <div key={tile.label} data-brain-vital={tile.label} className={cn("min-w-0 px-4 py-3", i < tiles.length - 1 && "border-r border-border", i === 2 && "max-[900px]:border-r-0")}>
           <div className="text-xs font-medium text-ink-3">{tile.label}</div>
-          <div className="mt-0.5 flex items-baseline gap-1.5">
-            <span className="text-[22px] leading-7 font-semibold tabular-nums text-ink">{tile.value}</span>
-            {tile.hint ? <span className="text-xs text-ink-3">{tile.hint}</span> : null}
+          <div className="mt-0.5 flex min-w-0 items-baseline gap-1.5">
+            <span className={cn("shrink-0 text-[22px] leading-7 font-semibold tabular-nums", tile.warn ? "text-need" : "text-ink")}>{tile.value}</span>
+            {tile.hint ? (
+              <span className={cn("inline-flex min-w-0 items-center gap-1 truncate text-xs tabular-nums", tile.warn ? "text-need" : "text-ink-3")}>
+                {tile.warn ? <AlertTriangleIcon className="size-3 shrink-0" aria-hidden="true" /> : null}
+                <span className="truncate">{tile.hint}</span>
+              </span>
+            ) : null}
           </div>
         </div>
       ))}
     </div>
+  )
+}
+
+// One owner for "this snapshot may be out of date": shown above the People
+// list and on every person page. The message and per-source detail come from
+// the producer (vitals.notice, vitals.sources); the viewer adds only the
+// generic fallback wording and the old-snapshot rule in deriveVaultFreshness.
+function FreshnessBanner({ banner }: { banner: NonNullable<VaultFreshness["banner"]> }) {
+  return (
+    <Alert variant="need" className="border-t-0" data-brain-freshness="stale">
+      <AlertTriangleIcon />
+      <AlertTitle>{banner.message}</AlertTitle>
+      {banner.sources.length ? (
+        <AlertDescription>
+          <ul aria-label="Sources not current" className="m-0 list-none space-y-0.5 p-0">
+            {banner.sources.map((source, i) => (
+              <li key={`${source.label}-${i}`} className="text-sm leading-5">
+                <span className="font-medium text-ink">{source.label}</span>
+                <span className="text-ink-2"> · {source.status}</span>
+                {source.through ? <span className="tabular-nums text-ink-2"> · {source.through}</span> : null}
+                {source.note ? <span className="text-ink-3"> · {source.note}</span> : null}
+              </li>
+            ))}
+          </ul>
+        </AlertDescription>
+      ) : null}
+    </Alert>
   )
 }
 
@@ -547,23 +582,31 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
   const selected = selectedId && snapshot ? snapshot.entities.find((entity) => entity.id === selectedId) || null : null
   const sampleBadge = model.mode === "fixture" ? <Badge variant="outline">Sample vault</Badge> : null
   const filteredPeople = snapshot ? filterVaultEntities(snapshot.entities.filter((entity) => entity.kind === "person"), query).length : 0
-  const generatedAt = snapshot?.generatedAt ? new Date(snapshot.generatedAt) : null
-  const generatedLabel = generatedAt && !Number.isNaN(generatedAt.getTime())
-    ? `Snapshot ${generatedAt.toLocaleString(undefined, { month: "short", day: "numeric", hour: "numeric", minute: "2-digit" })}`
-    : null
+  // Derived on every render (not memoized) so ages advance whenever the view
+  // repaints, including the reload this app dispatches on focus.
+  const freshness = snapshot ? deriveVaultFreshness(snapshot) : null
+  const reloading = resource.status === "loading" || operationPending(model.operations, "brain.load")
   const shellActions = (
     <>
-      {generatedLabel ? <span className="text-xs tabular-nums text-ink-3">{generatedLabel}</span> : null}
+      {freshness?.snapshot ? (
+        <span data-brain-snapshot-age={freshness.snapshot.stale ? "stale" : "fresh"} className={cn("inline-flex items-center gap-1 text-xs tabular-nums", freshness.snapshot.stale ? "text-need" : "text-ink-3")}>
+          {freshness.snapshot.stale ? <AlertTriangleIcon className="size-3" aria-hidden="true" /> : null}
+          Snapshot {freshness.snapshot.label} · {freshness.snapshot.age}
+        </span>
+      ) : null}
       {snapshot ? (
-        <Button size="sm" variant="ghost" disabled={resource.status === "loading"} onClick={() => { void dispatch({ type: "brain.load" }) }}>
-          <RefreshCwIcon data-icon="inline-start" className={resource.status === "loading" ? "animate-spin" : undefined} /> Reload
+        <Button size="sm" variant="ghost" disabled={reloading} onClick={() => { void dispatch({ type: "brain.load" }) }}>
+          <RefreshCwIcon data-icon="inline-start" className={reloading ? "animate-spin" : undefined} /> Reload
         </Button>
       ) : null}
       {sampleBadge}
     </>
   )
-  const staleNotice = snapshot && resource.error
+  const reloadNotice = snapshot && resource.error
     ? <ResourceNotice resource={resource} label="Brain snapshot reload failed; showing the previous snapshot" />
+    : null
+  const staleNotice = reloadNotice || freshness?.banner
+    ? <>{reloadNotice}{freshness?.banner ? <FreshnessBanner banner={freshness.banner} /> : null}</>
     : null
 
   useEffect(() => {
@@ -664,7 +707,7 @@ export function BrainView({ model, dispatch }: { model: HumanctlApplicationModel
     <BrainShell actions={shellActions} notice={staleNotice}>
       <PageBody>
         <div className="flex h-full min-h-0 flex-col">
-          <HealthStrip snapshot={snapshot} />
+          {freshness ? <HealthStrip snapshot={snapshot} freshness={freshness} /> : null}
           <Tabs defaultValue="people" className="flex min-h-0 flex-1 flex-col gap-0">
             <TabsList className="h-auto shrink-0 justify-start rounded-none border-b border-border bg-transparent px-4 py-0">
               <TabsTrigger value="people" className="gap-1.5"><UsersIcon className="size-3.5" /> People</TabsTrigger>
