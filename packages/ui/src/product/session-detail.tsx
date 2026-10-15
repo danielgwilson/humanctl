@@ -3,6 +3,7 @@ import {
   ExternalLinkIcon,
   FolderOpenIcon,
   HistoryIcon,
+  MessageSquareIcon,
   MoreHorizontalIcon,
   PinIcon,
   PlayIcon,
@@ -29,7 +30,7 @@ import type {
   HumanctlSession,
   HumanctlThreadItem,
 } from "./contracts"
-import { formatTime, operationPending, sessionRepo, sessionTitle, stateLabel } from "./helpers"
+import { basename, formatTime, operationPending, sessionRepo, sessionTitle, stateLabel, threadTitle } from "./helpers"
 import { EmptyState, HarnessMark, SectionHeading, SessionStatus } from "./shared"
 
 type SessionDetailProps = {
@@ -52,7 +53,15 @@ function itemLabel(item: HumanctlThreadItem): string {
 }
 
 function itemBody(item: HumanctlThreadItem) {
-  if (item.kind === "note") return <p>{item.message}</p>
+  if (item.kind === "note") {
+    const source = [basename(item.repo || item.cwd), item.agent].filter((value) => value && value !== "No workspace").join(" · ")
+    return (
+      <div>
+        <p>{item.message}</p>
+        {source ? <p className="mt-1 text-xs text-ink-3">{source}</p> : null}
+      </div>
+    )
+  }
   if (item.kind === "ask") return <p>{item.reason}</p>
   if (item.kind === "ask-interrupted") return <p>{item.question || "The session stopped before the question was recorded."}</p>
   if (item.kind === "answer") return <p>{item.text}</p>
@@ -283,6 +292,35 @@ export function SessionDetail({ model, dispatch, session, thread, onClose, onAns
 
   async function loadOlder() {
     await dispatch({ type: "timeline.loadOlder" })
+  }
+
+  if (!session && thread) {
+    const entries = combineThreadEntries(thread.items, [])
+    const itemCount = thread.items.length
+    const meta = thread.omittedItemCount
+      ? `Latest ${itemCount} updates`
+      : `${itemCount} ${itemCount === 1 ? "update" : "updates"}`
+    return (
+      <DetailPane
+        data-thread-id={thread.threadId}
+        scrollMode="messages"
+        bodyLabel={`${threadTitle(thread)} updates`}
+        title={threadTitle(thread)}
+        eyebrow={<span className="flex items-center gap-2"><MessageSquareIcon className="size-3.5" />{thread.scope === "general" ? "Across workspaces" : "Session unavailable"}</span>}
+        meta={meta}
+        onClose={onClose}
+      >
+        {thread.omittedItemCount ? (
+          <ConversationMarker messageId="thread-history-bound" icon={null}>
+            Showing the {itemCount} most recent updates
+          </ConversationMarker>
+        ) : null}
+        <MessageScrollerItem messageId="section-updates">
+          <SectionHeading>Updates</SectionHeading>
+        </MessageScrollerItem>
+        <ThreadStream entries={entries} />
+      </DetailPane>
+    )
   }
 
   if (!session) {

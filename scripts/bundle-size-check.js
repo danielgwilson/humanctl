@@ -28,9 +28,35 @@ const KB = 1000;
 // redesigned surfaces and the timeline (not one hotspot; ~1 kB gzipped). Initial
 // JS stayed at 557 kB. Raised the initial-CSS ceiling 84 -> 90 kB to keep the
 // prior ~3 kB headroom over the new baseline; the other ceilings are unchanged.
+//
+// Measured 2026-08-19 after adding local Brain people search, explicit snapshot
+// reload, and visible snapshot freshness: 559.48 kB initial JS and 701.56 kB
+// total JS. The committed build immediately before the change measured 559.47
+// kB initial and 698.84 kB total. The 2.72 kB increase is isolated to the lazy
+// Brain route; cold-open JS is unchanged. Raised only the total-JS ceiling from
+// 700 -> 705 kB, leaving 3.44 kB of headroom without weakening the initial gate.
+//
+// Measured 2026-10-08 after Brain snapshot freshness (stale banner, dated
+// last-ingest tile, snapshot age, reread on view entry and window focus, and a
+// stale fixture variant): 559.40 kB initial JS and 707.27 kB total JS, versus
+// 557.87 kB initial and 702.54 kB total for the parent commit built the same
+// way. +3.10 kB is the freshness derivation and banner in the lazy Brain chunk;
+// +1.53 kB is cold-entry reload wiring plus the stale fixture snapshot. No
+// dependency was added. Raised only the total-JS ceiling from 705 -> 710 kB,
+// leaving 2.73 kB of headroom; the initial ceiling is unchanged.
+//
+// Measured 2026-10-08 after scoping Brain freshness to ingest-affecting
+// sources (offset-aware time parsing, calendar-day ages for date-only values,
+// the staleAfter rule, a capped one-line banner, the collapsed source detail,
+// and four fixture variants): 559.97 kB initial JS and 711.22 kB total JS,
+// versus 559.40 kB initial and 707.27 kB total for the parent commit built the
+// same way. +3.38 kB is the lazy Brain chunk; +0.57 kB is the fixture variants
+// in cold entry. No dependency was added. Raised only the total-JS ceiling
+// from 710 -> 715 kB, leaving 3.78 kB of headroom; the initial ceiling is
+// unchanged.
 const BUDGETS = {
   initialJs: 600 * KB,
-  totalJs: 700 * KB,
+  totalJs: 715 * KB,
   initialCss: 90 * KB,
   totalCss: 104 * KB,
   fonts: 120 * KB,

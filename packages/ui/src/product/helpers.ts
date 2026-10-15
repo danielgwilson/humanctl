@@ -4,6 +4,7 @@ import type {
   HumanctlSession,
   HumanctlSessionState,
   HumanctlThreadItem,
+  HumanctlView,
 } from "./contracts"
 import type { StatusState } from "@humanctl/ui/blocks/status"
 
@@ -89,8 +90,16 @@ export function threadPreview(thread: HumanctlInboxThread): string {
   return item.text
 }
 
+function threadItemText(item: HumanctlThreadItem): string {
+  if (item.kind === "note") return [item.message, item.repo, item.cwd, item.agent].filter(Boolean).join(" ")
+  if (item.kind === "ask") return item.reason
+  if (item.kind === "ask-interrupted") return item.question || ""
+  if (item.kind === "qa") return `${item.question} ${item.answer}`
+  return item.text
+}
+
 export function threadUnread(thread: HumanctlInboxThread, lastReadTs: Record<string, number>): boolean {
-  const readAt = lastReadTs[thread.sessionId] || 0
+  const readAt = lastReadTs[thread.threadId] || 0
   return thread.items.some((item) => (Date.parse(item.ts) || 0) > readAt)
 }
 
@@ -144,7 +153,39 @@ export function threadSession(
   thread: HumanctlInboxThread,
   sessionsById: ReadonlyMap<string, HumanctlSession>,
 ): HumanctlSession | undefined {
-  return sessionsById.get(thread.sessionId) || thread.session
+  if (thread.scope !== "session") return undefined
+  return (thread.sessionId ? sessionsById.get(thread.sessionId) : undefined) || thread.session
+}
+
+export function selectedSessionForView(
+  view: HumanctlView,
+  selectedId: string | undefined,
+  threads: ReadonlyArray<HumanctlInboxThread>,
+  sessionsById: ReadonlyMap<string, HumanctlSession>,
+): HumanctlSession | undefined {
+  if (!selectedId) return undefined
+  if (view !== "inbox") return sessionsById.get(selectedId)
+  const thread = threads.find((item) => item.threadId === selectedId)
+  return thread ? threadSession(thread, sessionsById) : undefined
+}
+
+export function threadState(
+  thread: HumanctlInboxThread,
+  sessionsById: ReadonlyMap<string, HumanctlSession>,
+): HumanctlSessionState {
+  const session = threadSession(thread, sessionsById)
+  if (session) return session.state
+  const latest = threadLatest(thread)
+  if (!latest) return "idle"
+  if (latest.kind === "note") {
+    if (latest.level === "blocked") return "block"
+    if (latest.level === "review") return "need"
+    if (latest.level === "done") return "done"
+    return "idle"
+  }
+  if (latest.kind === "ask") return latest.level === "blocked" ? "block" : "need"
+  if (latest.kind === "ask-interrupted") return "block"
+  return "idle"
 }
 
 // The next session that still needs you, scanning forward from the current one
@@ -183,13 +224,13 @@ export function filterInboxThreads({
   const values = threads.filter((thread) => {
     const session = threadSession(thread, sessionsById)
     if (harness !== "all" && (session?.harness || thread.harness) !== harness) return false
-    if (state !== "all" && session?.state !== state) return false
+    if (state !== "all" && threadState(thread, sessionsById) !== state) return false
     if (!needle) return true
     const haystack = [
       threadTitle(thread, session),
       thread.repo,
       thread.cwd,
-      threadPreview(thread),
+      thread.items.map(threadItemText).join(" "),
       session ? sessionMessage(session) : undefined,
       session?.stateReason,
     ]
@@ -201,8 +242,10 @@ export function filterInboxThreads({
 
   const priority: Record<HumanctlSessionState, number> = { need: 0, block: 1, work: 2, idle: 3, done: 4 }
   return values.slice().sort((left, right) => {
-    const leftPinned = pins.has(left.sessionId) ? 1 : 0
-    const rightPinned = pins.has(right.sessionId) ? 1 : 0
+    const leftSession = threadSession(left, sessionsById)
+    const rightSession = threadSession(right, sessionsById)
+    const leftPinned = leftSession && pins.has(leftSession.id) ? 1 : 0
+    const rightPinned = rightSession && pins.has(rightSession.id) ? 1 : 0
     if (leftPinned !== rightPinned) return rightPinned - leftPinned
     if (sort === "unread") {
       const leftUnread = threadUnread(left, lastReadTs) ? 1 : 0
@@ -214,8 +257,8 @@ export function filterInboxThreads({
         .localeCompare(threadTitle(right, threadSession(right, sessionsById)))
     }
     if (sort === "needs") {
-      const leftState = threadSession(left, sessionsById)?.state || "idle"
-      const rightState = threadSession(right, sessionsById)?.state || "idle"
+      const leftState = threadState(left, sessionsById)
+      const rightState = threadState(right, sessionsById)
       const stateDelta = priority[leftState] - priority[rightState]
       if (stateDelta !== 0) return stateDelta
     }
@@ -245,6 +288,6 @@ export function stateTone(state: HumanctlSessionState): StatusState {
 
 
 export function threadTitle(thread: HumanctlInboxThread, session?: HumanctlSession): string {
-  const resolved = session || thread.session
-  return resolved ? sessionTitle(resolved) : thread.title || thread.sessionId.slice(0, 12)
+  const resolved = thread.scope === "session" ? session || thread.session : undefined
+  return resolved ? sessionTitle(resolved) : thread.title || thread.threadId.slice(0, 12)
 }

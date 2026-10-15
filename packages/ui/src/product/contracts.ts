@@ -46,18 +46,22 @@ export interface HumanctlNote {
   level: "fyi" | "review" | "blocked" | "done"
   message: string
   repo?: string
+  cwd?: string
   session?: string
+  agent?: string
 }
 
 export type HumanctlThreadItem =
-  | { kind: "note"; level: HumanctlNote["level"]; message: string; ts: string; id: string }
+  | { kind: "note"; level: HumanctlNote["level"]; message: string; ts: string; id: string; repo?: string; cwd?: string; agent?: string }
   | { kind: "ask"; level?: string; reason: string; ts: string }
   | { kind: "ask-interrupted"; question?: string; ts: string }
   | { kind: "qa"; question: string; answer: string; engine?: string; ts: string }
   | { kind: "answer"; text: string; askId?: string; delivery?: string; actor?: string; ts: string }
 
 export interface HumanctlInboxThread {
-  sessionId: string
+  threadId: string
+  scope: "session" | "general"
+  sessionId?: string
   repo?: string
   harness?: HumanctlHarness
   cwd?: string
@@ -66,6 +70,7 @@ export interface HumanctlInboxThread {
   session?: HumanctlSession
   items: HumanctlThreadItem[]
   lastTs: string
+  omittedItemCount?: number
 }
 
 export interface HumanctlQuotaWindow {

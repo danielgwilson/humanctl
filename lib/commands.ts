@@ -73,7 +73,7 @@ export const COMMANDS: CommandDecl[] = [
   },
   {
     name: 'inbox.threads', kind: 'observation', direct: true,
-    desc: 'inbox threads (one per session) assembled from notes, detected needs-you asks, and persisted btw Q&A',
+    desc: 'inbox threads assembled from session activity plus one general thread for unlinked notes',
     params: { limit: { type: 'number' } },
   },
   {
@@ -534,7 +534,7 @@ function postNote(p: PostNoteParams = {}): Record<string, unknown> {
   return { ok: true, note, skippedImages: skipped };
 }
 
-// ---- Inbox: one thread per session, assembled from data already read ----
+// ---- Inbox: session threads plus general updates, assembled from data already read ----
 // asksDir/readAskLog mirror the persistence contract documented in
 // docs/ask-session.md and used by electron/main.ts's sessionAsk: one
 // append-only jsonl file per session under ~/.humanctl/asks/, so a probe
@@ -684,7 +684,8 @@ export function isInboxRelevantChange(filename: string | null | undefined): bool
   return false;
 }
 
-// Build one inbox thread per session from data already read elsewhere (the
+// Build one inbox thread per session plus one stable general thread for notes
+// posted without a session. Inputs come from data already read elsewhere (the
 // notes file + the reader's own row states): notes.jsonl entries, the
 // session's current needs-you transition (state==='need'|'block' with its
 // stateReason, sourced from the v3 reader), and persisted btw Q&A. No new
@@ -696,7 +697,9 @@ function askLogSessionIds(): string[] {
 }
 
 interface InboxThread {
-  sessionId: string;
+  threadId: string;
+  scope: 'session' | 'general';
+  sessionId?: string;
   repo: string;
   harness: string;
   cwd: string;
@@ -705,6 +708,20 @@ interface InboxThread {
   session?: import('./sessions').SessionRow;
   items: Record<string, unknown>[];
   lastTs?: string | null;
+  omittedItemCount?: number;
+}
+
+export const GENERAL_UPDATES_THREAD_ID = 'general-updates';
+export const GENERAL_UPDATES_ITEM_LIMIT = 100;
+const GENERAL_UPDATES_MAP_KEY = '\0general-updates';
+const SESSION_THREAD_MAP_PREFIX = '\0session:';
+const SESSION_THREAD_ID_ESCAPE_PREFIX = 'session:';
+
+function sessionInboxThreadId(sessionId: string): string {
+  if (sessionId === GENERAL_UPDATES_THREAD_ID || sessionId.startsWith(SESSION_THREAD_ID_ESCAPE_PREFIX)) {
+    return `${SESSION_THREAD_ID_ESCAPE_PREFIX}${encodeURIComponent(sessionId)}`;
+  }
+  return sessionId;
 }
 
 export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
@@ -713,10 +730,13 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
   const rows = listRecent({ maxAgeH: 24 * 30, limit: 500 });
   const rowById = new Map(rows.map((r) => [r.id, r]));
   const notes = readNotes({ limit: 500 });
-  const threads = new Map<string, InboxThread>(); // sessionId -> { sessionId, repo, harness, items: [] }
+  const threads = new Map<string, InboxThread>();
   const threadFor = (sessionId: string, row?: import('./sessions').SessionRow): InboxThread => {
-    if (!threads.has(sessionId)) {
-      threads.set(sessionId, {
+    const mapKey = `${SESSION_THREAD_MAP_PREFIX}${sessionId}`;
+    if (!threads.has(mapKey)) {
+      threads.set(mapKey, {
+        threadId: sessionInboxThreadId(sessionId),
+        scope: 'session',
         sessionId,
         repo: (row && row.repo) || '',
         harness: (row && row.harness) || '',
@@ -727,7 +747,7 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
         items: [],
       });
     }
-    const thread = threads.get(sessionId) as InboxThread;
+    const thread = threads.get(mapKey) as InboxThread;
     if (row && !thread.session) {
       thread.repo = row.repo || '';
       thread.harness = row.harness || '';
@@ -738,11 +758,38 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
     }
     return thread;
   };
-  for (const n of notes) {
-    if (!n.session) continue; // unsessioned notes have no thread to join (system thread candidate; left to the renderer)
-    const row = rowById.get(n.session);
-    const t = threadFor(n.session, row);
-    t.items.push({ kind: 'note', level: n.level, message: n.message, ts: n.ts, id: n.id, attachments: Array.isArray(n.attachments) ? n.attachments : [] });
+  const generalThread = (): InboxThread => {
+    if (!threads.has(GENERAL_UPDATES_MAP_KEY)) {
+      threads.set(GENERAL_UPDATES_MAP_KEY, {
+        threadId: GENERAL_UPDATES_THREAD_ID,
+        scope: 'general',
+        repo: '',
+        harness: '',
+        cwd: '',
+        path: '',
+        title: 'General updates',
+        items: [],
+      });
+    }
+    return threads.get(GENERAL_UPDATES_MAP_KEY) as InboxThread;
+  };
+  // readNotes returns newest first. Process oldest first so equal-millisecond
+  // timestamps retain append order when the stable item sort runs below.
+  for (const n of notes.slice().reverse()) {
+    const sessionId = typeof n.session === 'string' ? n.session.trim() : '';
+    const row = sessionId ? rowById.get(sessionId) : undefined;
+    const t = sessionId ? threadFor(sessionId, row) : generalThread();
+    t.items.push({
+      kind: 'note',
+      level: n.level,
+      message: n.message,
+      ts: n.ts,
+      id: n.id,
+      repo: n.repo,
+      cwd: n.cwd,
+      agent: n.agent,
+      attachments: Array.isArray(n.attachments) ? n.attachments : [],
+    });
   }
   for (const row of rows) {
     if (row.state !== 'need' && row.state !== 'block') continue;
@@ -757,8 +804,9 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
   // session's current state, or the session may have gone quiet since). The
   // ask log directory is the discovery source for those threads too.
   for (const sessionId of askLogSessionIds()) threadFor(sessionId, rowById.get(sessionId));
-  for (const [sessionId, t] of threads) {
-    const log = readAskLog(sessionId, 100);
+  for (const t of threads.values()) {
+    if (t.scope !== 'session' || !t.sessionId) continue;
+    const log = readAskLog(t.sessionId, 100);
     for (const e of log) {
       if (e.status === 'interrupted') t.items.push({ kind: 'ask-interrupted', question: e.q || '', ts: e.ts });
       else if (e.q && e.a) t.items.push({ kind: 'qa', question: e.q, answer: e.a, engine: e.engine, ts: e.ts });
@@ -772,6 +820,10 @@ export function inboxThreads(p: { limit?: number } = {}): InboxThread[] {
   }
   const out = [...threads.values()].map((t) => {
     t.items.sort((a, b) => (Date.parse(String(a.ts)) || 0) - (Date.parse(String(b.ts)) || 0));
+    if (t.scope === 'general' && t.items.length > GENERAL_UPDATES_ITEM_LIMIT) {
+      t.omittedItemCount = t.items.length - GENERAL_UPDATES_ITEM_LIMIT;
+      t.items = t.items.slice(-GENERAL_UPDATES_ITEM_LIMIT);
+    }
     t.lastTs = t.items.length ? String(t.items[t.items.length - 1].ts) : null;
     return t;
   }).filter((t) => t.items.length);

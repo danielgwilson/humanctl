@@ -26,6 +26,7 @@ import {
   prChip,
   answerAsk,
   codexReplyArgv,
+  GENERAL_UPDATES_THREAD_ID,
   type CommandDecl,
   type AskAnswerDeps,
 } from './commands';
@@ -251,6 +252,114 @@ async function run(): Promise<void> {
       assert.strictEqual(t.items[0].level, 'review');
     } finally {
       process.env.HOME = prevHome;
+    }
+  });
+
+  await checkAsync('inbox.threads: unlinked notes surface in one stable general thread', async () => {
+    const home = tempDir('inbox-general-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
+      const first = await registry.invoke('note.post', {
+        message: 'Synthetic release update', level: 'fyi', repo: 'fixture-one', cwd: '/tmp/fixture-one', session: '',
+      }, { source: 'test' });
+      const second = await registry.invoke('note.post', {
+        message: 'Synthetic review request', level: 'review', repo: 'fixture-two', cwd: '/tmp/fixture-two',
+      }, { source: 'test' });
+      const bound = await registry.invoke('note.post', {
+        message: 'Synthetic task update', level: 'done', session: 'fixture-session',
+      }, { source: 'test' });
+      assert.strictEqual(first.ok, true);
+      assert.strictEqual(second.ok, true);
+      assert.strictEqual(bound.ok, true);
+
+      const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
+      assert.strictEqual(result.ok, true);
+      const threads = result.threads as any[];
+      const general = threads.find((thread) => thread.threadId === 'general-updates');
+      assert.ok(general, 'every note without a session must surface in the stable general thread');
+      assert.strictEqual(general.scope, 'general');
+      assert.strictEqual(general.sessionId, undefined, 'the general thread must never pretend to be a session');
+      assert.strictEqual(general.title, 'General updates');
+      assert.deepStrictEqual(general.items.map((item: any) => item.message), [
+        'Synthetic release update',
+        'Synthetic review request',
+      ]);
+      assert.deepStrictEqual(general.items.map((item: any) => item.repo), ['fixture-one', 'fixture-two']);
+
+      const sessionThread = threads.find((thread) => thread.threadId === 'fixture-session');
+      assert.ok(sessionThread, 'a linked note must remain in its own session thread');
+      assert.strictEqual(sessionThread.scope, 'session');
+      assert.strictEqual(sessionThread.sessionId, 'fixture-session');
+      assert.deepStrictEqual(sessionThread.items.map((item: any) => item.message), ['Synthetic task update']);
+    } finally {
+      process.env.HOME = prevHome;
+    }
+  });
+
+  await checkAsync('inbox.threads: the general thread bounds detail items without rewriting source notes', async () => {
+    const home = tempDir('inbox-general-bound-home');
+    const prevHome = process.env.HOME;
+    process.env.HOME = home;
+    try {
+      const notesPath = path.join(home, '.humanctl', 'notes.jsonl');
+      fs.mkdirSync(path.dirname(notesPath), { recursive: true });
+      const sourceNotes = Array.from({ length: 102 }, (_, index) => ({
+        id: `general-${index}`,
+        ts: new Date(Date.parse('2026-01-01T00:00:00.000Z') + index * 1000).toISOString(),
+        level: 'fyi',
+        message: `Synthetic update ${index}`,
+        repo: 'fixture-repo',
+        session: '',
+      }));
+      fs.writeFileSync(notesPath, sourceNotes.map((note) => JSON.stringify(note)).join('\n') + '\n');
+      const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
+      const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
+      const general = (result.threads as any[]).find((thread) => thread.threadId === 'general-updates');
+      assert.ok(general);
+      assert.strictEqual(general.items.length, 100);
+      assert.strictEqual(general.omittedItemCount, 2);
+      assert.strictEqual(general.items[0].message, 'Synthetic update 2');
+      assert.strictEqual(general.items[99].message, 'Synthetic update 101');
+      assert.strictEqual(fs.readFileSync(notesPath, 'utf8').trim().split('\n').length, 102, 'thread bounding must not rewrite the append-only source');
+    } finally {
+      process.env.HOME = prevHome;
+    }
+  });
+
+  await checkAsync('inbox.threads: the reserved general id never merges with a session thread', async () => {
+    for (const linkedFirst of [false, true]) {
+      const home = tempDir(`inbox-general-collision-${linkedFirst ? 'linked' : 'unlinked'}`);
+      const prevHome = process.env.HOME;
+      process.env.HOME = home;
+      try {
+        const registry = createRegistry({ log: createEventLog({ dir: path.join(home, '.humanctl') }) });
+        const unlinkedParams = { message: 'Synthetic unlinked update', level: 'fyi' };
+        const linkedParams = { message: 'Synthetic reserved-id task update', level: 'review', session: GENERAL_UPDATES_THREAD_ID };
+        const ordered = linkedFirst ? [linkedParams, unlinkedParams] : [unlinkedParams, linkedParams];
+        for (const params of ordered) {
+          const posted = await registry.invoke('note.post', params, { source: 'test' });
+          assert.strictEqual(posted.ok, true);
+        }
+        appendAskLog(GENERAL_UPDATES_THREAD_ID, { q: 'Synthetic task question', a: 'Synthetic task answer', ts: '2026-01-01T00:00:00.000Z' });
+
+        const result = await registry.invoke('inbox.threads', {}, { source: 'test' });
+        const threads = result.threads as any[];
+        const general = threads.find((thread) => thread.threadId === GENERAL_UPDATES_THREAD_ID);
+        const reservedSession = threads.find((thread) => thread.scope === 'session' && thread.sessionId === GENERAL_UPDATES_THREAD_ID);
+        assert.ok(general, 'the app-owned general thread remains present');
+        assert.ok(reservedSession, 'the colliding session remains a separate session thread');
+        assert.strictEqual(general.scope, 'general');
+        assert.strictEqual(general.sessionId, undefined);
+        assert.notStrictEqual(reservedSession.threadId, GENERAL_UPDATES_THREAD_ID, 'the colliding session receives an escaped thread id');
+        assert.deepStrictEqual(general.items.filter((item: any) => item.kind === 'note').map((item: any) => item.message), ['Synthetic unlinked update']);
+        assert.deepStrictEqual(reservedSession.items.filter((item: any) => item.kind === 'note').map((item: any) => item.message), ['Synthetic reserved-id task update']);
+        assert.ok(reservedSession.items.some((item: any) => item.kind === 'qa'), 'the reserved-id ask log stays on the session thread');
+        assert.ok(!general.items.some((item: any) => item.kind === 'qa'), 'the general thread never reads a session ask log');
+      } finally {
+        process.env.HOME = prevHome;
+      }
     }
   });
 

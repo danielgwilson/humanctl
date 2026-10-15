@@ -176,9 +176,12 @@ rules exist to keep that class of bug from recurring as the app grows.
 `npm run screenshots -- --out screenshots/<stage>` produces the full gate set
 in item 1 below mechanically: `scripts/capture-screenshots.js` builds and
 serves the renderer's browser bundle, drives it headless over CDP (system
-Chrome, not Electron -- see the script's header), and captures all five
+Chrome, not Electron -- see the script's header), and captures all six
 views in both themes, session detail in both themes, and the chief-of-staff
-and sidebar collapsed and sheet states in both themes, 20 PNGs, on fixture
+and sidebar collapsed and sheet states in both themes, plus a rich Brain
+person detail in both themes, plus each Brain freshness fixture (`stale`,
+`partial-other`, `partial-ingest`, `expired`) with its source detail or person
+page in both themes, 42 PNGs, on fixture
 data only. It never touches real session data or `~/.humanctl`. One command,
 one-shot: every timeout inside it bounds a single script run and nothing it
 starts survives the process exiting. The component catalog is not part of the

@@ -19,10 +19,16 @@
 // What it produces: the six views (inbox, metrics, fleet, brain, sessions,
 // settings) x both themes, plus session detail x both themes, plus the
 // chief-of-staff conversation x both themes, plus sidebar and chief-of-staff
-// collapsed and sheet states x both themes, one PNG each, via
+// collapsed and sheet states x both themes, plus a rich Brain person detail
+// in both themes, plus the Brain freshness paths in both themes: the stale
+// fixture snapshot (`?brain=stale`: list, list with the source detail open,
+// person page), a background source partial (`?brain=partial-other`: list,
+// detail open), an ingest source partial while ingest reads ok
+// (`?brain=partial-ingest`: list, detail open), and a snapshot past its
+// staleAfter (`?brain=expired`: list, person page), one PNG each, via
 // window.__humanctlPerf, the same renderer-only test hook the perf gate uses.
 // Its compatibility surface is setTheme, setView, openDetail, and
-// setChiefOfStaff. 22 PNGs
+// setChiefOfStaff. 42 PNGs
 // total, written to --out (default output/screenshots, gitignored by the
 // repo's top-level `output` entry). To produce the committed gate set under
 // screenshots/<stage>/, pass that path explicitly:
@@ -272,7 +278,7 @@ function assert(condition, message) {
 }
 
 async function dispatchKeyChord(cdp, { code, key, modifiers }) {
-  const keyCode = key.toUpperCase().charCodeAt(0);
+  const keyCode = { Tab: 9, Enter: 13, Escape: 27 }[key] || key.toUpperCase().charCodeAt(0);
   const base = {
     code,
     key,
@@ -376,6 +382,201 @@ async function assertFoundationBehavior(cdp) {
   log('foundation assertions passed: font, focus, 46px rows, rail geometry, exact shortcuts, compact Sheets, viewport fit');
 }
 
+async function assertBrainSearchBehavior(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  await dispatchKeyChord(cdp, { code: 'Slash', key: '/', modifiers: 0 });
+  await settle(cdp);
+  const focused = await evalJS(cdp, `document.activeElement?.getAttribute('aria-label')`);
+  assert(focused === 'Search people', `Slash should focus Brain people search, received ${focused}`);
+  await cdp.send('Input.insertText', { text: 'mara sensor' });
+  await settle(cdp);
+  const filtered = await evalJS(cdp, `(() => {
+    const input = document.querySelector('input[aria-label="Search people"]');
+    const rows = [...document.querySelectorAll('table tbody tr')].map((row) => row.textContent || '');
+    return { value: input?.value || '', rows };
+  })()`);
+  assert(filtered.value === 'mara sensor', `Brain search input should retain the query, received ${filtered.value}`);
+  assert(filtered.rows.length === 1, `Brain search should rerender to one row, received ${filtered.rows.length}`);
+  assert(filtered.rows[0].includes('Mara Voss'), `Brain search should retain the matching synthetic person, received ${filtered.rows[0]}`);
+  const countText = await evalJS(cdp, `document.querySelector('[data-slot="filter-toolbar"] [aria-live="polite"]')?.textContent?.trim()`);
+  assert(countText === '1 person', `Brain search should use the correct singular count, received ${countText}`);
+  await evalJS(cdp, `(() => {
+    const input = document.querySelector('input[aria-label="Search people"]');
+    const setter = Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value')?.set;
+    if (input && setter) { setter.call(input, ''); input.dispatchEvent(new Event('input', { bubbles: true })); }
+    return true;
+  })()`);
+  await settle(cdp);
+  log('Brain assertions passed: Slash focus and live multi-term person filtering');
+}
+
+async function assertBrainDossierBehavior(cdp) {
+  const input = await evalJS(cdp, `document.querySelector('input[aria-label="Search people"]')?.focus(); true`);
+  assert(input === true, 'Brain person search should be focusable before keyboard navigation');
+  await dispatchKeyChord(cdp, { code: 'Tab', key: 'Tab', modifiers: 0 });
+  await settle(cdp);
+  const focusedId = await evalJS(cdp, `document.activeElement?.getAttribute('data-brain-person-id')`);
+  assert(focusedId === 'person:mara-voss', `Tab should land on the first person row, received ${focusedId}`);
+  await dispatchKeyChord(cdp, { code: 'Enter', key: 'Enter', modifiers: 0 });
+  await settle(cdp);
+  const dossier = await evalJS(cdp, `(() => ({
+    text: document.querySelector('[data-slot="page-frame"]')?.textContent || '',
+    h2: [...document.querySelectorAll('[data-slot="page-frame"] h2')].map((node) => node.textContent || ''),
+    h3: [...document.querySelectorAll('[data-slot="page-frame"] h3')].map((node) => node.textContent || ''),
+    items: [...document.querySelectorAll('[data-slot="page-frame"] li')].map((node) => node.textContent || ''),
+    evidence: document.querySelectorAll('[data-slot="page-frame"] blockquote').length,
+  }))()`);
+  assert(dossier.text.includes('TL;DR') && dossier.text.includes('Next'), `person detail should render the brief and next action, received ${dossier.text.slice(0, 500)}`);
+  assert(dossier.h2.includes('Current state') && dossier.h3.includes('Open decisions'), 'person detail should preserve H2/H3 hierarchy');
+  assert(dossier.items.includes('She owns sensor constraints and pilot acceptance.'), 'person detail should render structured list items');
+  assert(dossier.text.includes('Desmond Ilori'), 'person detail should render a resolved relationship');
+  assert(dossier.text.includes('Aurora Pilot'), 'person detail should resolve a non-person relationship without adding it to People');
+  assert(dossier.evidence === 2, `person detail should render two evidence rows, received ${dossier.evidence}`);
+  await evalJS(cdp, `[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('All people'))?.click(); true`);
+  await settle(cdp);
+  const restoredId = await evalJS(cdp, `document.activeElement?.getAttribute('data-brain-person-id')`);
+  assert(restoredId === 'person:mara-voss', `Back should restore focus to the originating person, received ${restoredId}`);
+  log('Brain dossier assertions passed: keyboard open, hierarchy, list, relation, evidence, and focus restore');
+}
+
+async function brainFreshnessState(cdp) {
+  return evalJS(cdp, `(() => {
+    const banner = document.querySelector('[data-brain-freshness]');
+    const tile = document.querySelector('[data-brain-vital="Last ingest"]');
+    const age = document.querySelector('[data-brain-snapshot-age]');
+    const detail = document.querySelector('[data-brain-source-detail]');
+    const rows = banner ? [...banner.querySelectorAll('[data-brain-banner-source]')] : [];
+    return {
+      banner: banner ? banner.textContent || '' : null,
+      bannerHeight: banner ? Math.round(banner.getBoundingClientRect().height) : 0,
+      sources: rows.length,
+      sourceRowsOneLine: rows.every((row) => row.getBoundingClientRect().height <= 24 && row.scrollHeight <= 24),
+      more: banner ? (banner.querySelector('[data-brain-banner-more]')?.textContent || null) : null,
+      tile: tile ? tile.textContent || '' : null,
+      tileTone: tile ? tile.getAttribute('data-brain-vital-tone') : null,
+      age: age ? { state: age.getAttribute('data-brain-snapshot-age'), text: age.textContent || '' } : null,
+      detail: detail ? { open: detail.open, summary: detail.querySelector('summary')?.textContent || '', text: detail.textContent || '' } : null,
+    };
+  })()`);
+}
+
+// Open (true) or close (false) the collapsed source detail through its
+// summary, the way a keyboard or pointer user would.
+async function setSourceDetail(cdp, open) {
+  await evalJS(cdp, `(() => { const d = document.querySelector('[data-brain-source-detail]'); if (d && d.open !== ${open}) d.querySelector('summary').click(); return true })()`);
+  await settle(cdp);
+}
+
+// Healthy fixture: no banner, an ISO last-ingest rendered as date plus age,
+// a fresh snapshot age in the header, and no source detail.
+async function assertBrainHealthyFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const state = await brainFreshnessState(cdp);
+  assert(state.banner === null, `healthy Brain snapshot should show no stale banner, received ${state.banner}`);
+  assert(state.tile && /ago · clean/.test(state.tile) && state.tileTone === null, `healthy Last ingest tile should read "<age> ago · clean" in the neutral tone, received ${state.tile} (${state.tileTone})`);
+  assert(state.age && state.age.state === 'fresh' && / ago$/.test(state.age.text.trim()), `header should show a fresh snapshot age, received ${JSON.stringify(state.age)}`);
+  assert(state.detail === null, 'healthy Brain snapshot should show no source detail');
+  log('Brain freshness assertions passed: healthy snapshot shows no banner, a dated ingest, a fresh age, and no source detail');
+}
+
+// Stale fixture (?brain=stale): the banner carries the producer notice and at
+// most three ingest sources, one line each, on both the list and the person
+// page; the background source and the overflow live in the collapsed detail.
+async function assertBrainStaleFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const list = await brainFreshnessState(cdp);
+  assert(list.banner && list.banner.includes('16 days behind'), `stale Brain snapshot should show the producer notice, received ${list.banner}`);
+  assert(list.sources === 3, `stale banner should cap its source list at three, received ${list.sources}`);
+  assert(list.sourceRowsOneLine, 'every banner source row should be one line');
+  assert(list.more && list.more.includes('+1 more'), `stale banner should count the ingest source it left out, received ${list.more}`);
+  assert(!list.banner.includes('Message archive'), 'a source that does not affect ingest must stay out of the banner');
+  assert(list.banner.includes('data through') && list.banner.includes('16d ago'), `stale banner should show the data-through age, received ${list.banner}`);
+  assert(list.tile && /16d ago · stale/.test(list.tile) && list.tileTone === 'warn', `stale Last ingest tile should read "16d ago · stale" in the warning tone, received ${list.tile} (${list.tileTone})`);
+  assert(list.detail && !list.detail.open && list.detail.summary.includes('5 sources not current'), `stale list should show a collapsed source detail for all five sources, received ${JSON.stringify(list.detail)}`);
+  await setSourceDetail(cdp, true);
+  const opened = await brainFreshnessState(cdp);
+  assert(opened.detail.open && opened.detail.text.includes('Message archive') && opened.detail.text.includes('export paused by its owner'), 'the opened source detail should list the background source with its full note');
+  await setSourceDetail(cdp, false);
+  await cdp.send('Emulation.setDeviceMetricsOverride', { ...VIEWPORT, width: 1280, height: 720 });
+  await settle(cdp);
+  const small = await brainFreshnessState(cdp);
+  assert(small.bannerHeight <= 160 && small.sourceRowsOneLine, `at 1280x720 the stale banner should stay compact with one-line rows, received ${small.bannerHeight}px`);
+  await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+  await settle(cdp);
+  await openFixtureBrainDossier(cdp);
+  const person = await brainFreshnessState(cdp);
+  assert(person.banner && person.banner.includes('16 days behind') && person.sources === 3, `person page should repeat the capped stale banner, received ${person.banner}`);
+  await evalJS(cdp, `[...document.querySelectorAll('button')].find((button) => button.textContent?.includes('All people'))?.click(); true`);
+  await settle(cdp);
+  log(`Brain freshness assertions passed: stale banner capped at 3 one-line sources (${small.bannerHeight}px at 1280x720), overflow count, collapsed detail, stale tile, and person-page banner`);
+}
+
+// A background source partial (?brain=partial-other): no banner, a clean tile,
+// and the source only in the collapsed detail.
+async function assertBrainPartialOtherFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const state = await brainFreshnessState(cdp);
+  assert(state.banner === null, `a background source should not raise the banner, received ${state.banner}`);
+  assert(state.tile && /ago · clean/.test(state.tile) && state.tileTone === null, `a background source should leave the tile clean, received ${state.tile} (${state.tileTone})`);
+  assert(state.detail && !state.detail.open && state.detail.summary.includes('1 other source not current'), `a background source should sit in a collapsed detail, received ${JSON.stringify(state.detail)}`);
+  await setSourceDetail(cdp, true);
+  const opened = await brainFreshnessState(cdp);
+  assert(opened.detail.text.includes('2 of 3 mailboxes read'), 'the opened detail should show the background source note');
+  await setSourceDetail(cdp, false);
+  log('Brain freshness assertions passed: a background source stays out of the banner and the tile');
+}
+
+// An ingest source partial while ingestOk is true (?brain=partial-ingest): no
+// banner, but the tile names it in the notice tone instead of reading clean.
+async function assertBrainPartialIngestFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const state = await brainFreshnessState(cdp);
+  assert(state.banner === null, `ingestOk true should not raise the banner, received ${state.banner}`);
+  assert(state.tile && state.tile.includes('1 source partial') && state.tileTone === 'notice', `the tile should name the partial ingest source in the notice tone, received ${state.tile} (${state.tileTone})`);
+  await setSourceDetail(cdp, true);
+  const opened = await brainFreshnessState(cdp);
+  assert(/Calendar · partial · data through \w+ \d+, today/.test(opened.detail.text), `a date-only dataThrough should age in calendar days, received ${opened.detail.text}`);
+  await setSourceDetail(cdp, false);
+  log('Brain freshness assertions passed: a partial ingest source shows in the tile hint, and a date-only value reads today');
+}
+
+// Past staleAfter (?brain=expired): the banner fires although ingestOk is
+// true, lists no sources, and the tile reads unverified, never clean.
+async function assertBrainExpiredFreshness(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  const state = await brainFreshnessState(cdp);
+  assert(state.banner && state.banner.includes('past its refresh time') && state.sources === 0, `a snapshot past staleAfter should raise a source-free banner, received ${state.banner}`);
+  assert(state.tile && /unverified/.test(state.tile) && state.tileTone === 'warn', `a snapshot past staleAfter should read unverified on the tile, received ${state.tile} (${state.tileTone})`);
+  assert(state.age && state.age.state === 'stale', `the header should flag a snapshot past staleAfter, received ${JSON.stringify(state.age)}`);
+  log('Brain freshness assertions passed: past staleAfter raises the banner and the tile reads unverified');
+}
+
+async function bootBrainVariant(cdp, url, variant) {
+  await cdp.send('Page.navigate', { url: `${url}?brain=${variant}` });
+  for (let i = 0; i < BOOT_POLL_ATTEMPTS; i++) {
+    await new Promise((r) => setTimeout(r, BOOT_POLL_INTERVAL_MS));
+    const ready = await evalJS(cdp, `location.search === ${JSON.stringify(`?brain=${variant}`)} && !!(window.__humanctlPerf && window.__humanctlPerf.setTheme)`);
+    if (ready) {
+      await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
+      return;
+    }
+  }
+  throw new Error(`renderer never booted with ?brain=${variant}`);
+}
+
+async function openFixtureBrainDossier(cdp) {
+  await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+  await settle(cdp);
+  await evalJS(cdp, `document.querySelector('[data-brain-person-id="person:mara-voss"]')?.click(); true`);
+  await settle(cdp);
+}
+
 async function capture(cdp, outDir, filename) {
   const r = await cdp.send('Page.captureScreenshot', { format: 'png', captureBeyondViewport: false });
   const outPath = path.join(outDir, filename);
@@ -422,6 +623,9 @@ async function main() {
 
     await cdp.send('Emulation.setDeviceMetricsOverride', VIEWPORT);
     await assertFoundationBehavior(cdp);
+    await assertBrainSearchBehavior(cdp);
+    await assertBrainDossierBehavior(cdp);
+    await assertBrainHealthyFreshness(cdp);
 
     for (const theme of THEMES) {
       await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); true`);
@@ -432,6 +636,9 @@ async function main() {
         await settle(cdp);
         await capture(cdp, outDir, `${view}-${theme}.png`);
       }
+
+      await openFixtureBrainDossier(cdp);
+      await capture(cdp, outDir, `brain-person-detail-${theme}.png`);
 
       // Session detail: no id given, so the hook opens the first known
       // fixture session (the product hook's openDetail default).
@@ -471,7 +678,34 @@ async function main() {
       await settle(cdp);
     }
 
-    log(`done: ${(VIEWS.length + 5) * THEMES.length} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
+    // Brain freshness passes: reload the same bundle with each fixture variant
+    // so every warning path is captured and asserted, not just the healthy one.
+    const brainPasses = [
+      { variant: 'stale', check: assertBrainStaleFreshness, shots: ['list', 'open', 'person'] },
+      { variant: 'partial-other', check: assertBrainPartialOtherFreshness, shots: ['list', 'open'] },
+      { variant: 'partial-ingest', check: assertBrainPartialIngestFreshness, shots: ['list', 'open'] },
+      { variant: 'expired', check: assertBrainExpiredFreshness, shots: ['list', 'person'] },
+    ];
+    let brainShots = 0;
+    for (const pass of brainPasses) {
+      await bootBrainVariant(cdp, url, pass.variant);
+      await pass.check(cdp);
+      for (const theme of THEMES) {
+        await evalJS(cdp, `window.__humanctlPerf.setTheme(${JSON.stringify(theme)}); window.__humanctlPerf.setView('inbox'); true`);
+        await settle(cdp);
+        await evalJS(cdp, `window.__humanctlPerf.setView('brain'); true`);
+        await settle(cdp);
+        for (const shot of pass.shots) {
+          if (shot === 'person') await openFixtureBrainDossier(cdp);
+          if (shot === 'open') await setSourceDetail(cdp, true);
+          await capture(cdp, outDir, shot === 'person' ? `brain-person-${pass.variant}-${theme}.png` : `brain-${pass.variant}${shot === 'open' ? '-open' : ''}-${theme}.png`);
+          if (shot === 'open') await setSourceDetail(cdp, false);
+          brainShots += 1;
+        }
+      }
+    }
+
+    log(`done: ${(VIEWS.length + 6) * THEMES.length + brainShots} PNGs in ${path.relative(REPO_ROOT, outDir)}`);
   } finally {
     if (cdp) cdp.close();
     if (chromeChild) await killAndWait(chromeChild);

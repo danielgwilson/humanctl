@@ -25,9 +25,10 @@ The app reads recent Codex and Claude Code transcripts on your machine and
 shows the whole fleet in one exception-first surface: sessions that need you
 lead, everything healthy recedes. A full-height sidebar navigates Inbox
 (default, unread badge), Metrics, Fleet, and Sessions, keys 1/2/3/4. Inbox is
-the default: a message-centric view of every session's agent notes, detected
-asks, and btw questions, one thread per session, so the primary surface
-matches the thesis (attention routing, not session picking). A summonable
+the default: a message-centric view of agent notes, detected asks, and btw
+questions. Session-linked activity stays in one thread per session. Notes
+without a session appear in one read-only General updates thread, so the
+primary surface matches the thesis (attention routing, not session picking). A summonable
 chief-of-staff drawer (an advisory chat grounded in the live fleet) and a
 persistent bottom context bar (the fleet digest and quota) round out the
 shell. Rows carry real signals only: a one-line summary, cwd and harness, and
@@ -95,7 +96,8 @@ sources were degraded instead of pretending they were empty. See
 app surfaces notes at the top of the control room.
 
 - `humanctl note --level fyi|review|blocked|done "message"`
-- `--session <id>` links a note to a session so the inbox can open it
+- notes without `--session` appear in the read-only General updates thread
+- `--session <id>` links a note to that task's thread and actions
 - cwd and repo are captured automatically
 
 Underneath sits the durable object model for bigger handoffs:

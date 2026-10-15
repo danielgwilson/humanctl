@@ -23,7 +23,9 @@ export interface VaultRelation {
 
 export interface VaultEntitySection {
   heading: string
-  body: string
+  body?: string
+  level?: 2 | 3 | 4
+  items?: string[]
 }
 
 export interface VaultEntityEvidence {
@@ -77,11 +79,29 @@ export interface VaultView {
   labelTones?: Record<string, Record<string, string>>
 }
 
+// One producer input, reported by the producer. `status` is free text: "ok"
+// (or "healthy") means current, and any other value ("stale", "partial",
+// "blocked", "error") is surfaced to the human as-is. `affectsIngest` marks the
+// inputs that feed `ingestOk`; only those reach the banner and the Last ingest
+// hint, and the rest stay in a collapsed detail.
+export interface VaultSource {
+  label: string
+  status: string
+  lastSuccessAt?: string
+  dataThrough?: string
+  note?: string
+  affectsIngest?: boolean
+}
+
 export interface VaultVitals {
   entities?: number
   canonPages?: number
   lastIngest?: string
   ingestOk?: boolean
+  notice?: string
+  /** ISO 8601 instant after which the viewer treats this snapshot as stale. */
+  staleAfter?: string
+  sources?: VaultSource[]
   [key: string]: unknown
 }
 

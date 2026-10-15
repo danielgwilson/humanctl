@@ -20,8 +20,8 @@ export const SUPPORTED_VAULT_API_VERSIONS: ReadonlyArray<string> = [
   CURRENT_VAULT_API_VERSION,
 ];
 
-// Curated snapshots are small by construction (the producer drops bodies and
-// evidence text it does not need). Cap the read so a runaway or wrong-file path
+// Curated snapshots are bounded by construction: the producer emits selected
+// dossiers, not raw vault files. Cap the read so a runaway or wrong-file path
 // can never hand the main/reader process an unbounded parse.
 export const MAX_VAULT_SNAPSHOT_BYTES = 8 * 1024 * 1024;
 
@@ -33,7 +33,9 @@ export interface VaultRelation {
 
 export interface VaultEntitySection {
   heading: string;
-  body: string;
+  body?: string;
+  level?: 2 | 3 | 4;
+  items?: string[];
 }
 
 export interface VaultEntityEvidence {
@@ -87,11 +89,29 @@ export interface VaultView {
   labelTones?: Record<string, Record<string, string>>;
 }
 
+// One producer input, reported by the producer. `status` is free text: "ok"
+// (or "healthy") means current, and any other value ("stale", "partial",
+// "blocked", "error") is surfaced to the human as-is. `affectsIngest` marks the
+// inputs that feed `ingestOk`; only those reach the banner and the Last ingest
+// hint, and the rest stay in a collapsed detail.
+export interface VaultSource {
+  label: string;
+  status: string;
+  lastSuccessAt?: string;
+  dataThrough?: string;
+  note?: string;
+  affectsIngest?: boolean;
+}
+
 export interface VaultVitals {
   entities?: number;
   canonPages?: number;
   lastIngest?: string;
   ingestOk?: boolean;
+  notice?: string;
+  /** ISO 8601 instant after which the viewer treats this snapshot as stale. */
+  staleAfter?: string;
+  sources?: VaultSource[];
   [key: string]: unknown;
 }
 

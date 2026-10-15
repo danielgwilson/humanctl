@@ -117,7 +117,10 @@ async function main(): Promise<void> {
 
   const notesPath = path.join(HOME, '.humanctl', 'notes.jsonl');
   fs.mkdirSync(path.dirname(notesPath), { recursive: true });
-  fs.writeFileSync(notesPath, JSON.stringify({ id: 'note-1', ts: iso(2), level: 'review', message: 'PR is up', session: sessionId }) + '\n');
+  fs.writeFileSync(notesPath, [
+    { id: 'note-1', ts: iso(2), level: 'review', message: 'PR is up', session: sessionId },
+    { id: 'note-2', ts: iso(3), level: 'fyi', message: 'Synthetic workspace update', repo: 'fixture-proj' },
+  ].map((note) => JSON.stringify(note)).join('\n') + '\n');
 
   // ---- transport 1: process.parentPort (main.ts's own requests) ----
 
@@ -143,6 +146,17 @@ async function main(): Promise<void> {
     const t = threads.find((x) => x.sessionId === sessionId);
     assert.ok(t, 'expected a thread for the noted session (proves the notes.jsonl -> inbox.threads join)');
     assert.strictEqual((t as { items: Array<{ kind: string }> }).items[0].kind, 'note');
+  });
+
+  await checkAsync('inbox.threads surfaces an unlinked note in the general thread', async () => {
+    const r = await request(fakeParentPort, 'inbox.threads', {});
+    assert.strictEqual(r.ok, true);
+    const threads = (r.result as { threads: Array<{ threadId: string; scope: string; sessionId?: string; items: Array<{ message?: string }> }> }).threads;
+    const general = threads.find((thread) => thread.threadId === 'general-updates');
+    assert.ok(general, 'expected a stable general thread for the unlinked note');
+    assert.strictEqual(general.scope, 'general');
+    assert.strictEqual(general.sessionId, undefined);
+    assert.ok(general.items.some((item) => item.message === 'Synthetic workspace update'));
   });
 
   await checkAsync('an unknown cmd replies ok:false with an "unknown cmd" error', async () => {
@@ -259,9 +273,30 @@ async function main(): Promise<void> {
 
   // ---- brain.snapshot: off-main read + parse + envelope validation ----
   const snapshotPath = path.join(HOME, 'vault-snapshot.json');
+  const freshnessVitals = {
+    ingestOk: false,
+    lastIngest: '2026-09-22T12:00:00Z',
+    notice: 'One source is behind.',
+    staleAfter: '2026-09-22T08:00:00-07:00',
+    sources: [
+      { label: 'Notes folder', status: 'partial', lastSuccessAt: '2026-09-22T12:00:00Z', dataThrough: '2026-09-22', note: 'items waiting', affectsIngest: true },
+      { label: 'Message archive', status: 'blocked', affectsIngest: false },
+    ],
+  };
   fs.writeFileSync(snapshotPath, JSON.stringify({
     apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
-    entities: [{ kind: 'person', id: 'person:x', label: 'X Person' }],
+    vitals: freshnessVitals,
+    entities: [{
+      kind: 'person',
+      id: 'person:x',
+      label: 'X Person',
+      spec: {
+        sections: [
+          { heading: 'Current state', body: 'Pilot is active', level: 2, items: ['Ship the bounded slice'] },
+          { heading: 'Decision rights', level: 3 },
+        ],
+      },
+    }],
   }));
 
   await checkAsync('brain.snapshot with no path resolves ok with a null snapshot (onboarding, not an error)', async () => {
@@ -273,8 +308,12 @@ async function main(): Promise<void> {
   await checkAsync('brain.snapshot reads and validates a real file, returning the parsed snapshot', async () => {
     const r = await request(rendererPort2, 'brain.snapshot', { path: snapshotPath });
     assert.strictEqual(r.ok, true);
-    const snap = (r.result as { snapshot: { entities: Array<{ id: string }> } }).snapshot;
+    const snap = (r.result as { snapshot: { entities: Array<{ id: string; spec?: { sections?: Array<{ level?: number; items?: string[] }> } }> } }).snapshot;
     assert.strictEqual(snap.entities[0].id, 'person:x');
+    assert.strictEqual(snap.entities[0].spec?.sections?.[0].level, 2, 'section heading depth passes through the reader unchanged');
+    assert.deepStrictEqual(snap.entities[0].spec?.sections?.[0].items, ['Ship the bounded slice'], 'section list items pass through the reader unchanged');
+    assert.strictEqual(snap.entities[0].spec?.sections?.[1].level, 3, 'heading-only nested sections remain valid');
+    assert.deepStrictEqual((r.result as { snapshot: { vitals?: unknown } }).snapshot.vitals, freshnessVitals, 'freshness vitals (notice, staleAfter, sources with affectsIngest) pass through the reader unchanged');
   });
 
   await checkAsync('brain.snapshot on a missing file throws, surfacing as an honest ok:false', async () => {

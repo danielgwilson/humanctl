@@ -91,16 +91,17 @@ active refresh without replacing the resource data.
 
 | ID | Required behavior | Acceptance proof |
 |---|---|---|
-| INBOX-01 | Inbox shows one thread per session assembled by the backend from notes, asks, interrupted asks, answers, and session state. | Fixture for every thread-item kind. |
-| INBOX-02 | Search matches title, repo, and message to the human. Filters cover state and harness. Sorts are recent, needs-first, and alphabetic. | `npm run ui:derivations:selftest`. |
+| INBOX-01 | Inbox shows one thread per session assembled by the backend from notes, asks, interrupted asks, answers, and session state, plus one read-only General updates thread for unlinked notes. | Fixture for every thread-item kind and an unlinked note. |
+| INBOX-02 | Search matches title, repo, and every visible message to the human. Filters cover state and harness. Sorts are recent, needs-first, and alphabetic. | `npm run ui:derivations:selftest`. |
 | INBOX-03 | Needs-first uses `need`, `block`, `work`, `idle`, `done`, then recency within a state. | `npm run ui:derivations:selftest`. |
-| INBOX-04 | Unread means at least one item timestamp is newer than that session's persisted last-read timestamp. | `npm run ui:derivations:selftest`. |
+| INBOX-04 | Unread means at least one item timestamp is newer than that thread's persisted last-read timestamp. | `npm run ui:derivations:selftest`. |
 | INBOX-05 | Selecting a thread marks it read and shows its detail without remounting the search field. | Focus-preservation test. |
 | INBOX-06 | Mark-all-read persists every visible thread through the registered command and updates the unread digest immediately. | Command spy plus UI assertion. |
 | INBOX-07 | Pin and unpin persist through the registered state path. Opening, full-detail opening, and mark-read remain available by keyboard or menu. | Keyboard and context-menu test. |
 | INBOX-08 | The list remains responsive with at least 200 threads and mounts only a bounded window of rows. | `npm run ui:virtual-list:selftest` plus the local click-to-paint gate. |
 | INBOX-09 | Empty and no-match states explain the next action without inventing data. | Empty fixtures. |
 | INBOX-10 | Inbox keeps the authoritative session row from its 30-day scan, including pending decisions older than the 72-hour Sessions inventory. | `npm run commands:selftest` plus `npm run ui:derivations:selftest`. |
+| INBOX-11 | Unlinked notes keep a stable thread ID, derive attention state from the newest note, and expose no session actions. | `npm run commands:selftest`, `npm run ui:derivations:selftest`, and both-theme Inbox screenshots. |
 
 ## 7. Sessions and detail
 
@@ -137,6 +138,10 @@ active refresh without replacing the resource data.
 | METRIC-02 | Claude reset text renders verbatim. Missing subscription quota renders unavailable, never zero or a fabricated percentage. | Quota fixture matrix. |
 | METRIC-03 | Codex quota uses its supplied epoch and cadence. Metrics distinguishes estimated cost from actual subscription quota. | Quota fixture matrix. |
 | FLEET-01 | Fleet owns distribution by state, harness, and tier. It does not become a second session list. | Fleet fixture. |
+| BRAIN-01 | Brain People search matches rendered person names, roles, labels, summaries, sections, evidence, and relationships without producer-specific vocabulary. Slash focuses search. | `npm run ui:derivations:selftest` plus both-theme Brain screenshots. |
+| BRAIN-02 | Brain shows snapshot generation time with its age and rereads the configured snapshot on view entry, on window focus while open, and on explicit reload, without changing producer data. Overlapping rereads for one path share a single read. | Runtime command spy, Brain reload coalescing selftest, plus both-theme Brain screenshots. |
+| BRAIN-03 | Person detail renders the producer's ordered dossier without flattening heading hierarchy, lists, next actions, generic facts, relationships, or evidence. | Reader pass-through test, derivation selftest, keyboard interaction assertion, and both-theme person-detail screenshots. |
+| BRAIN-04 | A stale snapshot never reads as healthy. `vitals.ingestOk: false` shows a warning banner (producer `notice`, else a stale-since fallback, plus at most three ingest-affecting sources that are not `ok`, one line each, most severe first, with a "+N more" count) on the list and on person pages; with `ingestOk: true` an ingest-affecting source that is not `ok` turns the Last ingest hint to a notice instead of clean; sources marked `affectsIngest: false` appear only in the collapsed source detail; a missing `ingestOk` reads unknown, never clean; an ISO last ingest shows date plus age, and date-only values age in local calendar days on the tile and in the banner alike; a snapshot past `vitals.staleAfter` (else older than 24 hours) flags the header, raises a source-free banner, and reads unverified on the tile; `generatedAt` with an offset is exact and without one is local time. | `npm run ui:derivations:selftest` freshness cases plus both-theme healthy, `stale`, `partial-other`, `partial-ingest`, and `expired` (`?brain=<variant>`) Brain screenshots with DOM assertions. |
 | STATUS-01 | The global status band shows a compact fleet digest plus one quota digest per harness. Detailed windows remain in Metrics. | Ownership review and screenshot. |
 | SETTINGS-01 | Settings persists light, dark, and system theme; summary engine; and daily summary budget through the state command. | State round-trip test. |
 | SETTINGS-02 | Budget clamps to at least USD 0.10, commits on blur or Enter, and shows today's spend and paused state honestly. Clean drafts never overwrite newer external state. | `npm run ui:budget:selftest` plus the Settings interaction fixture. |

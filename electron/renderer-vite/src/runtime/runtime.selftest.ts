@@ -15,6 +15,7 @@ import type {
   SessionRow,
   TimelineEvent,
 } from './contracts';
+import type { FixtureBrainVariant } from './brain-fixture';
 import { createFixtureAdapter } from './fixture-adapter';
 import { createHumanctlRuntime, FLEET_POLL_MS, type RuntimeClock } from './runtime';
 import {
@@ -113,6 +114,7 @@ class FakeAdapter implements HumanctlAdapter {
   stateWrites: Partial<AppState>[] = [];
   summaryArgs: Array<Parameters<HumanctlAdapter['summarize']>[0]> = [];
   hotArgs: Array<{ path: string; harness?: string; from?: number } | null> = [];
+  brainArgs: Array<{ path?: string } | undefined> = [];
   statusDeferred = deferred<StatusResult>();
   sessionsDeferred = deferred<SessionsResult>();
   notesDeferred = deferred<NotesResult>();
@@ -141,14 +143,26 @@ class FakeAdapter implements HumanctlAdapter {
   readonly notesResult: NotesResult = { ok: true, notes: [] };
   readonly inboxResult: InboxResult = {
     ok: true,
-    threads: [{
-      sessionId: ROW.id,
-      harness: ROW.harness,
-      path: ROW.path || '',
-      title: ROW.title,
-      items: [{ kind: 'ask', reason: 'Choose the bounded path.', ts: '2026-07-14T00:00:00.000Z' }],
-      lastTs: '2026-07-14T00:00:00.000Z',
-    }],
+    threads: [
+      {
+        threadId: ROW.id,
+        scope: 'session',
+        sessionId: ROW.id,
+        harness: ROW.harness,
+        path: ROW.path || '',
+        title: ROW.title,
+        items: [{ kind: 'ask', reason: 'Choose the bounded path.', ts: '2026-07-14T00:00:00.000Z' }],
+        lastTs: '2026-07-14T00:00:00.000Z',
+      },
+      {
+        threadId: 'general-updates',
+        scope: 'general',
+        path: '',
+        title: 'General updates',
+        items: [{ kind: 'note', level: 'fyi', message: 'Synthetic general update', ts: '2026-07-14T00:01:00.000Z', id: 'general-note' }],
+        lastTs: '2026-07-14T00:01:00.000Z',
+      },
+    ],
   };
   quotaResult: QuotaResult = {
     ok: true,
@@ -210,7 +224,16 @@ class FakeAdapter implements HumanctlAdapter {
   async markThreadRead(): Promise<BridgeResult> { return { ok: true }; }
   async markAllThreadsRead(): Promise<BridgeResult> { return { ok: true }; }
   async aggregateSkills() { return { ok: true, agg: { skills: { test: 2 }, sessionsWithSkills: 1, totalInvocations: 2 } }; }
+  // When brainHold is set, each Brain read waits until the test releases it,
+  // so overlapping reload requests are observable.
+  brainHold = false;
+  brainPending: Array<() => void> = [];
+  releaseBrain(): void {
+    this.brainPending.splice(0).forEach((release) => release());
+  }
   async getBrain(arg?: { path?: string }) {
+    this.brainArgs.push(arg ? clone(arg) : undefined);
+    if (this.brainHold) await new Promise<void>((release) => { this.brainPending.push(release); });
     if (!arg?.path) return { ok: true, snapshot: null };
     return { ok: true, snapshot: { apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1', entities: [{ kind: 'person', id: 'person:test', label: 'Test Person' }] } };
   }
@@ -307,6 +330,19 @@ async function run(): Promise<void> {
   equal(runtime.getSnapshot().resources.status.status, 'ready', 'status settled');
   equal(runtime.getSnapshot().resources.inbox.status, 'ready', 'inbox settled');
 
+  const brainPath = '/fixtures/vault-snapshot.json';
+  const brainPathPatch = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: brainPath } });
+  assert(brainPathPatch.ok, 'brain snapshot path patch succeeds');
+  const brainReload = await runtime.dispatch({ type: 'brain.load' });
+  assert(brainReload.ok, 'explicit Brain reload succeeds');
+  equal(adapter.brainArgs[adapter.brainArgs.length - 1]?.path, brainPath, 'Brain reload rereads the configured snapshot path');
+  equal(runtime.getSnapshot().resources.brain.data?.entities[0]?.id, 'person:test', 'Brain reload commits the refreshed snapshot');
+
+  const generalReadAt = Date.parse('2026-07-14T00:02:00.000Z');
+  const generalRead = await runtime.dispatch({ type: 'thread.markRead', threadId: 'general-updates', at: generalReadAt });
+  assert(generalRead.ok, 'general thread can be marked read without a session');
+  equal(runtime.getSnapshot().resources.appState.data.lastReadTs?.['general-updates'], generalReadAt, 'general thread read marker uses threadId');
+
   const enginePatch = await runtime.dispatch({ type: 'app.patch', patch: { summarizer: 'codex' } });
   assert(enginePatch.ok, 'summary engine patch succeeds');
   const summarized = await runtime.dispatch({ type: 'session.summarize', session: ROW });
@@ -369,6 +405,8 @@ async function run(): Promise<void> {
   equal(adapter.hotArgs[adapter.hotArgs.length - 1], null, 'stop clears hot session and fixture append timers');
 
   await testQuotaCoalescing();
+  await testBrainLoadCoalescing();
+  await testFixtureBrainVariants();
   await testTimelineCap();
   await testFixtureStatusCounts();
 
@@ -577,6 +615,93 @@ async function testQuotaCoalescing(): Promise<void> {
   equal(runtime.getSnapshot().resources.quota.data?.at, 200, 'newest quota generation wins');
   assert(!committedQuotaTimestamps.includes(100), 'superseded quota generation never commits stale data');
   release();
+}
+
+// The Brain view rereads its snapshot on view entry, on window focus, and on
+// the Reload button. Overlapping requests for the same path must share one
+// read; a request for a different path must not be swallowed by the old one.
+async function testBrainLoadCoalescing(): Promise<void> {
+  const adapter = new FakeAdapter();
+  adapter.resolveState();
+  adapter.resolveSessions();
+  adapter.resolveCore();
+  adapter.resolveQuota();
+  const runtime = createHumanctlRuntime(adapter, { clock: new FakeClock() });
+  const release = runtime.start();
+  await settle();
+  const patched = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: '/fixtures/a.json' } });
+  assert(patched.ok, 'brain path patch succeeds');
+  adapter.brainHold = true;
+
+  const first = runtime.dispatch({ type: 'brain.load' });
+  const joined = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 1, 'a Brain reload requested while one is in flight joins it');
+  equal(runtime.getSnapshot().operations['brain.load']?.status, 'pending', 'the in-flight Brain read is visible as a pending operation');
+  adapter.releaseBrain();
+  const [firstOutcome, joinedOutcome] = await Promise.all([first, joined]);
+  assert(firstOutcome.ok && joinedOutcome.ok, 'joined Brain reloads both succeed');
+  equal(joinedOutcome, firstOutcome, 'a joined Brain reload receives the same outcome');
+  equal(runtime.getSnapshot().resources.brain.status, 'ready', 'Brain snapshot is committed');
+
+  const later = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 2, 'a reload after the previous read settles reads the file again');
+  const moved = await runtime.dispatch({ type: 'app.patch', patch: { brainSnapshotPath: '/fixtures/b.json' } });
+  assert(moved.ok, 'second brain path patch succeeds');
+  const otherPath = runtime.dispatch({ type: 'brain.load' });
+  equal(adapter.brainArgs.length, 3, 'a reload for a different path does not join the in-flight read');
+  equal(adapter.brainArgs[2]?.path, '/fixtures/b.json', 'the new read uses the new path');
+  adapter.releaseBrain();
+  const [laterOutcome, otherOutcome] = await Promise.all([later, otherPath]);
+  assert(laterOutcome.ok && otherOutcome.ok, 'both reads settle');
+  adapter.brainHold = false;
+  const next = await runtime.dispatch({ type: 'brain.load' });
+  assert(next.ok, 'reads resume after overlapping requests settle');
+  equal(adapter.brainArgs.length, 4, 'no Brain read is left joined to a settled request');
+  release();
+}
+
+// The fixture serves one Brain snapshot per freshness path so the browser loop
+// and screenshots can review each. Every variant must carry the full freshness
+// shape a producer is expected to write.
+async function testFixtureBrainVariants(): Promise<void> {
+  const HOUR = 60 * 60_000;
+  const read = async (brain?: FixtureBrainVariant) => {
+    const snapshot = (await createFixtureAdapter(brain ? { brain } : {}).getBrain()).snapshot;
+    assert(snapshot, `fixture serves the ${brain || 'default'} snapshot`);
+    const sources = snapshot.vitals?.sources || [];
+    assert(sources.length > 0 && sources.every((source) => typeof source.affectsIngest === 'boolean'), `${brain || 'default'} fixture marks every source with affectsIngest`);
+    equal(Date.parse(snapshot.vitals?.staleAfter || '') - Date.parse(snapshot.generatedAt || ''), 3 * HOUR, `${brain || 'default'} fixture declares staleAfter three hours after generatedAt`);
+    return { snapshot, notOk: sources.filter((source) => source.status !== 'ok') };
+  };
+
+  const healthy = await read();
+  equal(healthy.snapshot.vitals?.ingestOk, true, 'default fixture snapshot reports healthy ingest');
+  assert(Date.now() - Date.parse(healthy.snapshot.generatedAt || '') < 60 * 60_000, 'healthy fixture snapshot is rebased to minutes ago');
+  assert(!Number.isNaN(Date.parse(healthy.snapshot.vitals?.lastIngest || '')), 'healthy fixture lastIngest is ISO');
+  assert(Date.parse(healthy.snapshot.vitals?.staleAfter || '') > Date.now(), 'healthy fixture is inside its refresh window');
+  equal(healthy.notOk.length, 0, 'healthy fixture has every source current');
+
+  const stale = await read('stale');
+  equal(stale.snapshot.vitals?.ingestOk, false, 'stale fixture reports failed ingest');
+  assert(typeof stale.snapshot.vitals?.notice === 'string' && stale.snapshot.vitals.notice.length > 0, 'stale fixture carries a producer notice');
+  assert(Date.now() - Date.parse(stale.snapshot.vitals?.lastIngest || '') > 7 * 24 * HOUR, 'stale fixture lastIngest is days old');
+  equal(stale.notOk.filter((source) => source.affectsIngest).length, 4, 'stale fixture has four ingest sources not current, one more than the banner cap');
+  equal(stale.notOk.filter((source) => !source.affectsIngest).length, 1, 'stale fixture also has a background source not current');
+  assert(Date.now() - Date.parse(stale.snapshot.generatedAt || '') < 60 * 60_000, 'stale fixture snapshot itself is recent, so only vitals expose the staleness');
+
+  const other = await read('partial-other');
+  equal(other.snapshot.vitals?.ingestOk, true, 'partial-other fixture reports healthy ingest');
+  equal(JSON.stringify(other.notOk.map((source) => [source.status, source.affectsIngest])), JSON.stringify([['partial', false]]), 'partial-other fixture has exactly one background source partial');
+
+  const ingest = await read('partial-ingest');
+  equal(ingest.snapshot.vitals?.ingestOk, true, 'partial-ingest fixture reports healthy ingest');
+  equal(JSON.stringify(ingest.notOk.map((source) => [source.status, source.affectsIngest])), JSON.stringify([['partial', true]]), 'partial-ingest fixture has exactly one ingest source partial');
+  assert(/^\d{4}-\d{2}-\d{2}$/.test(ingest.notOk[0]?.dataThrough || ''), 'the partial calendar source reports a date-only dataThrough');
+
+  const expired = await read('expired');
+  equal(expired.snapshot.vitals?.ingestOk, true, 'expired fixture still claims healthy ingest');
+  assert(Date.parse(expired.snapshot.vitals?.staleAfter || '') < Date.now(), 'expired fixture is past its staleAfter');
+  equal(expired.notOk.length, 0, 'expired fixture has every source current, so only staleAfter exposes it');
 }
 
 async function testTimelineCap(): Promise<void> {

@@ -7,7 +7,9 @@ import type { VaultSnapshotModel } from './contracts';
  * stands in for a real producer so the Brain view is fully reviewable without
  * any real data, and it exercises the exact generic shape a real exporter must
  * emit (labels/annotations/spec/relations, pre-resolved status, queues, and a
- * views hint). Dates are fixed so screenshots are deterministic.
+ * views hint). Contact dates are fixed so screenshots are deterministic; the
+ * snapshot and ingest times are rebased to the load time by
+ * fixtureVaultSnapshot below, because the view renders them as ages.
  */
 export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
   apiVersion: 'humanctl.dev/vaultsnapshot/v1alpha1',
@@ -29,19 +31,51 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
       id: 'person:mara-voss',
       label: 'Mara Voss',
       labels: { group: 'inner', lifecycle: 'steady' },
-      annotations: { role: 'Founder, climate sensor hardware' },
+      annotations: {
+        role: 'Founder, climate sensor hardware',
+        relationship: 'Close technical collaborator',
+        confidence: 'High',
+      },
       spec: {
         priority: 92,
         lastContactAt: '2026-07-27',
         cadenceDays: 14,
         status: 'on-track',
         nextTouch: 'Send the reference architecture sketch she asked for',
-        summary:
-          "Intro'd her to two infra founders after the offsite. She owes a reply on the pilot scope, and I owe her a reference architecture sketch.",
+        summary: 'Close technical collaborator. The pilot is active, the architecture boundary is clear, and the remaining blocker is a concrete deployment plan.',
         sections: [
-          { heading: 'How we met', body: 'Seated next to each other at a founders dinner. Talked the whole night about why hardware pilots stall on integration, not on the sensor.' },
-          { heading: 'Open threads', body: 'Pilot scope for the sensor rollout is blocked on a reference architecture. She wants design partners with real deployments, not logos for a slide.' },
-          { heading: 'Signals', body: 'Raising a bridge round next quarter. Prefers warm technical intros over investor blasts.' },
+          {
+            heading: 'Current state',
+            level: 2,
+            body: 'The pilot scope is agreed in principle. The reference architecture and deployment sequence are the two remaining inputs before field work starts.',
+            items: ['She owns sensor constraints and pilot acceptance.', 'I own the reference architecture and two design-partner introductions.'],
+          },
+          {
+            heading: 'Open decisions',
+            level: 3,
+            body: 'Choose one deployment pattern and name the person who can approve an exception during the pilot.',
+          },
+          {
+            heading: 'How we work together',
+            level: 2,
+            body: 'Lead with the system boundary and a concrete artifact. She prefers direct technical disagreement and short written follow-through.',
+            items: ['Use warm technical introductions, not broad blasts.', 'Separate pilot evidence from fundraising narrative.', 'Write down the decision owner before the meeting ends.'],
+          },
+          {
+            heading: 'Why this relationship matters',
+            level: 2,
+            body: 'She is a strong reality check for hardware-software integration and can connect credible operators who have shipped field deployments.',
+          },
+          {
+            heading: 'Relationship history',
+            level: 2,
+            body: 'We met at a founders dinner and spent the evening comparing why pilots fail. Two follow-up working sessions turned the conversation into a live design-partner search.',
+          },
+          {
+            heading: 'Evidence boundaries',
+            level: 3,
+            items: ['The bridge round is planned, not announced.', 'The pilot has not started.', 'No deployment date is committed.'],
+          },
         ],
         evidence: [
           { date: '2026-07-18', source: 'offsite-dinner.md', quote: 'Mara wants design partners, not logos.' },
@@ -51,6 +85,7 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
       relations: [
         { type: 'connected', targetRef: 'person:desmond-ilori', note: 'co-investor' },
         { type: 'connected', targetRef: 'person:kaito-nishimura', note: 'advisor' },
+        { type: 'works-on', targetRef: 'project:aurora-pilot', note: 'design partner' },
       ],
     },
     {
@@ -64,12 +99,7 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-07-12',
         cadenceDays: 21,
         status: 'due',
-        nextTouch: 'Forward the second founder intro and react to his observability thesis',
         summary: 'He asked to see two portfolio-adjacent founders. Sent one. Still owe him the second, plus a note on the observability thesis he floated.',
-        sections: [
-          { heading: 'Open threads', body: 'Wants a read on where developer observability is over-funded. Offered to co-host a small dinner in the fall.' },
-        ],
-        evidence: [{ date: '2026-07-09', source: 'fund-sync.md', quote: 'Desmond is writing first checks again.' }],
       },
       relations: [{ type: 'connected', targetRef: 'person:mara-voss', note: 'co-investor' }],
     },
@@ -84,12 +114,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-06-29',
         cadenceDays: 21,
         status: 'overdue',
-        nextTouch: 'Reconnect with a short note about the design-systems idea',
-        summary: 'We drifted after her team reorg. She was excited about a design-systems collaboration. Worth a low-pressure reconnect before it goes cold.',
-        sections: [
-          { heading: 'Open threads', body: 'Floated collaborating on a shared component language across two teams. Went quiet during her reorg.' },
-        ],
-        evidence: [{ date: '2026-06-24', source: 'coffee-notes.md', quote: 'Lena wants to compare component languages.' }],
       },
     },
     {
@@ -103,12 +127,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-06-22',
         cadenceDays: 21,
         status: 'overdue',
-        nextTouch: 'Send the quarterly update and thank him for the intro that closed',
-        summary: 'Overdue. He always replies fast but I let this slip. Owe him a quarterly update and a thank-you for the last intro, which closed.',
-        sections: [
-          { heading: 'Signals', body: 'Values consistent short updates over long ones. The last intro he made converted into a real partnership.' },
-        ],
-        evidence: [{ date: '2026-05-30', source: 'intro-thread.md', quote: "Nikhil's intro closed the partnership." }],
       },
       relations: [{ type: 'connected', targetRef: 'person:aria-sandoval', note: 'former colleague' }],
     },
@@ -123,9 +141,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-07-24',
         cadenceDays: 30,
         status: 'on-track',
-        nextTouch: 'Ask how the placed candidate is settling in',
-        summary: 'Sent two candidates last month. She placed one. Keep the loop warm.',
-        evidence: [{ date: '2026-07-20', source: 'hiring-loop.md', quote: 'Aria placed the second candidate.' }],
       },
       relations: [{ type: 'connected', targetRef: 'person:nikhil-barot', note: 'former colleague' }],
     },
@@ -140,12 +155,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-07-28',
         cadenceDays: 14,
         status: 'on-track',
-        nextTouch: 'Propose a concrete milestone for the shared eval harness',
-        summary: 'Three exchanges in three weeks about an eval harness. Momentum is real. Should propose a concrete next milestone.',
-        sections: [
-          { heading: 'Open threads', body: 'Building a shared eval harness. He owns the data side, we own the runner. Cadence has picked up sharply.' },
-        ],
-        evidence: [{ date: '2026-07-25', source: 'eval-harness.md', quote: 'Kaito owns the data side of the harness.' }],
       },
       relations: [{ type: 'connected', targetRef: 'person:mara-voss', note: 'advisor' }],
     },
@@ -160,9 +169,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-07-06',
         cadenceDays: 30,
         status: 'due',
-        nextTouch: 'Book the monthly check-in',
-        summary: 'Reliable mentor relationship. Due for the usual monthly check-in.',
-        evidence: [{ date: '2026-07-04', source: 'mentor-notes.md', quote: 'Wren offered to review the org design draft.' }],
       },
     },
     {
@@ -176,8 +182,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-07-21',
         cadenceDays: 60,
         status: 'on-track',
-        nextTouch: 'Congratulate on the launch',
-        summary: 'Low-maintenance friendship. Recently launched. Send a genuine congratulations.',
       },
     },
     {
@@ -191,8 +195,6 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-06-05',
         cadenceDays: 45,
         status: 'overdue',
-        nextTouch: 'Share the infra post he would find useful',
-        summary: 'Met at a conference. Good rapport, no active thread. A light reconnect would keep the door open.',
       },
     },
     {
@@ -206,10 +208,12 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
         lastContactAt: '2026-03-31',
         cadenceDays: 90,
         status: 'overdue',
-        nextTouch: 'Reply to the standing podcast invite',
-        summary: 'Dormant. Invited me on the show a while back. Not a priority, but a friendly note would be easy and kind.',
-        evidence: [{ date: '2026-03-28', source: 'inbound.md', quote: 'Idris left a standing invite to the show.' }],
       },
+    },
+    {
+      kind: 'project',
+      id: 'project:aurora-pilot',
+      label: 'Aurora Pilot',
     },
   ],
   queues: {
@@ -229,3 +233,90 @@ export const FIXTURE_VAULT_SNAPSHOT: VaultSnapshotModel = {
     ],
   },
 };
+
+export type FixtureBrainVariant = 'healthy' | 'stale' | 'partial-other' | 'partial-ingest' | 'expired';
+
+export const FIXTURE_BRAIN_VARIANTS: ReadonlyArray<FixtureBrainVariant> = ['healthy', 'stale', 'partial-other', 'partial-ingest', 'expired'];
+
+const MINUTE_MS = 60_000;
+const HOUR_MS = 60 * MINUTE_MS;
+const DAY_MS = 24 * HOUR_MS;
+
+function isoAt(ms: number): string {
+  return new Date(ms).toISOString();
+}
+
+// A local calendar day, the way a producer writes a date-only value.
+function localDay(ms: number): string {
+  const d = new Date(ms);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// The fixture producer's inputs: [label, affectsIngest]. The first four feed
+// its ingest verdict; the last two are background sources that never do.
+const FIXTURE_SOURCES: ReadonlyArray<[string, boolean]> = [
+  ['Meeting log', true], ['Calendar', true], ['Notes folder', true], ['Task tracker', true],
+  ['Message archive', false], ['Chat export', false],
+];
+
+// Per variant, the sources that are not current: label -> [status, note].
+const FIXTURE_ISSUES: Record<FixtureBrainVariant, Record<string, [string, string]>> = {
+  healthy: {},
+  stale: {
+    'Meeting log': ['stale', '4 items waiting to be ingested'],
+    Calendar: ['blocked', 'sign-in expired'],
+    'Notes folder': ['partial', '2 of 3 folders read'],
+    'Task tracker': ['partial', 'export timed out after 30 seconds'],
+    'Message archive': ['blocked', 'export paused by its owner'],
+  },
+  'partial-other': { 'Message archive': ['partial', '2 of 3 mailboxes read'] },
+  'partial-ingest': { Calendar: ['partial', '1 of 2 accounts read'] },
+  expired: {},
+};
+
+/**
+ * The fixture snapshot as a producer would write it at `now`. Every variant
+ * declares `staleAfter` three hours after `generatedAt` and marks which
+ * sources affect ingest. Select one in the browser with `?brain=<variant>`.
+ *
+ * - healthy: written minutes ago, every source current.
+ * - stale: written minutes ago (the producer still runs on schedule), but the
+ *   meeting log stopped ingesting 16 days ago and four ingest sources are not
+ *   current: the failure a fresh snapshot timestamp alone hides.
+ * - partial-other: healthy, except one background source is partial.
+ * - partial-ingest: ingestOk is true, but one ingest source is partial.
+ * - expired: written five hours ago, so it is past its own staleAfter even
+ *   though its vitals still claim health.
+ */
+export function fixtureVaultSnapshot(variant: FixtureBrainVariant = 'healthy', now: number = Date.now()): VaultSnapshotModel {
+  const base = JSON.parse(JSON.stringify(FIXTURE_VAULT_SNAPSHOT)) as VaultSnapshotModel;
+  const stale = variant === 'stale';
+  const written = now - (variant === 'expired' ? 5 * HOUR_MS : stale ? 40 * MINUTE_MS : 12 * MINUTE_MS);
+  const ingested = stale ? now - 16 * DAY_MS : written - 2 * HOUR_MS;
+  const issues = FIXTURE_ISSUES[variant];
+  return {
+    ...base,
+    generatedAt: isoAt(written),
+    vitals: {
+      entities: 82,
+      canonPages: 61,
+      lastIngest: isoAt(ingested),
+      ingestOk: !stale,
+      ...(stale ? { notice: 'Meeting log ingest is 16 days behind. Last-contact dates after that are unverified.' } : {}),
+      staleAfter: isoAt(written + 3 * HOUR_MS),
+      sources: FIXTURE_SOURCES.map(([label, affectsIngest]) => {
+        const [status, note] = issues[label] || ['ok', ''];
+        const through = label === 'Meeting log' ? ingested : status === 'blocked' ? now - 5 * DAY_MS : written - 20 * MINUTE_MS;
+        return {
+          label,
+          status,
+          affectsIngest,
+          lastSuccessAt: isoAt(through),
+          // The calendar reports whole days, so it exercises date-only aging.
+          dataThrough: label === 'Calendar' ? localDay(through) : isoAt(through),
+          ...(note ? { note } : {}),
+        };
+      }),
+    },
+  };
+}
