@@ -1,11 +1,9 @@
 import { defineConfig } from 'tsup';
 
-// Build the backend/CLI/electron-main surface to plain CommonJS JS under
-// dist/, mirroring the source layout (dist/lib, dist/bin, dist/electron) so
-// require()s between them keep working unmodified and package.json's `bin`
-// / `main` can point at stable compiled paths. The renderer
-// (electron/renderer-vite/**) has its own Vite/electron-vite build (see
-// `build:renderer-vite` in package.json) and is not part of this config.
+// Build the CLI and its libraries to plain CommonJS JS under dist/, mirroring
+// the source layout (dist/lib, dist/bin) so require()s between them keep
+// working unmodified and package.json's `bin` can point at a stable compiled
+// path.
 export default defineConfig([
   {
     name: 'lib',
@@ -15,14 +13,8 @@ export default defineConfig([
       'lib/commands.ts',
       'lib/span.ts',
       'lib/pricing.ts',
-      'lib/harness-icons.ts',
       'lib/summary-budget.ts',
       'lib/claude-quota.ts',
-      // Required at runtime by the compiled reader-service (electron/reader-
-      // service.ts imports '../lib/vault-snapshot' for brain.snapshot). Without
-      // this entry, dist/lib/vault-snapshot.js is never emitted and the
-      // utilityProcess crash-loops on boot, failing every reader read.
-      'lib/vault-snapshot.ts',
     ],
     outDir: 'dist/lib',
     format: ['cjs'],
@@ -52,27 +44,5 @@ export default defineConfig([
     // import external (not bundled) so both outputs share one compiled copy
     // of lib/ instead of duplicating it into the CLI bundle.
     external: [/^\.\.\/lib\//],
-  },
-  {
-    name: 'electron-main',
-    // reader-service is the utilityProcess entry (electron/reader-service.ts,
-    // see AGENTS.md "Never block the Electron main process"): a separate
-    // Node process main.ts forks via utilityProcess.fork(path.join(__dirname,
-    // 'reader-service.js'), ...), so it must compile to
-    // dist/electron/reader-service.js alongside main.js/preload.js, with the
-    // SAME external config (../lib/ and 'electron' stay require()'d at
-    // runtime, never bundled) so it resolves lib/sessions from inside the
-    // asar exactly like main.js already does.
-    entry: { main: 'electron/main.ts', preload: 'electron/preload.ts', 'reader-service': 'electron/reader-service.ts' },
-    outDir: 'dist/electron',
-    format: ['cjs'],
-    target: 'node20',
-    platform: 'node',
-    splitting: false,
-    sourcemap: true,
-    dts: false,
-    shims: false,
-    skipNodeModulesBundle: true,
-    external: [/^\.\.\/lib\//, 'electron'],
   },
 ]);

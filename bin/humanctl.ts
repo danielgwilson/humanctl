@@ -118,7 +118,7 @@ Usage:
   humanctl status [dir] [--json]
 
   humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] [--image path ...] "message"
-    post a short aside/BTW to the human (shows in the humanctl desktop inbox).
+    post a short aside/BTW to the human (appended to ~/.humanctl/notes.jsonl).
     --image is repeatable (max 4, png/jpg/gif/webp, <=10MB each) for proof
     screenshots; each is copied into ~/.humanctl/attachments/ and rendered
     inline in the Inbox and thread detail.
@@ -159,12 +159,12 @@ Usage:
   humanctl watch delete <id> [--workspace dir] [--json]
 
   humanctl app [dir] [--port 3000] [--open] [--path /app]
-    legacy source-checkout workspace UI; see docs/desktop.md for the real app
+    run the source-checkout workspace UI (the Next.js app in this repo)
 
   humanctl app list-commands [--json]
-    list every command the desktop app registers (see docs/commands.md)
+    list every registered command (see docs/commands.md)
   humanctl app invoke <name> [--json '{"...":"..."}']
-    invoke a registered command against the running desktop app
+    invoke a registered command
   humanctl app <name> [--param value ...]
     sugar: flags become params, coerced by the command's declared types
     (e.g. humanctl app session.pin --id abc123)
@@ -1358,7 +1358,7 @@ async function invokeAppCommand(name: string, params: unknown): Promise<{ result
     return { result, via: 'cli-direct' };
   }
   return {
-    result: { ok: false, error: 'humanctl desktop app is not running (start it with `npm run desktop` or open the installed app)' },
+    result: { ok: false, error: 'this command needs the humanctl desktop app, which is not running (the app is not part of this repo)' },
     via: 'none',
   };
 }

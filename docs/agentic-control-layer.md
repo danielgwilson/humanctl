@@ -89,8 +89,6 @@ type SourceIdentity = {
 };
 ```
 
-This builds on `docs/source-identity.md`.
-
 ### `workRef`
 
 Describes the external work authority.
