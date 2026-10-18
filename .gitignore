@@ -1,5 +1,4 @@
 node_modules
-packages/ui/public/r/
 .next
 out
 output
@@ -9,13 +8,6 @@ dist
 *.tgz
 .firecrawl
 .notes
-attic/notch/macos/build
-attic/notch/macos/.deriveddata
-attic/notch/macos/*.xcodeproj
-attic/notch/archive
-DerivedData
-*.xcworkspace/xcuserdata
-*.xcodeproj/xcuserdata
 .humanctl/state
 .humanctl/inbox/events.jsonl
 .claude/
@@ -24,8 +16,6 @@ DerivedData
 # notes never belong in this public repo. Belt-and-suspenders on top of the
 # leak-scan hook so a stray personal spec can never be staged.
 private/
-# A real exported vault snapshot is the operator's personal data; only the
-# generic schema (docs/vault-snapshot.schema.json) and fabricated fixtures
-# are tracked. Never commit a produced snapshot.
+# Exported personal snapshots never belong in this public repo.
 *.snapshot.json
 vault-snapshot.json

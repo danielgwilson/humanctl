@@ -1,6 +1,7 @@
 # Agentic Control Layer Spec
 
-Status: proposed  
+Status: historical (proposed 2026-06-26; the desktop and notch phases below
+were never built in this repo)  
 Date: 2026-06-26
 
 ## Context
@@ -88,8 +89,6 @@ type SourceIdentity = {
   confidence: "explicit" | "inferred" | "fallback";
 };
 ```
-
-This builds on `docs/source-identity.md`.
 
 ### `workRef`
 

@@ -118,10 +118,10 @@ Usage:
   humanctl status [dir] [--json]
 
   humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] [--image path ...] "message"
-    post a short aside/BTW to the human (shows in the humanctl desktop inbox).
+    post a short aside/BTW to the human (appended to ~/.humanctl/notes.jsonl).
     --image is repeatable (max 4, png/jpg/gif/webp, <=10MB each) for proof
-    screenshots; each is copied into ~/.humanctl/attachments/ and rendered
-    inline in the Inbox and thread detail.
+    screenshots; each is copied into ~/.humanctl/attachments/ and referenced
+    from the note.
 
   humanctl span [--date YYYY-MM-DD] [--record] [--json]
     daily span-of-control counts: interactive vs automation sessions touched,
@@ -159,18 +159,18 @@ Usage:
   humanctl watch delete <id> [--workspace dir] [--json]
 
   humanctl app [dir] [--port 3000] [--open] [--path /app]
-    legacy source-checkout workspace UI; see docs/desktop.md for the real app
+    run the source-checkout workspace UI (the Next.js app in this repo)
 
   humanctl app list-commands [--json]
-    list every command the desktop app registers (see docs/commands.md)
+    list every registered command (see docs/commands.md)
   humanctl app invoke <name> [--json '{"...":"..."}']
-    invoke a registered command against the running desktop app
+    invoke a registered command
   humanctl app <name> [--param value ...]
     sugar: flags become params, coerced by the command's declared types
-    (e.g. humanctl app session.pin --id abc123)
+    (e.g. humanctl app sessions.list --limit 5)
     observations backed by lib/ alone (sessions.list, pulse.run, span.run, ...)
-    still answer from disk when the app is not running (source cli-direct);
-    actions need the running app.
+    answer from disk (source cli-direct); commands marked (app) in
+    list-commands need the desktop app, which is not part of this repo.
 
   humanctl serve [dir] [--port 4173]
 `);
@@ -1264,7 +1264,13 @@ function waitForServer(url: string, timeoutMs = 30000): Promise<void> {
 
 function launchApp(baseDir: string, flags: Flags): void {
   const workspaceDir = ensureWorkspaceExists(baseDir);
-  const appRoot = path.resolve(__dirname, '..');
+  // Walk up from this file: it runs as bin/humanctl.ts under tsx and as
+  // dist/bin/humanctl.js once compiled, so the checkout root is one or two
+  // levels up.
+  let appRoot = path.resolve(__dirname, '..');
+  if (!fs.existsSync(path.join(appRoot, 'src', 'app', 'app', 'page.tsx'))) {
+    appRoot = path.resolve(__dirname, '..', '..');
+  }
   const appEntryPath = path.join(appRoot, 'src', 'app', 'app', 'page.tsx');
 
   if (!fs.existsSync(appEntryPath)) {
@@ -1358,7 +1364,7 @@ async function invokeAppCommand(name: string, params: unknown): Promise<{ result
     return { result, via: 'cli-direct' };
   }
   return {
-    result: { ok: false, error: 'humanctl desktop app is not running (start it with `npm run desktop` or open the installed app)' },
+    result: { ok: false, error: 'this command needs the humanctl desktop app, which is not running (the app is not part of this repo)' },
     via: 'none',
   };
 }

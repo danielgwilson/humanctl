@@ -23,87 +23,22 @@
     "build": "next build && npm run build:lib",
     "build:lib": "tsup",
     "typecheck": "tsc -p tsconfig.backend.json --noEmit",
-    "typecheck:renderer": "([ -d packages/ui/node_modules ] || npm ci --prefix packages/ui) && cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run typecheck",
     "start": "next start",
     "lint": "eslint .",
-    "lint:renderer": "([ -d electron/renderer-vite/node_modules ] || npm ci --prefix electron/renderer-vite) && electron/renderer-vite/node_modules/.bin/eslint --config electron/renderer-vite/eslint.config.mjs electron/renderer-vite/src packages/ui/src --max-warnings 0",
-    "bundle:check": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build:browser && node ../../scripts/bundle-size-check.js",
     "package:check": "node scripts/package-hygiene-check.js",
     "prepare": "node scripts/install-git-hooks.mjs",
     "leak:scan": "node scripts/leak-scan.mjs --repo",
     "leak:selftest": "node scripts/leak-scan.mjs --selftest",
     "publish:check": "npm publish --dry-run --provenance --access public --foreground-scripts --json",
     "prepublishOnly": "npm run package:check",
-    "tokens:check": "tsx scripts/tokens-check.ts",
-    "lint:classnames": "node scripts/design-lint-classnames.js",
-    "ui:check": "cd packages/ui && ([ -d node_modules ] || npm ci) && npm run check",
-    "ui:derivations:selftest": "tsx packages/ui/src/product/derivations.selftest.ts",
-    "ui:budget:selftest": "tsx packages/ui/src/product/budget-draft.selftest.ts",
-    "ui:virtual-list:selftest": "tsx packages/ui/src/product/virtual-list.selftest.ts",
-    "ui:runtime:selftest": "tsx electron/renderer-vite/src/runtime/runtime.selftest.ts",
-    "ui:registry:verify": "cd packages/ui && ([ -d node_modules ] || npm ci) && npm run verify && npm run registry:validate && npm run catalog:build",
-    "ui:foundation:hygiene": "node scripts/ui-foundation-hygiene.mjs",
-    "ui:foundation:ownership": "node scripts/ui-foundation-ownership.mjs",
-    "ui:foundation:selftest": "node scripts/ui-foundation-hygiene.mjs --selftest && node scripts/ui-foundation-ownership.mjs --selftest",
-    "ui:verify": "npm run ui:check && npm run ui:registry:verify && npm run ui:derivations:selftest && npm run ui:budget:selftest && npm run ui:virtual-list:selftest && npm run ui:runtime:selftest && npm run ui:foundation:selftest && npm run ui:foundation:hygiene && npm run ui:foundation:ownership && npm run tokens:check && npm run lint:classnames",
     "cli:init": "node ./dist/bin/humanctl.js init .",
     "cli:status": "node ./dist/bin/humanctl.js status .",
     "pulse:selftest": "tsx lib/pulse.selftest.ts",
     "reader:selftest": "tsx lib/reader.selftest.ts",
     "commands:selftest": "tsx lib/commands.selftest.ts",
     "quota:selftest": "tsx lib/claude-quota.selftest.ts",
-    "reader-service:selftest": "tsx electron/reader-service.selftest.ts",
     "span:selftest": "tsx lib/span.selftest.ts",
-    "perf:selftest": "npm run build:lib && npm run build:renderer-vite && node scripts/perf-selftest/run.js",
-    "perf:eventloop": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js",
-    "perf:eventloop:selfcheck": "npm run build:lib && node scripts/perf-selftest/eventloop-gate.js --selfcheck",
-    "perf:logic-selftest": "tsx scripts/perf-selftest/logic.selftest.ts",
-    "desktop": "npm run build:lib && electron dist/electron/main.js",
-    "renderer": "npm --prefix electron/renderer-vite run dev",
-    "renderer:build": "npm --prefix electron/renderer-vite run build:browser",
-    "renderer:serve": "npm run renderer:build && tsx scripts/serve-static.ts --dir electron/renderer-vite/dist --port 4188",
-    "screenshots": "node scripts/capture-screenshots.js",
-    "desktop:sessions": "tsx lib/sessions.ts",
-    "build:renderer-vite": "cd electron/renderer-vite && ([ -d node_modules ] || npm ci) && npm run build",
-    "app:build": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac --dir",
-    "app:dmg": "npm run build:lib && npm run build:renderer-vite && CSC_IDENTITY_AUTO_DISCOVERY=false electron-builder --mac dmg",
-    "app:install": "npm run app:build && npm run perf:selftest && npm run perf:eventloop && bash scripts/install-app.sh && npm run smoke:packaged",
-    "smoke:packaged": "bash scripts/smoke-packaged.sh",
-    "app:release": "npm run build:lib && npm run build:renderer-vite && electron-builder --mac dmg --config.mac.notarize=true",
-    "notch:generate": "cd attic/notch/macos && xcodegen generate",
-    "notch:build": "cd attic/notch/macos && xcodebuild -project HumanctlNotch.xcodeproj -scheme HumanctlNotch -configuration Debug -derivedDataPath .deriveddata build CODE_SIGNING_ALLOWED=NO",
-    "notch:open": "pkill -x HumanctlNotch || true && open -a ./attic/notch/macos/.deriveddata/Build/Products/Debug/HumanctlNotch.app",
-    "notch:run": "npm run notch:build && npm run notch:open"
-  },
-  "build": {
-    "appId": "com.danielgwilson.humanctl",
-    "productName": "humanctl",
-    "asar": true,
-    "extraMetadata": {
-      "main": "dist/electron/main.js"
-    },
-    "files": [
-      "dist/electron/**/*",
-      "dist/lib/**/*",
-      "electron/renderer-vite/dist-electron-vite/renderer/**/*",
-      "electron/assets/**/*",
-      "package.json",
-      "!node_modules/**/*"
-    ],
-    "directories": {
-      "buildResources": "electron/assets"
-    },
-    "mac": {
-      "category": "public.app-category.developer-tools",
-      "icon": "electron/assets/icon.png",
-      "hardenedRuntime": true,
-      "gatekeeperAssess": false,
-      "entitlements": "build/entitlements.mac.plist",
-      "entitlementsInherit": "build/entitlements.mac.plist",
-      "target": [
-        "dir"
-      ]
-    }
+    "sessions:table": "tsx lib/sessions.ts"
   },
   "homepage": "https://humanctl.com",
   "repository": {
@@ -124,19 +59,15 @@
     "cli"
   ],
   "license": "Apache-2.0",
-  "dependencies": {
-    "next": "16.1.6",
-    "react": "19.2.4",
-    "react-dom": "19.2.4"
-  },
   "devDependencies": {
     "@types/node": "25.5.0",
     "@types/react": "19.2.14",
     "@types/react-dom": "19.2.3",
-    "electron": "^42.5.1",
-    "electron-builder": "^26.15.3",
     "eslint": "9.39.4",
     "eslint-config-next": "16.1.6",
+    "next": "16.1.6",
+    "react": "19.2.4",
+    "react-dom": "19.2.4",
     "tsup": "^8.5.1",
     "tsx": "^4.23.0",
     "typescript": "^5.9.3"

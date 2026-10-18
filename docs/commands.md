@@ -1,5 +1,9 @@
 # The command registry
 
+> The desktop app this registry was built for is no longer part of this repo.
+> Commands marked `direct` still run from the CLI over `lib/`; app-only
+> commands stay declared and return an honest "needs the desktop app" error.
+
 Every mutation of durable state, every process spawn, and every cross-session
 observation `humanctl` performs is a registered command: declared once in
 `lib/commands.ts`, invocable from the desktop UI (IPC routed through the
@@ -114,22 +118,6 @@ full image via the OS default viewer, routed through the already-registered
 `app.open-path` command after a small `note:resolve-attachment` IPC call
 resolves a bare filename to its real path within `attachments/` (the
 renderer never holds or can forge a raw filesystem path).
-
-## Harness icons
-
-`app.harness-icons` extracts each installed harness app's own icon at
-runtime: `lib/harness-icons.ts` (pure, Electron-free, selftested without a
-display) reads the app bundle's `Info.plist` `CFBundleIconFile` key -- never
-a hardcoded `.icns` filename, since Claude ships `electron.icns` and Codex
-ships `icon.icns` -- and resolves it to a real, non-empty file under
-`Contents/Resources`. `electron/main.ts` then does the one Electron-only
-step (`nativeImage.createFromPath` + downscale + `toPNG()`), caches the
-result under Electron `userData` (never the repo, never a `~/.humanctl`
-watched path), and returns a data URL. ANY failure at any step -- app not
-installed, unreadable plist, missing icon file, decode failure, empty image
--- resolves to `null`, and the renderer falls back to the built-in neutral
-glyph silently. Fixture mode (`window.humanctl` absent) never calls this at
-all, so screenshots and the browser dev loop always show the built-in glyphs.
 
 ## PR chips (cache-only contract)
 
@@ -328,8 +316,8 @@ All three forms try the control socket first. If nothing is listening:
   over this same path, so they, `humanctl app span.run`, and the app's own UI
   share one implementation and one event-log trail.
 - Anything else (an app-only action, like `session.pin` or `app.set-view`)
-  returns an honest error: `"humanctl desktop app is not running (start it
-  with \`npm run desktop\` or open the installed app)"`. It never pretends to
+  returns an honest error: `"this command needs the humanctl desktop app,
+  which is not running (the app is not part of this repo)"`. It never pretends to
   have mutated state it could not reach.
 
 ## Selftest
@@ -362,9 +350,3 @@ one / skipping a non-image extension / capping at 4, and a full CLI-shaped
 round-trip through the registered command), the `attachments/` directory
 being excluded from `isInboxRelevantChange`, and `summary.budget` reflecting
 real recorded spend from `lib/summary-budget.ts`.
-
-`npm run perf:logic-selftest` (see `docs/perf.md`) is a separate, CI-safe
-pure-logic selftest covering the watcher filter, the summary-budget math, and
-harness-icon path resolution in more depth than the checks above; it is not a
-substitute for the required LOCAL `npm run perf:selftest` gate, which drives
-a real Electron window and is not part of either selftest above.

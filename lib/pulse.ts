@@ -37,8 +37,8 @@ const DEFAULT_STALE_HOURS = 24;
 // The desktop's needs-you decay: an assistant-last session is only "waiting on
 // you" inside this window, then it is history, not a queue item. Imported from
 // the session reader when present so the two surfaces never fork the
-// threshold; since needs-you v3 it equals the reader's hot tier (24h,
-// docs/desktop.md), which the fallback mirrors.
+// threshold; since needs-you v3 it equals the reader's hot tier (24h), which
+// the fallback mirrors.
 export const NEED_DECAY_MS = sessionsLib.NEED_DECAY_MS || 24 * 60 * 60 * 1000;
 
 const LANE_KEYS = ['needsYou', 'readyForReview', 'blockedOnAgent', 'stale', 'missingOwner', 'verified'] as const;

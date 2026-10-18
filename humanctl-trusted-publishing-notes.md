@@ -42,8 +42,6 @@ After GitHub + npm trusted publisher are connected:
 The published npm file surface is intentionally CLI-only. The tarball is constrained
 by the `files` field in `package.json`, and `npm run package:check` verifies,
 installs, and smokes the exact tarball before publication. The Next.js site
-source, docs, Electron output, and source maps are not shipped. The root
-Next.js and React runtime dependencies remain declared to preserve `npm start`;
-splitting them from the CLI is separate packaging work. Electron Builder injects
-the desktop entry point through `build.extraMetadata`; it is not npm package
-metadata.
+source, docs, and source maps are not shipped. Next.js and React are
+devDependencies: the site needs them to build, the CLI never loads them, so
+`npm i -g humanctl` does not install them.
