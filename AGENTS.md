@@ -4,8 +4,8 @@ Operator notes for agents working in this repo. Start with `README.md` for what
 `humanctl` is; this file covers how to move around and how to test.
 
 This repo is the CLI, its file formats, and the humanctl.com site. It is
-stable and low-activity. The desktop app that used to live here was removed in
-0.21.0; comments in `lib/` that mention `electron/main.ts`, the renderer, or
+stable and low-activity. The desktop app that used to live here was removed
+after 0.20.0; comments in `lib/` that mention `electron/main.ts`, the renderer, or
 the desktop describe that app and are kept as context.
 
 ## Layout
@@ -42,11 +42,15 @@ wiring anything to it. See `docs/commands.md`.
 ## Testing
 
 Toolchain is Node-ecosystem only, on the repo's Node (`.nvmrc`: 24). CI
-(`.github/workflows/ci.yml`) requires all of these:
+(`.github/workflows/ci.yml`) requires all of these, plus `node --check` on
+every compiled `dist/` file:
 
+    bash scripts/secret-scan.sh # credential shapes
+    npm run leak:scan           # the public-repo denylist
     npm run lint                # Next site
     npm run typecheck           # tsc over lib/ and bin/
-    npm run build:lib           # tsup compile, then node --check on dist/
+    npm run build:lib           # tsup compile to dist/
+    npm run publish:check       # npm publish dry run
     npm run pulse:selftest      # reconciler against synthetic fixtures
     npm run reader:selftest     # timeline paging + cursor math incl. rotation
     npm run commands:selftest   # registry, event log, socket round-trip

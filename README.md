@@ -13,7 +13,7 @@ Agents should package blockers into the smallest unit of human attention,
 keep the supporting context attached, and resume as soon as the answer lands.
 
 **Status:** stable and low-activity. This repo is the CLI, its file formats,
-and the humanctl.com site. An earlier desktop app was removed in 0.21.0.
+and the humanctl.com site. An earlier desktop app was removed after 0.20.0.
 
 ## Install
 
@@ -79,7 +79,8 @@ Read-only commands run straight from disk; see
 - [docs/pulse.md](./docs/pulse.md): pulse lanes, join token, config, degradation
 - [docs/span.md](./docs/span.md): the span-of-control counter
 - [docs/agentic-control-layer.md](./docs/agentic-control-layer.md) and
-  [docs/control-layer.md](./docs/control-layer.md): the control-layer framing
+  [docs/control-layer.md](./docs/control-layer.md): the original control-layer
+  framing (historical)
 
 ## Development
 

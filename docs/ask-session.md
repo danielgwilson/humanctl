@@ -1,5 +1,8 @@
 # Ask the session
 
+> Historical: this feature's UI lived in the desktop app, which is no longer
+> part of this repo. The `session.ask` command stays declared as app-only.
+
 "Ask the session" injects a one-turn question into an existing agent session
 from the desktop dossier and shows the answer, grounded in that session's full
 context. It is the on-demand deep path next to the ambient AI summary (which

@@ -120,8 +120,8 @@ Usage:
   humanctl note [--level fyi|review|blocked|done] [--session id] [--repo name] [--image path ...] "message"
     post a short aside/BTW to the human (appended to ~/.humanctl/notes.jsonl).
     --image is repeatable (max 4, png/jpg/gif/webp, <=10MB each) for proof
-    screenshots; each is copied into ~/.humanctl/attachments/ and rendered
-    inline in the Inbox and thread detail.
+    screenshots; each is copied into ~/.humanctl/attachments/ and referenced
+    from the note.
 
   humanctl span [--date YYYY-MM-DD] [--record] [--json]
     daily span-of-control counts: interactive vs automation sessions touched,
@@ -167,10 +167,10 @@ Usage:
     invoke a registered command
   humanctl app <name> [--param value ...]
     sugar: flags become params, coerced by the command's declared types
-    (e.g. humanctl app session.pin --id abc123)
+    (e.g. humanctl app sessions.list --limit 5)
     observations backed by lib/ alone (sessions.list, pulse.run, span.run, ...)
-    still answer from disk when the app is not running (source cli-direct);
-    actions need the running app.
+    answer from disk (source cli-direct); commands marked (app) in
+    list-commands need the desktop app, which is not part of this repo.
 
   humanctl serve [dir] [--port 4173]
 `);
@@ -1264,7 +1264,13 @@ function waitForServer(url: string, timeoutMs = 30000): Promise<void> {
 
 function launchApp(baseDir: string, flags: Flags): void {
   const workspaceDir = ensureWorkspaceExists(baseDir);
-  const appRoot = path.resolve(__dirname, '..');
+  // Walk up from this file: it runs as bin/humanctl.ts under tsx and as
+  // dist/bin/humanctl.js once compiled, so the checkout root is one or two
+  // levels up.
+  let appRoot = path.resolve(__dirname, '..');
+  if (!fs.existsSync(path.join(appRoot, 'src', 'app', 'app', 'page.tsx'))) {
+    appRoot = path.resolve(__dirname, '..', '..');
+  }
   const appEntryPath = path.join(appRoot, 'src', 'app', 'app', 'page.tsx');
 
   if (!fs.existsSync(appEntryPath)) {
